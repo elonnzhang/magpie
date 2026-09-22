@@ -339,55 +339,72 @@ async function loadProviders() {
   renderProviders();
 }
 
+// One row per provider: logo, name, the agents pointed at it, key status.
+// Everything else lives in the editor that opens under the row.
 function renderProviders() {
   renderGateway();
   const list = $("#providers");
   list.replaceChildren();
   list.hidden = !providers.providers.length;
   for (const p of providers.providers) {
-    const row = el("div", "row provider" + (editing === p.id ? " selected" : ""));
+    const open = editing === p.id;
+    const row = el("div", "row provider" + (open ? " selected" : ""));
     row.dataset.id = p.id;
     const who = el("div", "who");
     const name = el("div", "name", p.name);
     if (p.sponsored) name.append(el("span", "badge", "sponsored"));
     const n = p.models.filter((m) => m.on).length;
-    const sub = p.host + " · " + (n ? `${n} model${n === 1 ? "" : "s"}` : "no models exposed");
-    who.append(name, el("div", "sub", sub));
+    who.append(name, el("div", "sub", p.host + " · " + (n ? `${n} model${n === 1 ? "" : "s"}` : "no models exposed")));
+    const using = p.agents.filter((a) => a.current);
     const uses = el("div", "uses");
-    for (const a of p.agents) {
-      const b = el("button", "use" + (a.current ? " on" : ""));
-      b.title = a.current ? `${a.name} uses ${p.name} (${a.model})` : `Point ${a.name} at ${p.name}…`;
+    for (const a of using) {
+      const b = el("button", "use");
+      b.title = `${a.name} · ${a.model} — click to change`;
       b.append(icon(a.icon));
       b.onclick = (ev) => pickForAgent(a, p, b, ev);
       uses.append(b);
     }
-    const key = el("span", "key " + (p.ready ? "on" : "none"), p.key.set ? p.key.masked : p.ready ? "no key needed" : "no key");
-    key.title = p.key.set ? "API key " + p.key.masked : p.ready ? "Local servers need no key" : "Paste an API key";
+    if (p.agents.some((a) => !a.current && canUse(a, p))) {
+      const b = el("button", "use add");
+      b.title = using.length ? "Point another agent at " + p.name : "Point an agent at " + p.name;
+      b.append(svg(PLUS, 11, 1.8));
+      b.onclick = (ev) => { ev.stopPropagation(); editing = p.id; draft = null; adding = false; renderProviders(); };
+      uses.append(b);
+    }
+    const key = el("span", "key " + (p.key.set ? "on" : p.ready ? "free" : "none"), p.key.set ? p.key.masked : p.ready ? "no key" : "needs a key");
+    key.title = p.key.set ? "API key " + p.key.masked : p.ready ? "Local servers need no key" : "Open the row and paste an API key";
     const chev = el("span", "chev");
     chev.append(svg(CHEV_R, 11, 1.7));
     row.append(icon(p.icon || "generic"), who, uses, key, chev);
-    row.onclick = () => { editing = editing === p.id ? null : p.id; draft = null; adding = false; renderProviders(); };
+    row.onclick = () => { editing = open ? null : p.id; draft = null; adding = false; renderProviders(); };
     list.append(row);
-    if (editing === p.id) list.append(renderEditor(p));
+    if (open) list.append(renderEditor(p));
   }
   renderAdd();
   renderActivity();
   (list.querySelector(".editor") || $("#addSheet .editor"))?.scrollIntoView({ block: "nearest" });
 }
 
-// The gateway strip: where agents send requests, and how many models answer.
+// The gateway: where every agent sends its requests. Opens to the recent calls.
 function renderGateway() {
   const g = providers.gateway;
   const box = $("#gateway");
   box.replaceChildren();
+  box.classList.toggle("selected", activity);
   const dot = el("span", "dot " + (g.running ? "on" : ""));
-  dot.title = g.running ? (g.mine ? "Served by this dial" : "Served by another dial process") : "Not running";
-  const t = el("span", "t");
-  t.append(el("b", "", "Gateway"), el("code", "", g.url + "/v1"));
-  const sum = el("span", "sum", g.running ? `${g.models} model${g.models === 1 ? "" : "s"} · OpenAI, Responses and Anthropic APIs` : "not running · dial serve");
-  const act = el("button", "text", activity ? "Hide activity" : "Activity");
-  act.onclick = () => { activity = !activity; renderProviders(); };
-  box.append(dot, t, sum, el("span", "grow"), act);
+  const who = el("div", "who");
+  const name = el("div", "name", "Gateway");
+  name.append(el("span", "state", g.running ? (g.mine ? "running" : "running · another dial") : "not running"));
+  who.append(name, el("div", "sub", g.running ? `${g.models} model${g.models === 1 ? "" : "s"} · OpenAI, Responses and Anthropic APIs` : "start it with dial serve, or open dial at login"));
+  const url = el("button", "url");
+  url.append(el("code", "", g.url + "/v1"));
+  url.title = "Copy the base URL";
+  url.onclick = async (ev) => { ev.stopPropagation(); try { await navigator.clipboard.writeText(g.url + "/v1"); status("Base URL copied", "ok"); } catch { status(g.url + "/v1"); } };
+  const chev = el("span", "chev");
+  chev.append(svg(CHEV_R, 11, 1.7));
+  chev.title = activity ? "Hide recent calls" : "Recent calls";
+  box.append(dot, who, url, chev);
+  box.onclick = () => { activity = !activity; renderProviders(); };
 }
 
 function renderActivity() {
@@ -396,11 +413,10 @@ function renderActivity() {
   box.hidden = !activity;
   if (!activity) return;
   const calls = providers.gateway.calls.slice(0, 12);
-  if (!calls.length) { box.append(el("div", "none", "No requests yet. Point an agent at a catalog model and use it; its calls show up here.")); return; }
+  if (!calls.length) { box.append(el("div", "none", "No requests yet. Point an agent at a model here and use it; its calls show up as they happen.")); return; }
   for (const c of calls) {
     const r = el("div", "call" + (c.status >= 400 ? " bad" : ""));
-    const when = new Date(c.time);
-    r.append(el("span", "when", when.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })));
+    r.append(el("span", "when", new Date(c.time).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })));
     r.append(el("span", "m", c.model));
     r.append(el("span", "p", c.from === c.to ? c.from : `${c.from} → ${c.to}`));
     r.append(el("span", "grow"));
@@ -410,12 +426,20 @@ function renderActivity() {
   }
 }
 
+// An agent's model field, and whether any of its options come from provider p.
+function modelField(a) {
+  const agent = state.agents.find((x) => x.id === a.id);
+  return agent?.fields.find((f) => f.key === "model") || null;
+}
+function ofProvider(p) { return new RegExp(`^(dial/)?${p.id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/`); }
+function canUse(a, p) { const f = modelField(a); return !!f && f.options.some((o) => ofProvider(p).test(o.value)); }
+
 // Pick one of this provider's models for an agent, straight from the row.
 function pickForAgent(a, p, btn, ev) {
   const agent = state.agents.find((x) => x.id === a.id);
-  if (!agent || !agent.fields.length) return;
-  const field = agent.fields[0];
-  const pre = new RegExp(`^(dial/)?${p.id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/`);
+  const field = modelField(a);
+  if (!field) return;
+  const pre = ofProvider(p);
   if (!field.options.some((o) => pre.test(o.value))) {
     ev.stopPropagation();
     status(`${p.name} exposes no models yet — pick some below`, "warn");
@@ -426,6 +450,7 @@ function pickForAgent(a, p, btn, ev) {
 }
 
 // The add sheet: presets first (a key is all they need), custom last.
+let presetQuery = "";
 function renderAdd() {
   const sheet = $("#addSheet");
   sheet.replaceChildren();
@@ -434,44 +459,67 @@ function renderAdd() {
   if (!adding) return;
   const head = el("div", "row-head");
   head.append(el("span", "label", providers.providers.length ? "Add a provider" : "Add your first provider"), el("span", "grow"));
+  const q = input(presetQuery, "Find a vendor…");
+  q.className = "find";
+  q.oninput = () => { presetQuery = q.value; drawTiles(); };
+  head.append(q);
   if (providers.providers.length) {
     const x = el("button", "text", "Close");
-    x.onclick = () => { adding = false; editing = null; draft = null; renderProviders(); };
+    x.onclick = () => { adding = false; editing = null; draft = null; presetQuery = ""; renderProviders(); };
     head.append(x);
   }
   sheet.append(head);
-  const kinds = [["vendor", "Vendors"], ["relay", "Relays · many vendors behind one key"], ["local", "On this machine"]];
-  for (const [kind, title] of kinds) {
-    const ps = providers.presets.filter((p) => p.kind === kind);
-    if (!ps.length) continue;
-    sheet.append(el("div", "kind", title));
-    const grid = el("div", "grid");
-    for (const pr of ps) grid.append(tile(pr));
-    if (kind === "local") {
-      const c = el("button", "tile custom" + (editing?.custom ? " on" : ""));
-      const ic = el("span", "ic plus");
-      ic.append(svg(PLUS, 14, 1.8));
-      c.append(ic, el("span", "n", "Custom"), el("span", "s", "any compatible URL"));
-      c.onclick = () => { editing = { custom: true }; draft = null; renderProviders(); };
-      grid.append(c);
+  const tiles = el("div", "tiles");
+  sheet.append(tiles);
+  const drawTiles = () => {
+    tiles.replaceChildren();
+    const f = presetQuery.trim().toLowerCase();
+    const hit = (pr) => !f || pr.name.toLowerCase().includes(f) || pr.id.includes(f) || hostOf(pr.chat || pr.responses || pr.anthropic).includes(f) || (pr.note || "").toLowerCase().includes(f);
+    let any = false;
+    for (const [kind, title] of [["vendor", "Vendors"], ["relay", "Relays · many vendors behind one key"], ["local", "On this machine"]]) {
+      const ps = providers.presets.filter((p) => p.kind === kind && hit(p));
+      if (!ps.length && !(kind === "local" && !f)) continue;
+      any = true;
+      tiles.append(el("div", "kind", title));
+      const grid = el("div", "grid");
+      for (const pr of ps) grid.append(tile(pr));
+      if (kind === "local" && !f) {
+        const c = el("button", "tile custom" + (editing?.custom ? " on" : ""));
+        const ic = el("span", "ic plus");
+        ic.append(svg(PLUS, 13, 1.8));
+        c.append(ic, el("span", "tt"));
+        c.lastChild.append(el("span", "n", "Custom"), el("span", "s", "any compatible URL"));
+        c.onclick = () => { editing = { custom: true }; draft = null; renderProviders(); };
+        grid.append(c);
+      }
+      tiles.append(grid);
     }
-    sheet.append(grid);
-  }
+    if (!any) {
+      const none = el("div", "none");
+      none.append(`Nothing called “${presetQuery.trim()}”. `);
+      const b = el("button", "link", "Add it as a custom provider");
+      b.onclick = () => { editing = { custom: true }; draft = null; renderProviders(); };
+      none.append(b);
+      tiles.append(none);
+    }
+  };
+  drawTiles();
   if (editing && typeof editing === "object") sheet.append(renderEditor(null, editing.preset));
 }
 
 function tile(pr) {
   const t = el("button", "tile" + (pr.added ? " added" : "") + (editing?.preset === pr.id ? " on" : ""));
   t.append(icon(pr.icon || "generic"));
+  const tt = el("span", "tt");
   const n = el("span", "n", pr.name);
   if (pr.sponsored) n.append(el("span", "badge", "sponsored"));
-  t.append(n);
-  t.append(el("span", "s", pr.note || hostOf(pr.chat || pr.responses || pr.anthropic)));
+  tt.append(n, el("span", "s", pr.note || hostOf(pr.chat || pr.responses || pr.anthropic)));
+  t.append(tt);
   if (pr.added) {
     const ck = el("span", "check");
-    ck.append(svg(CHECK, 11, 2));
+    ck.append(svg(CHECK, 10, 2));
     t.append(ck);
-    t.title = `${pr.name} is already added`;
+    t.title = `${pr.name} is already added — open it`;
     t.onclick = () => { editing = pr.id; adding = false; draft = null; renderProviders(); };
   } else {
     t.onclick = () => { editing = { preset: pr.id }; draft = null; renderProviders(); };
@@ -498,6 +546,8 @@ function input(value, placeholder, type = "text") {
 }
 function cancelEdit() { editing = null; draft = null; renderProviders(); }
 
+const PROTOS = [["chat", "OpenAI", "Chat Completions — most agents"], ["responses", "Responses", "OpenAI Responses — what Codex speaks"], ["anthropic", "Anthropic", "Anthropic Messages — what Claude Code speaks"]];
+
 // renderEditor: an existing provider (p), a new preset (presetID), or custom.
 function renderEditor(p, presetID) {
   const pr = presetID ? providers.presets.find((x) => x.id === presetID) : p?.preset ? providers.presets.find((x) => x.id === p.preset) : null;
@@ -513,8 +563,25 @@ function renderEditor(p, presetID) {
   if (isNew) {
     const h = el("div", "ehead");
     h.append(icon(pr?.icon || "generic"), el("b", "", pr ? pr.name : "Custom provider"));
+    if (pr?.note) h.append(el("span", "note", pr.note));
+    h.append(el("span", "grow"));
     if (pr?.website) { const b = el("button", "link", hostOf(pr.website) + " ↗"); b.onclick = () => api("open", { url: pr.website }); h.append(b); }
     ed.append(h);
+  }
+
+  // who uses it: every agent, the ones on this provider lit, click to pick a model
+  if (p) {
+    const chips = el("div", "achips");
+    for (const a of p.agents) {
+      if (!a.current && !canUse(a, p)) continue; // Gemini CLI, Cursor: their own APIs only
+      const c = el("button", "achip" + (a.current ? " on" : ""));
+      c.append(icon(a.icon), el("span", "n", a.name));
+      if (a.current) c.append(el("span", "m", a.model));
+      c.title = a.current ? `${a.name} is on ${a.model} — click to change` : `Point ${a.name} at a ${p.name} model`;
+      c.onclick = (ev) => pickForAgent(a, p, c, ev);
+      chips.append(c);
+    }
+    ed.append(...field("Agents", chips, p.agents.some((a) => a.current) ? "" : "None yet. Click an agent to pick one of these models for it."));
   }
 
   let name, url;
@@ -548,13 +615,51 @@ function renderEditor(p, presetID) {
   if (keysUrl) { const b = el("button", "link", "Get a key ↗"); b.onclick = () => api("open", { url: keysUrl }); side.append(b); }
   const keyWrap = el("div", "pair");
   keyWrap.append(key, side);
-  ed.append(...field("API key", keyWrap, isNew ? "Kept in ~/.config/dial/providers.json (0600). Nothing is read from your shell." : ""));
+  ed.append(...field("API key", keyWrap, isNew ? "Kept in ~/.config/dial/providers.json, readable by you alone. Nothing is read from your shell." : ""));
 
   if (p) ed.append(...field("Models", renderModels(p), ""));
   else if (custom) {
     const ex = input("", "model ids, comma separated · e.g. gpt-5.5, claude-sonnet-5");
     ex.oninput = () => { draft.extra = ex.value.split(/[,\s]+/).filter(Boolean); };
     ed.append(...field("Models", ex, "Optional: dial asks the vendor for its list after saving."));
+  }
+
+  // the endpoints, with a Test that reports against each one
+  const eps = el("div", "eps");
+  const slots = {};
+  if (!custom) {
+    const src = p || pr;
+    for (const [proto, label, hint] of PROTOS) {
+      if (!src[proto]) continue;
+      const e = el("div", "ep");
+      const pl = el("span", "pl", label);
+      pl.title = hint;
+      e.append(pl, el("code", "", src[proto]), slots[proto] = el("span", "res"));
+      eps.append(e);
+    }
+    if (p) {
+      const test = el("button", "text", "Test");
+      test.title = "Send a tiny request through each endpoint";
+      test.onclick = async () => {
+        test.classList.add("busy");
+        for (const s of Object.values(slots)) { s.className = "res wait"; s.textContent = "…"; }
+        try {
+          const r = await api("provider/test", { id: p.id });
+          for (const t of r.results) {
+            const s = slots[t.protocol];
+            if (!s) continue;
+            s.className = "res " + (t.ok ? "ok" : "bad");
+            s.replaceChildren();
+            s.append(svg(t.ok ? CHECK : "M4.5 4.5l7 7M11.5 4.5l-7 7", 10, 2));
+            s.append(el("span", "", t.ok ? `${t.ms} ms` : t.status ? `${t.status} · ${t.error}` : t.error));
+            s.title = t.ok ? `model ${t.model}` : t.error;
+          }
+        } catch (e) { for (const s of Object.values(slots)) { s.className = "res"; s.textContent = ""; } status(e.message, "err"); }
+        test.classList.remove("busy");
+      };
+      eps.append(test);
+    }
+    ed.append(...field("Endpoints", eps));
   }
 
   if (custom) {
@@ -577,33 +682,12 @@ function renderEditor(p, presetID) {
   }
 
   const bar = el("div", "bar");
-  const results = el("div", "results");
   if (p) {
-    const test = el("button", "text", "Test");
-    test.title = "Send a tiny request through each endpoint";
-    test.onclick = async () => {
-      test.classList.add("busy");
-      results.replaceChildren(el("span", "res", "testing…"));
-      try {
-        const r = await api("provider/test", { id: p.id });
-        results.replaceChildren();
-        for (const t of r.results) {
-          const b = el("span", "res " + (t.ok ? "ok" : "bad"));
-          b.append(el("span", "", `${t.protocol} ${t.ok ? "✓" : "✗"}`));
-          if (t.ok) b.append(el("span", "ms", `${t.ms} ms`));
-          else b.append(el("span", "", t.status ? `${t.status} · ${t.error}` : t.error));
-          b.title = t.model ? `model ${t.model}` : "";
-          results.append(b);
-        }
-      } catch (e) { results.replaceChildren(); status(e.message, "err"); }
-      test.classList.remove("busy");
-    };
-    bar.append(test, results);
-    bar.append(el("span", "grow"));
     const del = el("button", "text danger", "Remove");
     del.onclick = () => providerAction("delete", { id: p.id }, `${p.name} removed`);
     bar.append(del);
-  } else bar.append(el("span", "grow"));
+  }
+  bar.append(el("span", "grow"));
   const cancel = el("button", "text", "Cancel");
   cancel.onclick = cancelEdit;
   const saveBtn = el("button", "text primary", isNew ? "Add" : "Save");
@@ -688,6 +772,7 @@ async function providerAction(action, body, okMsg, keep) {
     editing = action === "save" && keep ? keep : null;
     draft = null;
     adding = false;
+    presetQuery = "";
     renderProviders();
     state = await api("state");
     renderAgents();
@@ -762,7 +847,7 @@ function renderUsage() {
   }
   stats.classList.remove("empty");
   const tile = (n, label, sub) => {
-    const t = el("div", "tile");
+    const t = el("div", "kpi");
     t.append(el("b", "", n), el("span", "", label));
     if (sub) t.append(el("small", "", sub));
     stats.append(t);
