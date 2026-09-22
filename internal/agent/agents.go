@@ -1,0 +1,255 @@
+package agent
+
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+	"runtime"
+	"sort"
+	"strings"
+
+	"github.com/yetone/dial/internal/catalog"
+	"github.com/yetone/dial/internal/edit"
+)
+
+// All returns every agent dial knows about, detected or not.
+func All() []*Agent {
+	home, _ := os.UserHomeDir()
+	cfg := os.Getenv("XDG_CONFIG_HOME")
+	if cfg == "" {
+		cfg = filepath.Join(home, ".config")
+	}
+	return []*Agent{
+		claude(home),
+		codex(home),
+		gemini(home),
+		opencode(home, cfg),
+		pi(home),
+		goose(home, cfg),
+		cursor(home),
+		copilot(home),
+		crush(home, cfg),
+	}
+}
+
+// ---- accessors -------------------------------------------------------------
+
+func jsonGet(path, key string) func() string {
+	return func() string { v, _ := edit.GetJSON(path, key); return v }
+}
+
+func jsonSet(path, key string) func(string) error {
+	return func(v string) error { return edit.SetJSON(path, edit.KV{Path: key, Value: v}) }
+}
+
+// pair joins a provider field and a model field into one "provider/model"
+// value, which is how OpenCode already spells it and how people think of it.
+func pairGet(get func(string) (string, bool), pKey, mKey string) func() string {
+	return func() string {
+		p, _ := get(pKey)
+		m, _ := get(mKey)
+		switch {
+		case m == "":
+			return ""
+		case p == "":
+			return m
+		}
+		return p + "/" + m
+	}
+}
+
+func pairSet(set func(...edit.KV) error, pKey, mKey string) func(string) error {
+	return func(v string) error {
+		p, m, ok := strings.Cut(v, "/")
+		if !ok || p == "" || m == "" {
+			return fmt.Errorf("expected provider/model, got %q", v)
+		}
+		return set(edit.KV{Path: pKey, Value: p}, edit.KV{Path: mKey, Value: m})
+	}
+}
+
+// ---- option builders -------------------------------------------------------
+
+func options(models []catalog.Model, prefix string) []Option {
+	out := make([]Option, 0, len(models))
+	for _, m := range models {
+		out = append(out, Option{Value: prefix + m.ID, Note: m.Name})
+	}
+	return out
+}
+
+func static(vals ...string) []Option {
+	out := make([]Option, len(vals))
+	for i, v := range vals {
+		out[i] = Option{Value: v}
+	}
+	return out
+}
+
+// providerOptions lists provider/model pairs for every provider the user has
+// credentials for: keys of an auth file, API-key env vars, and whatever the
+// current value already uses.
+func providerOptions(authFile string, cur string, extra ...string) []Option {
+	set := map[string]bool{}
+	for _, p := range extra {
+		set[p] = true
+	}
+	if p, _, ok := strings.Cut(cur, "/"); ok {
+		set[p] = true
+	}
+	if b, err := os.ReadFile(authFile); err == nil {
+		var m map[string]json.RawMessage
+		if json.Unmarshal(b, &m) == nil {
+			for k := range m {
+				set[k] = true
+			}
+		}
+	}
+	for _, p := range catalog.Providers() {
+		if catalog.ProviderAvailable(p) {
+			set[p] = true
+		}
+	}
+	providers := make([]string, 0, len(set))
+	for p := range set {
+		providers = append(providers, p)
+	}
+	sort.Strings(providers)
+	var out []Option
+	for _, p := range providers {
+		out = append(out, options(catalog.Provider(p), p+"/")...)
+	}
+	return out
+}
+
+// ---- agents ----------------------------------------------------------------
+
+func opencode(home, cfg string) *Agent {
+	dir := filepath.Join(cfg, "opencode")
+	path := filepath.Join(dir, "opencode.json")
+	if _, err := os.Stat(filepath.Join(dir, "opencode.jsonc")); err == nil {
+		path = filepath.Join(dir, "opencode.jsonc")
+	}
+	auth := filepath.Join(home, ".local", "share", "opencode", "auth.json")
+	opts := func(key string) func(map[string]string) []Option {
+		return func(cur map[string]string) []Option { return providerOptions(auth, cur[key]) }
+	}
+	return &Agent{
+		ID: "opencode", Name: "OpenCode", Icon: "opencode", Aliases: []string{"oc"},
+		Bin: "opencode", Dir: dir, Path: path,
+		Fields: []Field{
+			{Key: "model", Label: "model", Get: jsonGet(path, "model"), Set: jsonSet(path, "model"), Options: opts("model")},
+			{Key: "small", Label: "small", Get: jsonGet(path, "small_model"), Set: jsonSet(path, "small_model"), Options: opts("small")},
+		},
+	}
+}
+
+func pi(home string) *Agent {
+	dir := filepath.Join(home, ".pi", "agent")
+	path := filepath.Join(dir, "settings.json")
+	auth := filepath.Join(dir, "auth.json")
+	get := func(k string) (string, bool) { return edit.GetJSON(path, k) }
+	set := func(kvs ...edit.KV) error { return edit.SetJSON(path, kvs...) }
+	return &Agent{
+		ID: "pi", Name: "Pi", Icon: "pi", Bin: "pi", Dir: dir, Path: path,
+		Fields: []Field{{
+			Key: "model", Label: "model",
+			Get:     pairGet(get, "defaultProvider", "defaultModel"),
+			Set:     pairSet(set, "defaultProvider", "defaultModel"),
+			Options: func(cur map[string]string) []Option { return providerOptions(auth, cur["model"]) },
+		}},
+	}
+}
+
+func goose(home, cfg string) *Agent {
+	path := filepath.Join(cfg, "goose", "config.yaml")
+	if runtime.GOOS == "windows" {
+		if app := os.Getenv("APPDATA"); app != "" {
+			path = filepath.Join(app, "Block", "goose", "config", "config.yaml")
+		}
+	}
+	get := func(k string) (string, bool) { return edit.GetYAMLTop(path, k) }
+	set := func(kvs ...edit.KV) error { return edit.SetYAMLTop(path, kvs...) }
+	return &Agent{
+		ID: "goose", Name: "Goose", Icon: "goose", Bin: "goose", Dir: filepath.Dir(path), Path: path,
+		Fields: []Field{{
+			Key: "model", Label: "model",
+			Get:     pairGet(get, "GOOSE_PROVIDER", "GOOSE_MODEL"),
+			Set:     pairSet(set, "GOOSE_PROVIDER", "GOOSE_MODEL"),
+			Options: func(cur map[string]string) []Option { return providerOptions("", cur["model"]) },
+		}},
+	}
+}
+
+func cursor(home string) *Agent {
+	path := filepath.Join(home, ".cursor", "cli-config.json")
+	return &Agent{
+		ID: "cursor", Name: "Cursor", Icon: "cursor", Aliases: []string{"cursor-agent"},
+		Bin: "cursor-agent", Dir: filepath.Dir(path), Path: path,
+		Fields: []Field{{
+			Key: "model", Label: "model",
+			Get: jsonGet(path, "model.modelId"),
+			Set: func(v string) error {
+				return edit.SetJSON(path,
+					edit.KV{Path: "model.modelId", Value: v},
+					edit.KV{Path: "model.displayModelId", Value: v},
+					edit.KV{Path: "model.displayName", Value: v},
+					edit.KV{Path: "hasChangedDefaultModel", Value: true},
+				)
+			},
+			Options: func(map[string]string) []Option {
+				return []Option{{Value: "auto", Note: "let Cursor pick"}}
+			},
+		}},
+	}
+}
+
+func copilot(home string) *Agent {
+	dir := filepath.Join(home, ".copilot")
+	path := filepath.Join(dir, "settings.json")
+	return &Agent{
+		ID: "copilot", Name: "Copilot CLI", Icon: "githubcopilot", Aliases: []string{"gh-copilot"},
+		Bin: "copilot", Dir: dir, Path: path,
+		Fields: []Field{{
+			Key: "model", Label: "model",
+			Get:     jsonGet(path, "model"),
+			Set:     jsonSet(path, "model"),
+			Options: func(map[string]string) []Option { return options(catalog.Builtin("copilot"), "") },
+		}},
+	}
+}
+
+func crush(home, cfg string) *Agent {
+	path := filepath.Join(cfg, "crush", "crush.json")
+	if runtime.GOOS == "windows" {
+		if app := os.Getenv("LOCALAPPDATA"); app != "" {
+			path = filepath.Join(app, "crush", "crush.json")
+		}
+	}
+	get := func(k string) (string, bool) { return edit.GetJSON(path, k) }
+	set := func(kvs ...edit.KV) error { return edit.SetJSON(path, kvs...) }
+	opts := func(key string) func(map[string]string) []Option {
+		return func(cur map[string]string) []Option {
+			var extra []string
+			if b, err := os.ReadFile(path); err == nil {
+				var c struct {
+					Providers map[string]json.RawMessage `json:"providers"`
+				}
+				if json.Unmarshal(b, &c) == nil {
+					for p := range c.Providers {
+						extra = append(extra, p)
+					}
+				}
+			}
+			return providerOptions("", cur[key], extra...)
+		}
+	}
+	return &Agent{
+		ID: "crush", Name: "Crush", Icon: "crush", Bin: "crush", Dir: filepath.Dir(path), Path: path,
+		Fields: []Field{
+			{Key: "model", Label: "large", Get: pairGet(get, "models.large.provider", "models.large.model"), Set: pairSet(set, "models.large.provider", "models.large.model"), Options: opts("model")},
+			{Key: "small", Label: "small", Get: pairGet(get, "models.small.provider", "models.small.model"), Set: pairSet(set, "models.small.provider", "models.small.model"), Options: opts("small")},
+		},
+	}
+}
