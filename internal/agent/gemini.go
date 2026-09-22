@@ -2,18 +2,18 @@ package agent
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/yetone/dial/internal/catalog"
 	"github.com/yetone/dial/internal/edit"
+	"github.com/yetone/dial/internal/provider"
 )
 
 // Gemini CLI only speaks Google's own API, so "provider" here is how it
 // authenticates: Google sign-in, a Gemini API key, or Vertex AI. The choice
-// lives in settings.json (security.auth.selectedType); a key dial holds is
-// handed over through ~/.gemini/.env, which the CLI loads at start-up.
+// lives in settings.json (security.auth.selectedType). A Google provider
+// added in dial lends its key through ~/.gemini/.env, which the CLI loads.
 
 func gemini(home string) *Agent {
 	dir := filepath.Join(home, ".gemini")
@@ -21,6 +21,15 @@ func gemini(home string) *Agent {
 	envPath := filepath.Join(dir, ".env")
 	auth := jsonGet(path, "security.auth.selectedType")
 	base := func() string { v, _ := edit.GetEnvFile(envPath, "GOOGLE_GEMINI_BASE_URL"); return v }
+	envKey := func() string { v, _ := edit.GetEnvFile(envPath, "GEMINI_API_KEY"); return v }
+	dialKey := func() string {
+		for _, id := range []string{"google", "gemini"} {
+			if p, err := provider.Find(id); err == nil && p.Key != "" {
+				return p.Key
+			}
+		}
+		return ""
+	}
 
 	current := func() string {
 		if base() != "" {
@@ -50,18 +59,13 @@ func gemini(home string) *Agent {
 				return err
 			}
 		case "api-key":
-			key := Key("GEMINI_API_KEY")
-			if key == "" {
-				return needKey(Provider{Name: "Gemini API", EnvKey: "GEMINI_API_KEY"})
-			}
 			if err := edit.SetJSON(path, edit.KV{Path: "security.auth.selectedType", Value: "gemini-api-key"}); err != nil {
 				return err
 			}
-			if os.Getenv("GEMINI_API_KEY") == "" {
-				if err := edit.SetEnvFile(envPath, edit.KV{Path: "GEMINI_API_KEY", Value: key}); err != nil {
+			if k := dialKey(); k != "" && envKey() != k {
+				if err := edit.SetEnvFile(envPath, edit.KV{Path: "GEMINI_API_KEY", Value: k}); err != nil {
 					return err
 				}
-				os.Chmod(envPath, 0o600)
 			}
 		default:
 			return fmt.Errorf("unknown provider %q", id)
@@ -84,10 +88,14 @@ func gemini(home string) *Agent {
 				Get: current,
 				Set: use,
 				Options: func(map[string]string) []Option {
-					key := Option{Value: "api-key", Label: "API key", Key: "GEMINI_API_KEY", Icon: "gemini-color", Note: "Gemini API · $GEMINI_API_KEY"}
-					if Key("GEMINI_API_KEY") == "" {
-						key.Note += " not set"
-						key.NeedKey = true
+					key := Option{Value: "api-key", Label: "API key", Icon: "gemini-color"}
+					switch {
+					case dialKey() != "":
+						key.Note = "the Google key from dial's providers"
+					case envKey() != "":
+						key.Note = "GEMINI_API_KEY from ~/.gemini/.env"
+					default:
+						key.Note = "needs GEMINI_API_KEY — add Google Gemini in dial's providers"
 					}
 					out := []Option{
 						{Value: "google", Label: "Google account", Icon: "gemini-color", Note: "OAuth sign-in"},

@@ -17,7 +17,9 @@ import (
 
 	"github.com/yetone/dial/internal/agent"
 	"github.com/yetone/dial/internal/catalog"
+	"github.com/yetone/dial/internal/gateway"
 	"github.com/yetone/dial/internal/profile"
+	"github.com/yetone/dial/internal/provider"
 )
 
 //go:embed assets
@@ -62,7 +64,8 @@ type stateJSON struct {
 }
 
 // Handler serves the embedded UI and the JSON API.
-func Handler(w Windows) http.Handler {
+// gw is the gateway this process serves, or nil when another dial has it.
+func Handler(w Windows, gw *gateway.Server) http.Handler {
 	static, _ := fs.Sub(assets, "assets")
 	mux := http.NewServeMux()
 	mux.Handle("/", http.FileServer(http.FS(static)))
@@ -70,19 +73,10 @@ func Handler(w Windows) http.Handler {
 		writeJSON(rw, state())
 	})
 	mux.HandleFunc("POST /api/set", func(rw http.ResponseWriter, r *http.Request) {
-		var in struct {
-			Agent, Field, Value string
-			Key                 struct{ Env, Value string } // API key to store first, if the option asked for one
-		}
+		var in struct{ Agent, Field, Value string }
 		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
 			fail(rw, err)
 			return
-		}
-		if in.Key.Env != "" && in.Key.Value != "" {
-			if err := agent.SetKey(in.Key.Env, in.Key.Value); err != nil {
-				fail(rw, err)
-				return
-			}
 		}
 		a, err := agent.Find(in.Agent)
 		if err != nil {
@@ -141,9 +135,16 @@ func Handler(w Windows) http.Handler {
 			fail(rw, err)
 			return
 		}
+		for _, p := range provider.All() {
+			if p.Ready() {
+				c, cancel := context.WithTimeout(ctx, 8*time.Second)
+				p.Fetch(c)
+				cancel()
+			}
+		}
 		writeJSON(rw, state())
 	})
-	providerRoutes(mux, w)
+	providerRoutes(mux, w, gw)
 	mux.HandleFunc("POST /api/window/{action}", func(rw http.ResponseWriter, r *http.Request) {
 		switch r.PathValue("action") {
 		case "hide":

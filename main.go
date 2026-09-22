@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"sort"
 	"strings"
 	"time"
 
@@ -13,6 +12,7 @@ import (
 
 	"github.com/yetone/dial/internal/agent"
 	"github.com/yetone/dial/internal/catalog"
+	"github.com/yetone/dial/internal/gateway"
 	"github.com/yetone/dial/internal/profile"
 	"github.com/yetone/dial/internal/tui"
 )
@@ -26,23 +26,23 @@ const usage = `dial — one dial for every coding agent's model
   dial tui                      the same dial, in the terminal
   dial ls                       list detected agents and their settings
   dial <agent>                  show one agent
-  dial <agent> <model>          set an agent's model
+  dial <agent> <model>          set an agent's model   e.g. dial claude deepseek/deepseek-chat
   dial <agent> <field> <value>  set another field   e.g. dial codex effort high
-                                                    e.g. dial claude provider deepseek
 
   dial save <name>              snapshot every agent's settings as a profile
   dial use <name>               apply a profile
   dial profiles                 list profiles
   dial rm <name>                delete a profile
 
-  dial providers                list providers: endpoints, keys, who uses them
-  dial provider <id>            show one provider and its models
-  dial provider add <name> k=v… add a provider   (dial provider for the fields)
-  dial provider edit|rm|reset|test|models <id>
+  dial providers                list your providers: host, key, models, who uses them
+  dial presets                  the vendors dial knows: add one with just a key
+  dial provider add <preset> <key>   e.g. dial provider add deepseek sk-…
+  dial provider add <name> k=v…      a custom vendor (dial provider for the fields)
+  dial provider key|models|test|rm <id>
+  dial models                   every model agents can pick, as provider/model
 
-  dial key <VAR> <value>        store an API key for apps that see no shell env
-  dial keys                     list stored keys (values masked)
-  dial sync                     refresh the model catalog and live model lists
+  dial serve                    run the gateway alone (the app runs it too)
+  dial sync                     refresh the model catalog and vendor model lists
   dial agents                   list every supported agent
 
 agents: claude (cc), codex, gemini, opencode (oc), pi, goose, cursor, copilot, crush
@@ -56,6 +56,7 @@ var (
 )
 
 func main() {
+	gateway.Version = version
 	if err := run(os.Args[1:]); err != nil {
 		fmt.Fprintln(os.Stderr, "dial:", err)
 		os.Exit(1)
@@ -99,10 +100,14 @@ func run(args []string) error {
 		return profiles(args)
 	case "providers":
 		return providers()
+	case "presets":
+		return presets()
 	case "provider":
-		return provider(args)
-	case "key", "keys":
-		return keys(args)
+		return providerCmd(args)
+	case "models":
+		return models()
+	case "serve":
+		return serve()
 	}
 
 	a, err := agent.Find(args[0])
@@ -144,53 +149,6 @@ func set(a *agent.Agent, key, value string) error {
 		}
 	}
 	return nil
-}
-
-// keys: `dial keys`, `dial key VAR value`, `dial key VAR` (show), `dial key VAR -` (forget).
-func keys(args []string) error {
-	stored := agent.StoredKeys()
-	switch len(args) {
-	case 1:
-		if len(stored) == 0 {
-			fmt.Println(muted.Render("no stored keys —"), "dial key DEEPSEEK_API_KEY sk-…")
-			return nil
-		}
-		names := make([]string, 0, len(stored))
-		for k := range stored {
-			names = append(names, k)
-		}
-		sort.Strings(names)
-		for _, k := range names {
-			fmt.Println(" ", pad(k, 24), muted.Render(agent.Mask(stored[k])))
-		}
-		fmt.Println(faint.Render("  " + tilde(agent.KeysPath())))
-		return nil
-	case 2:
-		if v, ok := stored[args[1]]; ok {
-			fmt.Println(agent.Mask(v))
-			return nil
-		}
-		if os.Getenv(args[1]) != "" {
-			fmt.Println(muted.Render("set in the environment, not stored"))
-			return nil
-		}
-		return fmt.Errorf("%s is not set", args[1])
-	case 3:
-		v := args[2]
-		if v == "-" {
-			v = ""
-		}
-		if err := agent.SetKey(args[1], v); err != nil {
-			return err
-		}
-		if v == "" {
-			fmt.Println(green.Render("✓"), "forgot", args[1])
-		} else {
-			fmt.Println(green.Render("✓"), "stored", args[1], muted.Render(agent.Mask(v)))
-		}
-		return nil
-	}
-	return fmt.Errorf("usage: dial key <VAR> <value>")
 }
 
 func fieldForValue(a *agent.Agent, v string) *agent.Field {

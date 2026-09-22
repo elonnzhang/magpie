@@ -30,14 +30,21 @@ and there is a terminal version (`dial tui`) and a plain CLI.
 - **Edits config files surgically.** Only the one key you change is touched;
   comments, ordering and indentation in your `settings.json`, `config.toml`,
   `opencode.jsonc` or `config.yaml` survive intact. Writes are atomic.
-- **Real model lists.** When you switch to a provider, dial asks that vendor
-  which models it serves (`GET /models` with your key) and offers exactly
-  those; the [models.dev](https://models.dev) catalog, Codex's own model cache
-  and a built-in list fill in when a vendor has no list. Anything can also be
-  typed in.
-- **Providers.** DeepSeek, Kimi, GLM, MiniMax, Qwen, OpenRouter and any
-  Anthropic- or Responses-compatible gateway you add, each with its key, a
-  connection test and one-click switching of every agent that can use it.
+- **One endpoint for every agent.** dial runs a local gateway that speaks
+  OpenAI chat completions, OpenAI Responses and the Anthropic Messages API,
+  and forwards to whichever vendor serves the model. Codex, Claude Code,
+  OpenCode and the rest all point at `http://127.0.0.1:3425/v1` and pick
+  from one catalog; the translation between APIs happens in dial, streaming
+  and tool calls included.
+- **Providers with one field.** Pick a preset (Anthropic, OpenAI, Gemini,
+  DeepSeek, Kimi, GLM, MiniMax, Qwen, Mistral, Groq, xAI, OpenRouter,
+  Together, Fireworks, SiliconFlow, AiHubMix, 302.AI, Ollama, LM Studio…),
+  paste a key, done. Custom vendors need a name and a base URL. dial never
+  reads keys from your shell environment.
+- **Real model lists.** With a key in hand dial asks the vendor which models
+  it serves and offers exactly those; the [models.dev](https://models.dev)
+  catalog fills in names, reasoning efforts and the list for vendors that
+  have none. Choose which models each provider exposes, or expose them all.
 - **Profiles.** Snapshot every agent's settings under a name and switch all of
   them back in one move.
 - **Real logos, no framework.** Plain HTML over the system webview; brand
@@ -60,50 +67,63 @@ and there is a terminal version (`dial tui`) and a plain CLI.
 Provider-scoped agents (OpenCode, Pi, Goose, Crush) take `provider/model`.
 Only agents that are installed or configured are shown.
 
-## Providers
+## Providers and the gateway
 
-The *Providers* page (or `dial providers`) lists every vendor dial knows:
-its endpoints, whether a key is present, how many models it serves and
-which agents use it. Built-ins: DeepSeek, Kimi, Zhipu/Z.ai GLM, MiniMax,
-Qwen and OpenRouter, each with a global and a China endpoint where the vendor
-has one. Any Anthropic-Messages or OpenAI-Responses compatible endpoint can
-be added; built-ins can be edited, hidden or reset.
+Every model an agent can pick is spelled `provider/model` and served by
+dial's gateway, so agents never hold vendor keys or vendor URLs. Add a
+provider, and its models appear in every agent's picker:
 
 ```sh
-dial providers                       # who is configured, who has a key, who uses what
-dial provider deepseek               # endpoints, key, the models it serves
-dial provider add "My Gateway" anthropic=https://gw.example.com/anthropic env=GW_API_KEY catalog=anthropic
-dial provider edit kimi models=kimi-k3-preview
-dial provider test deepseek          # one tiny request per endpoint, with latency
-dial provider models deepseek        # re-fetch the vendor's model list
-dial provider rm kimi                # hide a built-in (reset brings it back)
-dial key DEEPSEEK_API_KEY sk-…       # keys for apps that see no shell env
+dial presets                          # the vendors dial knows, grouped: vendors, relays, local
+dial provider add deepseek sk-…       # a preset needs only the key
+dial provider add ollama              # local servers need none
+dial provider add "My Relay" url=https://relay.example.com/v1 key=sk-… models=gpt-5.5,claude-sonnet-5
+dial providers                        # host, key, exposed models, who uses what
+dial provider deepseek                # one provider in detail
+dial provider models deepseek         # re-fetch the vendor's list (add ids to choose which to expose)
+dial provider test deepseek           # one tiny request per API, with latency
+dial provider key deepseek sk-…       # replace the key
+dial provider rm deepseek
+dial models                           # the catalog agents see
+dial claude deepseek/deepseek-chat    # use it
 ```
 
-Keys come from your shell environment first, then from
-`~/.config/dial/keys` (mode 0600). The desktop app asks for a key the first
-time you pick a provider that has none.
+Custom providers take `url=` (an OpenAI-compatible base), `anthropic=` (an
+Anthropic-compatible base), or both, plus `responses=` when the vendor has a
+separate Responses endpoint, `catalog=` to borrow a models.dev list, and
+`models=` to name the models to expose. Anything a preset does not know can
+be overridden the same way.
 
-**Claude Code** — `dial claude provider deepseek` sets `ANTHROPIC_BASE_URL`,
-`ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_MODEL` and the small-model variable in the
-`env` block of `settings.json`; `provider anthropic` removes them and
-restores whatever was there. Claude Code re-reads its settings, so a running
-session picks the change up.
+The gateway listens on `127.0.0.1:3425` (`DIAL_ADDR` changes it) and starts
+with the app; `dial serve` runs it alone. It exposes:
 
-**Codex** — `dial codex provider deepseek` adds a `[model_providers.deepseek]`
-table to `config.toml`, points `model_catalog_json` at
-`~/.codex/dial-models.json` (a catalog dial writes from the vendor's live
-model list) and keeps `model`/`effort` valid. `provider openai` removes all
-of that; your ChatGPT sign-in is never touched. Any `[model_providers.*]`
-table you wrote yourself shows up as a provider too. Codex builds its model
-list once at start-up, so the Codex app (and open `codex` sessions) must be
-restarted to see the new list; dial says so after the switch.
+| Path                     | API                        |
+| ------------------------ | -------------------------- |
+| `/v1/chat/completions`   | OpenAI chat completions    |
+| `/v1/responses`          | OpenAI Responses           |
+| `/v1/messages`           | Anthropic Messages         |
+| `/v1/messages/count_tokens` | Anthropic token counting |
+| `/v1/models`             | the catalog                |
 
-**Gemini CLI** — `dial gemini auth api-key|google|vertex` sets
-`security.auth.selectedType`; the API key goes to `~/.gemini/.env`.
+Requests pass straight through when the vendor speaks the agent's API and
+are translated otherwise, streaming, tool calls and reasoning included. The
+bearer token is `dial`; the gateway only listens on loopback. `DIAL_DEBUG=1`
+logs every call, and the *Activity* toggle in the app shows the recent ones.
 
-Only DeepSeek has been verified end to end against a real account so far;
-the other built-ins follow the vendors' documented endpoints.
+**Claude Code** gets `ANTHROPIC_BASE_URL`, `ANTHROPIC_AUTH_TOKEN` and the
+model variables in the `env` block of `settings.json`; picking a native
+model (`opus`, `sonnet`…) removes them and restores whatever was there.
+
+**Codex** gets a `[model_providers.dial]` table, `model_catalog_json`
+pointing at `~/.codex/dial-models.json` (written from the catalog, so the
+models show in Codex's own list) and a valid `model`/`effort`; picking a
+native model removes all of that. Your ChatGPT sign-in is never touched.
+Codex reads its model list at start-up, so restart it after a switch.
+
+**OpenCode, Pi, Crush** get a `dial` provider entry and `dial/provider/model`.
+
+**Gemini CLI** switches `auth` between API key, Google account and Vertex;
+the API key goes to `~/.gemini/.env`.
 
 ## Install
 
@@ -134,8 +154,8 @@ dial claude opus              # set a model (agent names accept prefixes: cc, oc
 dial codex gpt-5.6-sol
 dial codex effort high        # other fields
 dial codex xhigh              # bare effort levels are recognised too
-dial codex provider deepseek  # run Codex against DeepSeek (needs DEEPSEEK_API_KEY)
-dial claude provider kimi     # Claude Code through Kimi's Anthropic-compatible endpoint
+dial codex deepseek/deepseek-chat   # any catalog model, through the gateway
+dial claude moonshot/kimi-k2.5
 dial gemini auth api-key
 dial opencode anthropic/claude-sonnet-5
 dial oc small anthropic/claude-haiku-4-5
@@ -151,9 +171,10 @@ dial sync                     # refresh the models.dev catalog and every live mo
 In the app, click any value to open a filtered list; type to search or to
 enter something that is not listed; `esc` closes the panel. Profiles are the
 chips at the bottom: click to apply, `×` to delete, *+ save current* to add.
-The *Providers* tab of the window opens each provider inline: endpoints, key,
-catalog, extra models, *Test connection* and a button per agent that can use
-it.
+The *Providers* tab of the window lists your providers with the agents on
+each; click a row to change the key or the exposed models, *Test* it, or
+click an agent icon to point that agent at one of its models. *Add
+provider* shows the presets as tiles: pick one, paste the key.
 
 Keys in the terminal dial:
 
@@ -174,8 +195,7 @@ until you start a new one.
 ## Files
 
 - `~/.config/dial/profiles.json` — saved profiles
-- `~/.config/dial/providers.json` — your providers and edits to built-ins
-- `~/.config/dial/keys` — stored API keys (0600)
+- `~/.config/dial/providers.json` — your providers, keys included (0600)
 - `~/.config/dial/stash.json` — values dial replaced, restored on switch-back
 - `~/.cache/dial/models.json` — models.dev catalog (OpenCode's cache at
   `~/.cache/opencode/models.json` is used when present)

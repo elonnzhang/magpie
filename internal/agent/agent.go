@@ -13,12 +13,11 @@ import (
 
 // Option is one value the picker offers for a field.
 type Option struct {
-	Value   string `json:"value"`
-	Label   string `json:"label,omitempty"` // display name, when the value is an id
-	Note    string `json:"note"`
-	Key     string `json:"key,omitempty"`     // env var the option needs, if any
-	NeedKey bool   `json:"needKey,omitempty"` // that key is not set anywhere yet
-	Icon    string `json:"icon,omitempty"`    // bundled icon name
+	Value string `json:"value"`
+	Label string `json:"label,omitempty"` // display name, when the value is an id
+	Note  string `json:"note"`
+	Icon  string `json:"icon,omitempty"`  // bundled icon name
+	Group string `json:"group,omitempty"` // section header in the picker
 }
 
 // Field is one tunable setting of an agent.

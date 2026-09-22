@@ -9,74 +9,149 @@ import (
 
 	"github.com/yetone/dial/internal/agent"
 	"github.com/yetone/dial/internal/catalog"
+	"github.com/yetone/dial/internal/gateway"
+	"github.com/yetone/dial/internal/provider"
 )
 
-// The providers page: everything dial knows about a vendor, plus which
-// agents can use it and which do right now.
+// The providers page: the vendors the user added, the presets they can add
+// with one key, the gateway that fronts them, and who is routed where.
+
+type modelJSON struct {
+	ID      string   `json:"id"`
+	Name    string   `json:"name"`
+	Efforts []string `json:"efforts,omitempty"`
+	On      bool     `json:"on"` // exposed to agents
+}
 
 type providerJSON struct {
-	agent.Provider
-	Host  string   `json:"host"`
-	Extra []string `json:"extra"` // the user's own model ids (Provider.Extra is shadowed by Models below)
-	Key   struct {
-		State  string `json:"state"` // "env", "stored" or ""
-		Masked string `json:"masked"`
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	Icon      string `json:"icon"`
+	Preset    string `json:"preset"`
+	Host      string `json:"host"`
+	Chat      string `json:"chat"`
+	Responses string `json:"responses"`
+	Anthropic string `json:"anthropic"`
+	Catalog   string `json:"catalog"`
+	Website   string `json:"website"`
+	KeysURL   string `json:"keysUrl"`
+	Key       struct {
+		Set      bool   `json:"set"`
+		Masked   string `json:"masked"`
+		Optional bool   `json:"optional"`
 	} `json:"key"`
-	Models struct {
-		Count   int    `json:"count"`
-		Live    bool   `json:"live"`    // the list came from the vendor itself
-		Fetched string `json:"fetched"` // when, as "3h ago"
-	} `json:"models"`
-	Agents []providerAgent `json:"agents"`
+	Ready     bool            `json:"ready"`
+	Chosen    []string        `json:"chosen"`  // the user's explicit picks, if any
+	Models    []modelJSON     `json:"models"`  // everything the vendor lists, exposed ones flagged
+	Exposed   int             `json:"exposed"` // how many reach the agents
+	Fetched   string          `json:"fetched"` // "3h ago" when the list came from the vendor
+	Agents    []providerAgent `json:"agents"`  // detected agents, current ones flagged
+	Sponsored bool            `json:"sponsored"`
 }
 
 type providerAgent struct {
 	ID      string `json:"id"`
 	Name    string `json:"name"`
 	Icon    string `json:"icon"`
-	Current bool   `json:"current"` // this agent is on this provider now
+	Current bool   `json:"current"` // this agent is on one of this provider's models now
+	Model   string `json:"model,omitempty"`
+}
+
+type presetJSON struct {
+	provider.PresetDef
+	Added bool `json:"added"`
+}
+
+type gatewayJSON struct {
+	URL     string         `json:"url"`
+	Running bool           `json:"running"`
+	Mine    bool           `json:"mine"` // this process serves it
+	Models  int            `json:"models"`
+	Calls   []gateway.Call `json:"calls"`
 }
 
 type providersJSON struct {
-	Providers []providerJSON   `json:"providers"`
-	Hidden    []agent.Provider `json:"hidden"`
-	Catalogs  []string         `json:"catalogs"` // models.dev provider ids, for the catalog field
+	Providers []providerJSON `json:"providers"`
+	Presets   []presetJSON   `json:"presets"`
+	Gateway   gatewayJSON    `json:"gateway"`
 }
 
-func providerInfo(p agent.Provider, agents []*agent.Agent) providerJSON {
-	out := providerJSON{Provider: p, Host: p.Host(), Extra: p.Extra, Agents: []providerAgent{}}
-	if out.Extra == nil {
-		out.Extra = []string{}
+// currentProvider reads which provider (and model) an agent is routed to now.
+func currentProvider(a *agent.Agent) (string, string) {
+	if len(a.Fields) == 0 {
+		return "", ""
 	}
-	out.Key.State, out.Key.Masked = agent.KeyState(p.EnvKey)
-	out.Models.Count = len(p.Models())
-	if n, t, ok := p.LiveModels(); ok {
-		out.Models.Live, out.Models.Count, out.Models.Fetched = true, n, ago(t)
+	v := strings.TrimPrefix(a.Fields[0].Get(), "dial/")
+	if pid, model, ok := strings.Cut(v, "/"); ok {
+		if _, err := provider.Find(pid); err == nil {
+			return pid, model
+		}
+	}
+	return "", ""
+}
+
+func providerInfo(p provider.Provider, agents []*agent.Agent) providerJSON {
+	out := providerJSON{
+		ID: p.ID, Name: p.Name, Icon: p.Icon, Preset: p.Preset, Host: p.Host(),
+		Chat: p.Chat, Responses: p.Responses, Anthropic: p.Anthropic,
+		Catalog: p.Catalog, Website: p.Website, KeysURL: p.KeysURL,
+		Ready: p.Ready(), Chosen: p.Models, Models: []modelJSON{}, Agents: []providerAgent{},
+	}
+	if out.Chosen == nil {
+		out.Chosen = []string{}
+	}
+	if pr := provider.Preset(p.Preset); pr != nil {
+		out.Sponsored = pr.Sponsored
+		out.Key.Optional = pr.NoKey
+	}
+	out.Key.Set = p.Key != ""
+	out.Key.Masked = provider.Mask(p.Key)
+	if !out.Key.Set && p.Ready() {
+		out.Key.Optional = true
+	}
+	exposed := map[string]bool{}
+	for _, m := range p.Exposed() {
+		exposed[m.ID] = true
+	}
+	seen := map[string]bool{}
+	for _, m := range p.Available() {
+		seen[m.ID] = true
+		out.Models = append(out.Models, modelJSON{ID: m.ID, Name: m.Name, Efforts: m.Efforts, On: exposed[m.ID]})
+	}
+	// picks the vendor list does not know go first, so they are visible
+	for _, m := range p.Exposed() {
+		if !seen[m.ID] {
+			out.Models = append([]modelJSON{{ID: m.ID, Name: m.Name, Efforts: m.Efforts, On: true}}, out.Models...)
+		}
+	}
+	out.Exposed = len(exposed)
+	if t, ok := p.Fetched(); ok {
+		out.Fetched = ago(t)
 	}
 	for _, a := range agents {
-		f := a.Field("provider")
-		if f == nil {
-			continue
-		}
-		cur := f.Get()
-		for _, o := range f.Options(nil) {
-			if o.Value == p.ID {
-				out.Agents = append(out.Agents, providerAgent{ID: a.ID, Name: a.Name, Icon: a.Icon, Current: cur == p.ID})
-				break
-			}
-		}
+		pid, model := currentProvider(a)
+		out.Agents = append(out.Agents, providerAgent{ID: a.ID, Name: a.Name, Icon: a.Icon, Current: pid == p.ID, Model: model})
 	}
 	return out
 }
 
-func providersState() providersJSON {
+func providersState(gw *gateway.Server) providersJSON {
 	agents := agent.Detected()
-	s := providersJSON{Providers: []providerJSON{}, Hidden: agent.HiddenProviders(), Catalogs: catalog.Providers()}
-	if s.Hidden == nil {
-		s.Hidden = []agent.Provider{}
-	}
-	for _, p := range agent.Providers() {
+	s := providersJSON{Providers: []providerJSON{}, Presets: []presetJSON{}}
+	have := map[string]bool{}
+	for _, p := range provider.All() {
+		have[p.ID] = true
 		s.Providers = append(s.Providers, providerInfo(p, agents))
+	}
+	for _, pr := range provider.Presets() {
+		s.Presets = append(s.Presets, presetJSON{PresetDef: pr, Added: have[pr.ID]})
+	}
+	s.Gateway = gatewayJSON{URL: gateway.URL(), Models: len(provider.Catalog()), Calls: []gateway.Call{}}
+	if gw != nil {
+		s.Gateway.Running, s.Gateway.Mine = true, true
+		s.Gateway.Calls = gw.Recent()
+	} else {
+		s.Gateway.Running = gateway.Running()
 	}
 	return s
 }
@@ -95,82 +170,85 @@ func ago(t time.Time) string {
 	}
 }
 
-func providerRoutes(mux *http.ServeMux, w Windows) {
+func providerRoutes(mux *http.ServeMux, w Windows, gw *gateway.Server) {
 	mux.HandleFunc("GET /api/providers", func(rw http.ResponseWriter, r *http.Request) {
-		writeJSON(rw, providersState())
+		writeJSON(rw, providersState(gw))
 	})
 	mux.HandleFunc("POST /api/provider/{action}", func(rw http.ResponseWriter, r *http.Request) {
-		var in struct {
-			agent.Provider
-			Key string `json:"key"` // API key to store alongside a save, if given
-		}
+		var in provider.Provider
 		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
 			fail(rw, err)
 			return
 		}
-		var err error
 		switch r.PathValue("action") {
 		case "save":
-			if err = agent.SaveProvider(in.Provider); err == nil && in.Key != "" {
-				if p, e := agent.FindProvider(in.ID); e == nil {
-					err = agent.SetKey(p.EnvKey, in.Key)
+			// a preset needs nothing but the key; a saved provider keeps
+			// its key when the form left it blank
+			if pr, err := provider.FromPreset(in.Preset); err == nil && in.Chat == "" && in.Responses == "" && in.Anthropic == "" {
+				pr.Key, pr.Models = in.Key, in.Models
+				if in.Name != "" {
+					pr.Name = in.Name
 				}
+				if in.ID != "" {
+					pr.ID = in.ID
+				}
+				in = pr
 			}
-		case "delete":
-			err = agent.DeleteProvider(in.ID)
-		case "reset":
-			err = agent.ResetProvider(in.ID)
-		case "test":
-			p, e := agent.FindProvider(in.ID)
-			if e != nil {
-				fail(rw, e)
+			old, _ := provider.Find(in.ID)
+			if in.Key == "" && old != nil {
+				in.Key = old.Key
+			}
+			if err := provider.Save(in); err != nil {
+				fail(rw, err)
 				return
 			}
-			ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
+			// a new key means a new vendor list is worth a try; keep it short
+			if p, err := provider.Find(in.ID); err == nil && p.Ready() && (old == nil || old.Key != p.Key) {
+				ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)
+				p.Fetch(ctx)
+				cancel()
+			}
+		case "delete":
+			if err := provider.Delete(in.ID); err != nil {
+				fail(rw, err)
+				return
+			}
+		case "test":
+			p, err := provider.Find(in.ID)
+			if err != nil {
+				fail(rw, err)
+				return
+			}
+			ctx, cancel := context.WithTimeout(r.Context(), 25*time.Second)
 			defer cancel()
 			writeJSON(rw, struct {
-				Results  []agent.TestResult `json:"results"`
-				Provider providerJSON       `json:"provider"`
+				Results  []provider.Result `json:"results"`
+				Provider providerJSON      `json:"provider"`
 			}{p.Test(ctx), providerInfo(*p, agent.Detected())})
 			return
 		case "models":
-			p, e := agent.FindProvider(in.ID)
-			if e != nil {
-				fail(rw, e)
+			p, err := provider.Find(in.ID)
+			if err != nil {
+				fail(rw, err)
 				return
 			}
 			ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
 			defer cancel()
-			if _, err = p.RefreshModels(ctx); err != nil {
+			var ms []catalog.Model
+			if ms, err = p.Fetch(ctx); err != nil {
 				fail(rw, err)
 				return
 			}
 			writeJSON(rw, struct {
-				Models   []catalog.Model `json:"models"`
-				Provider providerJSON    `json:"provider"`
-			}{p.Models(), providerInfo(*p, agent.Detected())})
+				Count    int          `json:"count"`
+				Provider providerJSON `json:"provider"`
+			}{len(ms), providerInfo(*p, agent.Detected())})
 			return
 		default:
 			http.NotFound(rw, r)
 			return
 		}
-		if err != nil {
-			fail(rw, err)
-			return
-		}
-		writeJSON(rw, providersState())
-	})
-	mux.HandleFunc("POST /api/key", func(rw http.ResponseWriter, r *http.Request) {
-		var in struct{ Env, Value string }
-		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
-			fail(rw, err)
-			return
-		}
-		if err := agent.SetKey(in.Env, in.Value); err != nil {
-			fail(rw, err)
-			return
-		}
-		writeJSON(rw, providersState())
+		writeJSON(rw, providersState(gw))
 	})
 	mux.HandleFunc("POST /api/open", func(rw http.ResponseWriter, r *http.Request) {
 		var in struct{ URL string }

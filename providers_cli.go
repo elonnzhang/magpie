@@ -4,62 +4,64 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"sort"
 	"strings"
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/yetone/dial/internal/agent"
+	"github.com/yetone/dial/internal/gateway"
+	"github.com/yetone/dial/internal/provider"
 )
 
 var amber = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#B45309", Dark: "#F2B544"})
 
 const providerUsage = `usage:
-  dial providers                          list providers, keys and who uses them
-  dial provider <id>                      show one provider
-  dial provider add <name> k=v…           k: anthropic, responses, env, catalog, models, website, keys
-  dial provider edit <id> k=v…            change fields of a provider (built-ins get an edited copy)
-  dial provider rm <id>                   delete a custom provider, or hide a built-in
-  dial provider reset <id>                built-in back to dial's defaults (also un-hides it)
-  dial provider test <id>                 send a tiny request through each endpoint
-  dial provider models <id>               fetch the vendor's model list and print it
+  dial providers                        list providers, keys and who uses them
+  dial presets                          list the vendors dial knows out of the box
+  dial provider <id>                    show one provider and its models
+  dial provider add <preset> <key>      add a preset vendor   e.g. dial provider add deepseek sk-…
+  dial provider add <name> k=v…         add a custom vendor   k: url, anthropic, responses, key, models, catalog
+  dial provider key <id> <key>          change the API key
+  dial provider models <id> [ids…]      fetch the vendor's model list, or choose which models to expose
+  dial provider test <id>               send a tiny request through each endpoint
+  dial provider rm <id>                 remove a provider
 
-  e.g. dial provider add "My Gateway" anthropic=https://gw.example.com/anthropic env=GW_API_KEY catalog=anthropic`
+  e.g. dial provider add "My Relay" url=https://relay.example.com/v1 key=sk-…
+       dial provider add "Own Claude" anthropic=https://gw.example.com key=sk-… catalog=anthropic`
 
 // providers: `dial providers`
 func providers() error {
-	agents := agent.Detected()
+	all := provider.All()
+	if len(all) == 0 {
+		fmt.Println(muted.Render("no providers yet ·"), "dial provider add deepseek sk-…", muted.Render("· dial presets lists the vendors"))
+		return nil
+	}
+	uses := usesByProvider()
 	type row struct{ name, id, host, key, models, uses string }
 	var rows []row
 	w := [5]int{}
-	for _, p := range agent.Providers() {
+	for _, p := range all {
 		r := row{name: bold.Render(p.Name), id: muted.Render(p.ID), host: p.Host()}
-		if !p.Builtin {
+		if p.Preset == "" {
 			r.name += " " + faint.Render("custom")
 		}
-		switch state, _ := agent.KeyState(p.EnvKey); state {
-		case "env":
-			r.key = green.Render("●") + " $" + p.EnvKey
-		case "stored":
-			r.key = green.Render("●") + " " + p.EnvKey + muted.Render(" (stored)")
+		switch {
+		case p.Key != "":
+			r.key = green.Render("●") + " " + muted.Render(provider.Mask(p.Key))
+		case p.Ready():
+			r.key = green.Render("●") + " " + muted.Render("no key needed")
 		default:
 			r.key = amber.Render("○ no key")
 		}
-		n := len(p.Models())
-		if live, t, ok := p.LiveModels(); ok {
-			r.models = fmt.Sprintf("%d models", live) + muted.Render(" · fetched "+ago(t))
+		n := len(p.Exposed())
+		if t, ok := p.Fetched(); ok {
+			r.models = fmt.Sprintf("%d of %d models", n, len(p.Available())) + muted.Render(" · fetched "+ago(t))
 		} else {
 			r.models = fmt.Sprintf("%d models", n)
 		}
-		var uses []string
-		for _, a := range agents {
-			if f := a.Field("provider"); f != nil && f.Get() == p.ID {
-				uses = append(uses, a.Name)
-			}
-		}
-		if len(uses) > 0 {
-			r.uses = green.Render("← " + strings.Join(uses, ", "))
+		if u := uses[p.ID]; len(u) > 0 {
+			r.uses = green.Render("← " + strings.Join(u, ", "))
 		}
 		for i, s := range []string{r.name, r.id, r.host, r.key, r.models} {
 			w[i] = max(w[i], lipgloss.Width(s))
@@ -69,87 +71,124 @@ func providers() error {
 	for _, r := range rows {
 		fmt.Printf("  %s  %s  %s  %s  %s  %s\n", pad(r.name, w[0]), pad(r.id, w[1]), pad(r.host, w[2]), pad(r.key, w[3]), pad(r.models, w[4]), r.uses)
 	}
-	if h := agent.HiddenProviders(); len(h) > 0 {
-		names := make([]string, 0, len(h))
-		for _, p := range h {
-			names = append(names, p.ID)
+	return nil
+}
+
+// usesByProvider maps provider ids to the agents currently routed to them.
+func usesByProvider() map[string][]string {
+	out := map[string][]string{}
+	for _, a := range agent.Detected() {
+		if len(a.Fields) == 0 {
+			continue
 		}
-		fmt.Println(faint.Render("  hidden: " + strings.Join(names, ", ") + "  (dial provider reset <id>)"))
+		v := a.Fields[0].Get()
+		v = strings.TrimPrefix(v, "dial/")
+		if pid, _, ok := strings.Cut(v, "/"); ok {
+			out[pid] = append(out[pid], a.Name)
+		}
+	}
+	return out
+}
+
+// presets: `dial presets`
+func presets() error {
+	have := map[string]bool{}
+	for _, p := range provider.All() {
+		have[p.ID] = true
+	}
+	kind := provider.Kind("")
+	for _, pr := range provider.Presets() {
+		if pr.Kind != kind {
+			kind = pr.Kind
+			fmt.Println(faint.Render("  " + map[provider.Kind]string{provider.KindVendor: "vendors", provider.KindRelay: "relays", provider.KindLocal: "local"}[kind]))
+		}
+		name := bold.Render(pr.Name)
+		if pr.Sponsored {
+			name += " " + faint.Render("sponsored")
+		}
+		state := muted.Render("dial provider add " + pr.ID + " <key>")
+		if pr.NoKey {
+			state = muted.Render("dial provider add " + pr.ID)
+		}
+		if have[pr.ID] {
+			state = green.Render("✓ added")
+		}
+		fmt.Printf("  %s  %s  %s\n", pad(name, 28), pad(muted.Render(pr.ID), 14), state)
 	}
 	return nil
 }
 
-// provider: `dial provider <verb> …`
-func provider(args []string) error {
+// models: `dial models` — the catalog every agent sees
+func models() error {
+	entries := provider.Catalog()
+	if len(entries) == 0 {
+		fmt.Println(muted.Render("no models yet · add a provider first:"), "dial provider add deepseek sk-…")
+		return nil
+	}
+	w := 0
+	for _, e := range entries {
+		w = max(w, len(e.ID))
+	}
+	last := ""
+	for _, e := range entries {
+		if e.Provider.ID != last {
+			last = e.Provider.ID
+			fmt.Println(faint.Render("  " + e.Provider.Name))
+		}
+		line := "  " + pad(e.ID, w)
+		if e.Name != "" && e.Name != e.Model {
+			line += "  " + muted.Render(e.Name)
+		}
+		if len(e.Efforts) > 0 {
+			line += faint.Render("  " + strings.Join(e.Efforts, "/"))
+		}
+		fmt.Println(line)
+	}
+	fmt.Println(faint.Render("  " + gateway.URL() + "/v1"))
+	return nil
+}
+
+// providerCmd: `dial provider <verb> …`
+func providerCmd(args []string) error {
 	if len(args) < 2 {
 		return fmt.Errorf("%s", providerUsage)
 	}
 	verb, rest := args[1], args[2:]
 	switch verb {
 	case "add":
-		if len(rest) == 0 {
-			return fmt.Errorf("dial provider add <name> k=v…\n\n%s", providerUsage)
+		return addProvider(rest)
+	case "key":
+		if len(rest) != 2 {
+			return fmt.Errorf("dial provider key <id> <key>")
 		}
-		p := agent.Provider{Name: rest[0]}
-		if err := applyPairs(&p, rest[1:]); err != nil {
-			return err
-		}
-		if err := agent.SaveProvider(p); err != nil {
-			return err
-		}
-		p.ID = agent.ProviderID(first(p.ID, p.Name))
-		fmt.Println(green.Render("✓"), "added", p.Name, muted.Render("("+p.ID+")"))
-		if agent.Key(p.EnvKey) == "" {
-			fmt.Println(muted.Render("  set a key:"), "dial key", p.EnvKey, "…")
-		}
-		return nil
-	case "edit":
-		if len(rest) < 2 {
-			return fmt.Errorf("dial provider edit <id> k=v…\n\n%s", providerUsage)
-		}
-		p, err := agent.FindProvider(rest[0])
+		p, err := provider.Find(rest[0])
 		if err != nil {
 			return err
 		}
-		if err := applyPairs(p, rest[1:]); err != nil {
+		p.Key = rest[1]
+		if err := provider.Save(*p); err != nil {
 			return err
 		}
-		if err := agent.SaveProvider(*p); err != nil {
-			return err
-		}
-		fmt.Println(green.Render("✓"), "saved", p.Name)
+		fmt.Println(green.Render("✓"), p.Name, "key", muted.Render(provider.Mask(p.Key)))
 		return nil
-	case "rm", "remove", "delete", "hide":
+	case "rm", "remove", "delete":
 		if len(rest) != 1 {
 			return fmt.Errorf("dial provider rm <id>")
 		}
-		p, err := agent.FindProvider(rest[0])
+		p, err := provider.Find(rest[0])
 		if err != nil {
 			return err
 		}
-		if err := agent.DeleteProvider(p.ID); err != nil {
+		if err := provider.Delete(p.ID); err != nil {
 			return err
 		}
-		if p.Builtin {
-			fmt.Println(green.Render("✓"), "hid", p.Name, muted.Render("— dial provider reset "+p.ID+" brings it back"))
-		} else {
-			fmt.Println(green.Render("✓"), "deleted", p.Name)
-		}
-		return nil
-	case "reset":
-		if len(rest) != 1 {
-			return fmt.Errorf("dial provider reset <id>")
-		}
-		if err := agent.ResetProvider(rest[0]); err != nil {
-			return err
-		}
-		fmt.Println(green.Render("✓"), rest[0], "is back to dial's defaults")
+		fmt.Println(green.Render("✓"), "removed", p.Name)
 		return nil
 	case "test":
 		if len(rest) != 1 {
 			return fmt.Errorf("dial provider test <id>")
 		}
-		p, err := agent.FindProvider(rest[0])
+		p, err := provider.Find(rest[0])
 		if err != nil {
 			return err
 		}
@@ -173,16 +212,26 @@ func provider(args []string) error {
 		}
 		return nil
 	case "models":
-		if len(rest) != 1 {
-			return fmt.Errorf("dial provider models <id>")
+		if len(rest) < 1 {
+			return fmt.Errorf("dial provider models <id> [model ids to expose…]")
 		}
-		p, err := agent.FindProvider(rest[0])
+		p, err := provider.Find(rest[0])
 		if err != nil {
 			return err
 		}
+		if len(rest) > 1 {
+			p.Models = rest[1:]
+			if len(rest) == 2 && (rest[1] == "-" || rest[1] == "all") {
+				p.Models = nil
+			}
+			if err := provider.Save(*p); err != nil {
+				return err
+			}
+			return showProvider(*p)
+		}
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
-		ms, err := p.RefreshModels(ctx)
+		ms, err := p.Fetch(ctx)
 		if err != nil {
 			return err
 		}
@@ -190,59 +239,108 @@ func provider(args []string) error {
 		return showProvider(*p)
 	}
 	// `dial provider <id>`
-	p, err := agent.FindProvider(verb)
+	p, err := provider.Find(verb)
 	if err != nil {
 		return err
 	}
 	return showProvider(*p)
 }
 
-func showProvider(p agent.Provider) error {
+// addProvider: `dial provider add <preset> [key]` or `dial provider add <name> k=v…`
+func addProvider(rest []string) error {
+	if len(rest) == 0 {
+		return fmt.Errorf("dial provider add <preset> <key>   or   dial provider add <name> k=v…\n\n%s", providerUsage)
+	}
+	var p provider.Provider
+	if pr, err := provider.FromPreset(strings.ToLower(rest[0])); err == nil {
+		p = pr
+		if len(rest) > 1 && !strings.Contains(rest[1], "=") {
+			p.Key = rest[1]
+			rest = rest[2:]
+		} else {
+			rest = rest[1:]
+		}
+	} else {
+		p = provider.Provider{Name: rest[0]}
+		rest = rest[1:]
+	}
+	if err := applyPairs(&p, rest); err != nil {
+		return err
+	}
+	if err := provider.Save(p); err != nil {
+		return err
+	}
+	saved, err := provider.Find(p.ID)
+	if err != nil {
+		saved, err = provider.Find(p.Name)
+	}
+	if err != nil {
+		return err
+	}
+	fmt.Println(green.Render("✓"), "added", saved.Name, muted.Render("("+saved.ID+")"))
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	if ms, err := saved.Fetch(ctx); err == nil {
+		fmt.Println(green.Render("✓"), len(ms), "models from", saved.Host())
+	}
+	n := len(saved.Exposed())
+	if n == 0 {
+		fmt.Println(amber.Render("!"), "no models exposed yet ·", "dial provider models", saved.ID, "<ids…>")
+	} else {
+		fmt.Printf("  %d models in the catalog · %s\n", n, muted.Render("dial models"))
+	}
+	return nil
+}
+
+func showProvider(p provider.Provider) error {
 	kv := func(k, v string) {
 		if v != "" {
 			fmt.Printf("  %s %s\n", muted.Render(pad(k, 10)), v)
 		}
 	}
 	name := bold.Render(p.Name) + muted.Render("  "+p.ID)
-	if !p.Builtin {
+	if p.Preset == "" {
 		name += faint.Render("  custom")
 	}
 	fmt.Println(" ", name)
-	kv("anthropic", p.Anthropic)
+	kv("chat", p.Chat)
 	kv("responses", p.Responses)
-	state, masked := agent.KeyState(p.EnvKey)
-	switch state {
-	case "env":
-		kv("key", "$"+p.EnvKey+" "+muted.Render(masked))
-	case "stored":
-		kv("key", p.EnvKey+" "+muted.Render(masked+" · stored"))
+	kv("anthropic", p.Anthropic)
+	switch {
+	case p.Key != "":
+		kv("key", muted.Render(provider.Mask(p.Key)))
+	case p.Ready():
+		kv("key", muted.Render("none needed"))
 	default:
-		kv("key", amber.Render("$"+p.EnvKey+" is not set")+muted.Render("  dial key "+p.EnvKey+" …"))
+		kv("key", amber.Render("not set")+muted.Render("  dial provider key "+p.ID+" …"))
 	}
 	kv("catalog", p.Catalog)
 	kv("website", p.Website)
 	kv("keys", p.KeysURL)
-	ms := p.Models()
-	src := "catalog"
-	if _, t, ok := p.LiveModels(); ok {
+	ms := p.Exposed()
+	src := "models.dev"
+	if t, ok := p.Fetched(); ok {
 		src = p.Host() + " · fetched " + ago(t)
 	}
-	kv("models", fmt.Sprintf("%d %s", len(ms), muted.Render("from "+src)))
+	kv("models", fmt.Sprintf("%d exposed of %d %s", len(ms), len(p.Available()), muted.Render("from "+src)))
 	for i, m := range ms {
 		if i == 12 {
 			fmt.Println(faint.Render(fmt.Sprintf("             … %d more", len(ms)-12)))
 			break
 		}
-		line := "             " + m.ID
+		line := "             " + p.ID + "/" + m.ID
 		if m.Name != "" && m.Name != m.ID {
 			line += muted.Render("  " + m.Name)
 		}
 		fmt.Println(line)
 	}
+	if u := usesByProvider()[p.ID]; len(u) > 0 {
+		kv("used by", green.Render(strings.Join(u, ", ")))
+	}
 	return nil
 }
 
-func applyPairs(p *agent.Provider, pairs []string) error {
+func applyPairs(p *provider.Provider, pairs []string) error {
 	for _, kv := range pairs {
 		k, v, ok := strings.Cut(kv, "=")
 		if !ok {
@@ -253,34 +351,29 @@ func applyPairs(p *agent.Provider, pairs []string) error {
 			p.ID = v
 		case "name":
 			p.Name = v
+		case "url", "chat", "openai":
+			p.Chat = v
+		case "responses":
+			p.Responses = v
 		case "anthropic":
 			p.Anthropic = v
-		case "responses", "openai":
-			p.Responses = v
-		case "env", "key":
-			p.EnvKey = v
+		case "key":
+			p.Key = v
 		case "catalog":
 			p.Catalog = v
-		case "small":
-			p.Small = v
 		case "models":
-			p.Extra = strings.FieldsFunc(v, func(r rune) bool { return r == ',' || r == ' ' })
+			p.Models = strings.FieldsFunc(v, func(r rune) bool { return r == ',' || r == ' ' })
 		case "website":
 			p.Website = v
 		case "keys":
 			p.KeysURL = v
+		case "icon":
+			p.Icon = v
 		default:
 			return fmt.Errorf("unknown field %q\n\n%s", k, providerUsage)
 		}
 	}
 	return nil
-}
-
-func first(a, b string) string {
-	if a != "" {
-		return a
-	}
-	return b
 }
 
 func ago(t time.Time) string {
@@ -297,23 +390,38 @@ func ago(t time.Time) string {
 	}
 }
 
-// refreshLive re-fetches the vendor model list of every provider that has a
-// key; `dial sync` calls it after the catalog download.
+// refreshLive re-fetches the model list of every ready provider; `dial sync`
+// calls it after the catalog download.
 func refreshLive(ctx context.Context) {
 	var names []string
-	for _, p := range agent.Providers() {
-		if agent.Key(p.EnvKey) == "" {
+	for _, p := range provider.All() {
+		if !p.Ready() {
 			continue
 		}
 		c, cancel := context.WithTimeout(ctx, 8*time.Second)
-		ms, err := p.RefreshModels(c)
+		ms, err := p.Fetch(c)
 		cancel()
 		if err == nil {
 			names = append(names, fmt.Sprintf("%s (%d)", p.ID, len(ms)))
 		}
 	}
-	sort.Strings(names)
 	if len(names) > 0 {
-		fmt.Println(green.Render("✓"), "live model lists:", strings.Join(names, ", "))
+		fmt.Println(green.Render("✓"), "model lists:", strings.Join(names, ", "))
 	}
+}
+
+// serve: `dial serve` — the gateway alone, in the foreground.
+func serve() error {
+	s := gateway.New()
+	fmt.Println(green.Render("●"), "dial gateway on", bold.Render(gateway.URL()))
+	fmt.Println(muted.Render("  OpenAI  "), gateway.URL()+"/v1/chat/completions", muted.Render("·"), gateway.URL()+"/v1/responses")
+	fmt.Println(muted.Render("  Anthropic"), gateway.URL()+"/v1/messages")
+	fmt.Println(muted.Render("  key     "), gateway.Token, muted.Render("(anything works; the gateway only listens on localhost)"))
+	n := len(provider.Catalog())
+	if n == 0 {
+		fmt.Println(amber.Render("!"), "no models yet ·", "dial provider add deepseek sk-…")
+	} else {
+		fmt.Printf("  %d models · %s\n", n, muted.Render("dial models"))
+	}
+	return s.ListenAndServe(context.Background())
 }

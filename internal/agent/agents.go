@@ -11,6 +11,8 @@ import (
 
 	"github.com/yetone/dial/internal/catalog"
 	"github.com/yetone/dial/internal/edit"
+	"github.com/yetone/dial/internal/gateway"
+	"github.com/yetone/dial/internal/provider"
 )
 
 // All returns every agent dial knows about, detected or not.
@@ -69,6 +71,8 @@ func pairSet(set func(...edit.KV) error, pKey, mKey string) func(string) error {
 	}
 }
 
+func hostOf(u string) string { return provider.HostOf(u) }
+
 // ---- option builders -------------------------------------------------------
 
 func options(models []catalog.Model, prefix string) []Option {
@@ -87,15 +91,14 @@ func static(vals ...string) []Option {
 	return out
 }
 
-// providerOptions lists provider/model pairs for every provider the user has
-// credentials for: keys of an auth file, API-key env vars, and whatever the
-// current value already uses.
-func providerOptions(authFile string, cur string, extra ...string) []Option {
+// ownOptions lists provider/model pairs an agent reaches on its own: the
+// providers in its auth file, plus whatever the current value already uses.
+func ownOptions(authFile string, cur string, extra ...string) []Option {
 	set := map[string]bool{}
 	for _, p := range extra {
 		set[p] = true
 	}
-	if p, _, ok := strings.Cut(cur, "/"); ok {
+	if p, _, ok := strings.Cut(cur, "/"); ok && p != dialID {
 		set[p] = true
 	}
 	if b, err := os.ReadFile(authFile); err == nil {
@@ -106,11 +109,6 @@ func providerOptions(authFile string, cur string, extra ...string) []Option {
 			}
 		}
 	}
-	for _, p := range catalog.Providers() {
-		if catalog.ProviderAvailable(p) {
-			set[p] = true
-		}
-	}
 	providers := make([]string, 0, len(set))
 	for p := range set {
 		providers = append(providers, p)
@@ -118,12 +116,46 @@ func providerOptions(authFile string, cur string, extra ...string) []Option {
 	sort.Strings(providers)
 	var out []Option
 	for _, p := range providers {
-		out = append(out, options(catalog.Provider(p), p+"/")...)
+		out = append(out, group(p, options(catalog.Provider(p), p+"/"))...)
 	}
 	return out
 }
 
 // ---- agents ----------------------------------------------------------------
+
+// dialProviderJSON is the provider block agents with JSON configs get.
+func dialProviderJSON(shape string) any {
+	models := dialModels()
+	switch shape {
+	case "opencode":
+		ms := map[string]any{}
+		for _, m := range models {
+			ms[m.ID] = map[string]any{"name": m.Name}
+		}
+		return map[string]any{"npm": "@ai-sdk/openai-compatible", "name": "dial",
+			"options": map[string]any{"baseURL": gatewayV1(), "apiKey": gateway.Token}, "models": ms}
+	case "crush":
+		var ms []map[string]any
+		for _, m := range models {
+			ms = append(ms, map[string]any{"id": m.ID, "name": m.Name, "context_window": 200000, "default_max_tokens": 16384,
+				"can_reason": len(m.Efforts) > 0})
+		}
+		if ms == nil {
+			ms = []map[string]any{}
+		}
+		return map[string]any{"type": "openai", "name": "dial", "base_url": gatewayV1(), "api_key": gateway.Token, "models": ms}
+	case "pi":
+		var ms []map[string]any
+		for _, m := range models {
+			ms = append(ms, map[string]any{"id": m.ID, "name": m.Name})
+		}
+		if ms == nil {
+			ms = []map[string]any{}
+		}
+		return map[string]any{"name": "dial", "baseUrl": gatewayV1(), "api": "openai-completions", "apiKey": gateway.Token, "models": ms}
+	}
+	return nil
+}
 
 func opencode(home, cfg string) *Agent {
 	dir := filepath.Join(cfg, "opencode")
@@ -133,14 +165,26 @@ func opencode(home, cfg string) *Agent {
 	}
 	auth := filepath.Join(home, ".local", "share", "opencode", "auth.json")
 	opts := func(key string) func(map[string]string) []Option {
-		return func(cur map[string]string) []Option { return providerOptions(auth, cur[key]) }
+		return func(cur map[string]string) []Option {
+			return append(ownOptions(auth, cur[key]), viaDial(dialID+"/")...)
+		}
+	}
+	set := func(key string) func(string) error {
+		return func(v string) error {
+			if ref, ok := strings.CutPrefix(v, dialID+"/"); ok && isDial(ref) {
+				if err := edit.SetJSON(path, edit.KV{Path: "provider." + dialID, Value: dialProviderJSON("opencode")}); err != nil {
+					return err
+				}
+			}
+			return edit.SetJSON(path, edit.KV{Path: key, Value: v})
+		}
 	}
 	return &Agent{
 		ID: "opencode", Name: "OpenCode", Icon: "opencode", Aliases: []string{"oc"},
 		Bin: "opencode", Dir: dir, Path: path,
 		Fields: []Field{
-			{Key: "model", Label: "model", Get: jsonGet(path, "model"), Set: jsonSet(path, "model"), Options: opts("model")},
-			{Key: "small", Label: "small", Get: jsonGet(path, "small_model"), Set: jsonSet(path, "small_model"), Options: opts("small")},
+			{Key: "model", Label: "model", Get: jsonGet(path, "model"), Set: set("model"), Options: opts("model")},
+			{Key: "small", Label: "small", Get: jsonGet(path, "small_model"), Set: set("small_model"), Options: opts("small")},
 		},
 	}
 }
@@ -148,16 +192,27 @@ func opencode(home, cfg string) *Agent {
 func pi(home string) *Agent {
 	dir := filepath.Join(home, ".pi", "agent")
 	path := filepath.Join(dir, "settings.json")
+	modelsPath := filepath.Join(dir, "models.json")
 	auth := filepath.Join(dir, "auth.json")
 	get := func(k string) (string, bool) { return edit.GetJSON(path, k) }
 	set := func(kvs ...edit.KV) error { return edit.SetJSON(path, kvs...) }
+	pair := pairSet(set, "defaultProvider", "defaultModel")
 	return &Agent{
 		ID: "pi", Name: "Pi", Icon: "pi", Bin: "pi", Dir: dir, Path: path,
 		Fields: []Field{{
 			Key: "model", Label: "model",
-			Get:     pairGet(get, "defaultProvider", "defaultModel"),
-			Set:     pairSet(set, "defaultProvider", "defaultModel"),
-			Options: func(cur map[string]string) []Option { return providerOptions(auth, cur["model"]) },
+			Get: pairGet(get, "defaultProvider", "defaultModel"),
+			Set: func(v string) error {
+				if ref, ok := strings.CutPrefix(v, dialID+"/"); ok && isDial(ref) {
+					if err := edit.SetJSON(modelsPath, edit.KV{Path: "providers." + dialID, Value: dialProviderJSON("pi")}); err != nil {
+						return err
+					}
+				}
+				return pair(v)
+			},
+			Options: func(cur map[string]string) []Option {
+				return append(ownOptions(auth, cur["model"]), viaDial(dialID+"/")...)
+			},
 		}},
 	}
 }
@@ -175,9 +230,11 @@ func goose(home, cfg string) *Agent {
 		ID: "goose", Name: "Goose", Icon: "goose", Bin: "goose", Dir: filepath.Dir(path), Path: path,
 		Fields: []Field{{
 			Key: "model", Label: "model",
-			Get:     pairGet(get, "GOOSE_PROVIDER", "GOOSE_MODEL"),
-			Set:     pairSet(set, "GOOSE_PROVIDER", "GOOSE_MODEL"),
-			Options: func(cur map[string]string) []Option { return providerOptions("", cur["model"]) },
+			Get: pairGet(get, "GOOSE_PROVIDER", "GOOSE_MODEL"),
+			Set: pairSet(set, "GOOSE_PROVIDER", "GOOSE_MODEL"),
+			Options: func(cur map[string]string) []Option {
+				return ownOptions("", cur["model"], "anthropic", "openai", "google", "openrouter")
+			},
 		}},
 	}
 }
@@ -238,18 +295,31 @@ func crush(home, cfg string) *Agent {
 				}
 				if json.Unmarshal(b, &c) == nil {
 					for p := range c.Providers {
-						extra = append(extra, p)
+						if p != dialID {
+							extra = append(extra, p)
+						}
 					}
 				}
 			}
-			return providerOptions("", cur[key], extra...)
+			return append(ownOptions("", cur[key], extra...), viaDial(dialID+"/")...)
+		}
+	}
+	setter := func(pKey, mKey string) func(string) error {
+		pair := pairSet(set, pKey, mKey)
+		return func(v string) error {
+			if ref, ok := strings.CutPrefix(v, dialID+"/"); ok && isDial(ref) {
+				if err := set(edit.KV{Path: "providers." + dialID, Value: dialProviderJSON("crush")}); err != nil {
+					return err
+				}
+			}
+			return pair(v)
 		}
 	}
 	return &Agent{
 		ID: "crush", Name: "Crush", Icon: "crush", Bin: "crush", Dir: filepath.Dir(path), Path: path,
 		Fields: []Field{
-			{Key: "model", Label: "large", Get: pairGet(get, "models.large.provider", "models.large.model"), Set: pairSet(set, "models.large.provider", "models.large.model"), Options: opts("model")},
-			{Key: "small", Label: "small", Get: pairGet(get, "models.small.provider", "models.small.model"), Set: pairSet(set, "models.small.provider", "models.small.model"), Options: opts("small")},
+			{Key: "model", Label: "large", Get: pairGet(get, "models.large.provider", "models.large.model"), Set: setter("models.large.provider", "models.large.model"), Options: opts("model")},
+			{Key: "small", Label: "small", Get: pairGet(get, "models.small.provider", "models.small.model"), Set: setter("models.small.provider", "models.small.model"), Options: opts("small")},
 		},
 	}
 }

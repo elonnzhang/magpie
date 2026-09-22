@@ -1,12 +1,16 @@
 package gui
 
 import (
+	"context"
 	_ "embed"
+	"log"
 	"os"
 	"runtime"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/events"
+
+	"github.com/yetone/dial/internal/gateway"
 )
 
 //go:embed tray.png
@@ -53,6 +57,17 @@ func (h *host) FitPanel(height int) {
 // panel, plus a regular window for when you want it to stay around.
 // showMain opens the window immediately; otherwise only the tray icon appears.
 func Run(version string, showMain bool) error {
+	// The gateway runs inside the app. If another dial already has the
+	// port, that one serves and this one only shows its status.
+	var gw *gateway.Server
+	if !gateway.Running() {
+		gw = gateway.New()
+		go func() {
+			if err := gw.ListenAndServe(context.Background()); err != nil {
+				log.Println("gateway:", err)
+			}
+		}()
+	}
 	// DIAL_THEME=light|dark forces the palette; handy for screenshots.
 	theme := ""
 	if t := os.Getenv("DIAL_THEME"); t != "" {
@@ -63,7 +78,7 @@ func Run(version string, showMain bool) error {
 		Name:        "dial",
 		Description: "one dial for every coding agent's model",
 		Icon:        appIcon,
-		Assets:      application.AssetOptions{Handler: Handler(h)},
+		Assets:      application.AssetOptions{Handler: Handler(h, gw)},
 		Mac:         application.MacOptions{ActivationPolicy: application.ActivationPolicyAccessory},
 		Windows:     application.WindowsOptions{DisableQuitOnLastWindowClosed: true},
 	})
