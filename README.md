@@ -143,6 +143,27 @@ make release          # dist/: native app build + cli builds for every platform
 Linux needs `libgtk-3-dev` and `libwebkit2gtk-4.1-dev` for the app build;
 Windows uses the WebView2 runtime that ships with the OS.
 
+### Developing
+
+```sh
+make dev
+```
+
+builds with `-tags dev` and opens the app with the UI served straight from
+`internal/gui/assets`: save `app.css`, `app.js` or `index.html` and the window
+reloads itself. With `fswatch` installed (`brew install fswatch`), a change to a
+Go file rebuilds and relaunches the app too. The dev build uses its own gateway
+port (`DEV_ADDR`, default 127.0.0.1:3426), so a dial you already run keeps
+serving your agents. Point it at a scratch home to keep your real agent
+configs out of it:
+
+```sh
+HOME=/tmp/dial-home XDG_CONFIG_HOME=/tmp/dial-home/.config make dev
+```
+
+`DIAL_THEME=light|dark` forces the palette and `DIAL_DEBUG=1` prints what the
+gateway translates.
+
 ## Use
 
 ```sh
