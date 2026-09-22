@@ -148,3 +148,14 @@ func FromPreset(id string) (Provider, error) {
 		Catalog: pr.Catalog, Website: pr.Website, KeysURL: pr.KeysURL,
 	}, nil
 }
+
+// IconForCatalog names the logo of the vendor behind a models.dev
+// provider id, or "" when no preset covers it.
+func IconForCatalog(catalogID string) string {
+	for _, p := range presets {
+		if p.Catalog == catalogID {
+			return p.Icon
+		}
+	}
+	return ""
+}

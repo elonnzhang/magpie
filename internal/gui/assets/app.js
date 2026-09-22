@@ -45,10 +45,16 @@ const CHEV_R = "m6.5 4.5 3 3.5-3 3.5";
 const CHECK = "m3.5 8.5 3 3 6-7";
 const PLUS = "M8 3.5v9M3.5 8h9";
 
-// A brand icon: colour logos are images, mono logos take the text colour,
-// anything unknown gets a two-letter monogram tinted by its name.
-function icon(name, label) {
+// A brand icon: colour logos are images, mono logos take the text colour.
+// Nothing is ever invented: a model with no known vendor keeps the slot
+// empty, and a custom provider shows a plain outline ("generic").
+function icon(name) {
   const e = el("span", "ic");
+  if (name === "generic") {
+    e.classList.add("generic");
+    e.append(svg("M8 2.2 13.2 5.1v5.8L8 13.8 2.8 10.9V5.1Z M8 8v5.8 M2.8 5.1 8 8l5.2-2.9", 16, 1.4));
+    return e;
+  }
   if (name) {
     if (name.endsWith("-color") || name === "crush") {
       const img = el("img");
@@ -63,12 +69,7 @@ function icon(name, label) {
     }
     return e;
   }
-  const w = (label || "?").split(/\s+/);
-  e.classList.add("monogram");
-  e.textContent = (w.length > 1 ? w[0][0] + w[1][0] : (label || "?").slice(0, 2)).toUpperCase();
-  let h = 0;
-  for (const ch of label || "") h = (h * 31 + ch.charCodeAt(0)) % 360;
-  e.style.setProperty("--h", h);
+  e.classList.add("blank");
   return e;
 }
 
@@ -106,7 +107,7 @@ function renderAgents() {
       const b = el("button", "field");
       const opt = optionFor(f, f.value);
       b.title = `${f.label}: ${f.value || "agent default"}` + (opt?.note ? ` · ${opt.note}` : "");
-      if (opt?.icon) b.append(icon(opt.icon, opt.label || f.value));
+      if (opt?.icon) b.append(icon(opt.icon));
       else if (f.label !== "model" || !f.value) b.append(el("span", "k", f.label));
       b.append(el("span", "v" + (f.value ? "" : " empty"), opt?.label || f.value || "default"));
       const c = el("span", "chev");
@@ -115,7 +116,7 @@ function renderAgents() {
       b.onclick = (ev) => openPicker(a, f, b, ev);
       fields.append(b);
     }
-    row.append(icon(a.icon, a.name), who, fields);
+    row.append(icon(a.icon), who, fields);
     list.append(row);
   }
 
@@ -231,7 +232,7 @@ function renderList() {
     if (!q) group = o.group ?? group;
     const li = el("li", (idx === pick.cursor ? "sel" : "") + (o.value === pick.field.value ? " cur" : "") + (o.custom ? " custom" : ""));
     li.dataset.i = idx;
-    if (hasIcons) li.append(icon(o.icon, o.label || o.value));
+    if (hasIcons) li.append(icon(o.icon));
     li.append(el("span", "v", o.label || o.value));
     let note = o.note && o.note !== (o.label || o.value) ? o.note : "";
     if (q && o.group && !note) note = o.group;
@@ -352,7 +353,7 @@ function renderProviders() {
     for (const a of p.agents) {
       const b = el("button", "use" + (a.current ? " on" : ""));
       b.title = a.current ? `${a.name} uses ${p.name} (${a.model})` : `Point ${a.name} at ${p.name}…`;
-      b.append(icon(a.icon, a.name));
+      b.append(icon(a.icon));
       b.onclick = (ev) => pickForAgent(a, p, b, ev);
       uses.append(b);
     }
@@ -360,7 +361,7 @@ function renderProviders() {
     key.title = p.key.set ? "API key " + p.key.masked : p.ready ? "Local servers need no key" : "Paste an API key";
     const chev = el("span", "chev");
     chev.append(svg(CHEV_R, 11, 1.7));
-    row.append(icon(p.icon, p.name), who, uses, key, chev);
+    row.append(icon(p.icon || "generic"), who, uses, key, chev);
     row.onclick = () => { editing = editing === p.id ? null : p.id; draft = null; adding = false; renderProviders(); };
     list.append(row);
     if (editing === p.id) list.append(renderEditor(p));
@@ -457,7 +458,7 @@ function renderAdd() {
 
 function tile(pr) {
   const t = el("button", "tile" + (pr.added ? " added" : "") + (editing?.preset === pr.id ? " on" : ""));
-  t.append(icon(pr.icon, pr.name));
+  t.append(icon(pr.icon || "generic"));
   const n = el("span", "n", pr.name);
   if (pr.sponsored) n.append(el("span", "badge", "sponsored"));
   t.append(n);
@@ -507,7 +508,7 @@ function renderEditor(p, presetID) {
 
   if (isNew) {
     const h = el("div", "ehead");
-    h.append(icon(pr?.icon, pr?.name || "Custom"), el("b", "", pr ? pr.name : "Custom provider"));
+    h.append(icon(pr?.icon || "generic"), el("b", "", pr ? pr.name : "Custom provider"));
     if (pr?.website) { const b = el("button", "link", hostOf(pr.website) + " ↗"); b.onclick = () => api("open", { url: pr.website }); h.append(b); }
     ed.append(h);
   }

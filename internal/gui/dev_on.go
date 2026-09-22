@@ -5,6 +5,7 @@ package gui
 import (
 	"bytes"
 	"io/fs"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -84,4 +85,20 @@ func devPage(next http.Handler) http.Handler {
 		rw.Header().Set("Content-Type", "text/html; charset=utf-8")
 		rw.Write(b)
 	})
+}
+
+// devListen also serves the whole UI over plain HTTP when DIAL_DEV_UI names
+// an address, so it can be opened in a browser with real devtools. The
+// window actions become no-ops there; everything else is the real thing.
+func devListen(h http.Handler) {
+	addr := os.Getenv("DIAL_DEV_UI")
+	if addr == "" {
+		return
+	}
+	go func() {
+		log.Println("dev ui:", "http://"+addr+"/?theme=dark")
+		if err := http.ListenAndServe(addr, h); err != nil {
+			log.Println("dev ui:", err)
+		}
+	}()
 }

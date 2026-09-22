@@ -64,6 +64,7 @@ clean:
 # changes rebuild and relaunch the app. Uses its own gateway port so a
 # running dial keeps serving the agents.
 DEV_ADDR ?= 127.0.0.1:3426
+DEV_UI ?= 127.0.0.1:3427
 dev:
 	@if command -v fswatch >/dev/null; then \
 	  while true; do \
@@ -75,4 +76,4 @@ dev:
 
 dev-once:
 	@go build -tags dev -o dial-dev . && echo "  dial-dev · UI from internal/gui/assets, reload on save · gateway $(DEV_ADDR)"
-	@DIAL_ADDR=$(DEV_ADDR) ./dial-dev app
+	@DIAL_ADDR=$(DEV_ADDR) DIAL_DEV_UI=$(DEV_UI) ./dial-dev app

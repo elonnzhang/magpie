@@ -78,7 +78,7 @@ func hostOf(u string) string { return provider.HostOf(u) }
 func options(models []catalog.Model, prefix string) []Option {
 	out := make([]Option, 0, len(models))
 	for _, m := range models {
-		out = append(out, Option{Value: prefix + m.ID, Note: m.Name})
+		out = append(out, Option{Value: prefix + m.ID, Note: m.Name, Icon: modelIcon(m.Provider, m.ID)})
 	}
 	return out
 }
@@ -256,7 +256,7 @@ func cursor(home string) *Agent {
 				)
 			},
 			Options: func(map[string]string) []Option {
-				return []Option{{Value: "auto", Note: "let Cursor pick"}}
+				return []Option{{Value: "auto", Note: "let Cursor pick", Icon: "cursor"}}
 			},
 		}},
 	}
@@ -270,9 +270,17 @@ func copilot(home string) *Agent {
 		Bin: "copilot", Dir: dir, Path: path,
 		Fields: []Field{{
 			Key: "model", Label: "model",
-			Get:     jsonGet(path, "model"),
-			Set:     jsonSet(path, "model"),
-			Options: func(map[string]string) []Option { return options(catalog.Builtin("copilot"), "") },
+			Get: jsonGet(path, "model"),
+			Set: jsonSet(path, "model"),
+			Options: func(map[string]string) []Option {
+				out := options(catalog.Builtin("copilot"), "")
+				for i := range out {
+					if out[i].Value == "auto" {
+						out[i].Icon = "githubcopilot"
+					}
+				}
+				return out
+			},
 		}},
 	}
 }

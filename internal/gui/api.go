@@ -159,6 +159,7 @@ func Handler(w Windows, gw *gateway.Server) http.Handler {
 		}
 		rw.WriteHeader(http.StatusNoContent)
 	})
+	devListen(mux)
 	return mux
 }
 
