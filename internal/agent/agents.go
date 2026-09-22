@@ -147,7 +147,8 @@ func dialProviderJSON(shape string) any {
 	case "pi":
 		var ms []map[string]any
 		for _, m := range models {
-			ms = append(ms, map[string]any{"id": m.ID, "name": m.Name})
+			// reasoning lets Pi offer its thinking levels for the model
+			ms = append(ms, map[string]any{"id": m.ID, "name": m.Name, "reasoning": len(m.Efforts) > 0})
 		}
 		if ms == nil {
 			ms = []map[string]any{}
@@ -197,23 +198,47 @@ func pi(home string) *Agent {
 	get := func(k string) (string, bool) { return edit.GetJSON(path, k) }
 	set := func(kvs ...edit.KV) error { return edit.SetJSON(path, kvs...) }
 	pair := pairSet(set, "defaultProvider", "defaultModel")
+	writeDial := func() error {
+		return edit.SetJSON(modelsPath, edit.KV{Path: "providers." + dialID, Value: dialProviderJSON("pi")})
+	}
 	return &Agent{
 		ID: "pi", Name: "Pi", Icon: "pi", Bin: "pi", Dir: dir, Path: path,
-		Fields: []Field{{
-			Key: "model", Label: "model",
-			Get: pairGet(get, "defaultProvider", "defaultModel"),
-			Set: func(v string) error {
-				if ref, ok := strings.CutPrefix(v, dialID+"/"); ok && isDial(ref) {
-					if err := edit.SetJSON(modelsPath, edit.KV{Path: "providers." + dialID, Value: dialProviderJSON("pi")}); err != nil {
-						return err
+		Fields: []Field{
+			{
+				Key: "model", Label: "model",
+				Get: pairGet(get, "defaultProvider", "defaultModel"),
+				Set: func(v string) error {
+					if ref, ok := strings.CutPrefix(v, dialID+"/"); ok && isDial(ref) {
+						if err := writeDial(); err != nil {
+							return err
+						}
 					}
-				}
-				return pair(v)
+					return pair(v)
+				},
+				Options: func(cur map[string]string) []Option {
+					return append(ownOptions(auth, cur["model"]), viaDial(dialID+"/")...)
+				},
 			},
-			Options: func(cur map[string]string) []Option {
-				return append(ownOptions(auth, cur["model"]), viaDial(dialID+"/")...)
+			{
+				// Pi's startup thinking level, the same list its /thinking offers;
+				// Pi clamps it to what the model supports.
+				Key: "effort", Label: "thinking",
+				Get: func() string { v, _ := get("defaultThinkingLevel"); return v },
+				Set: func(v string) error {
+					if p, _ := get("defaultProvider"); p == dialID {
+						// older dial entries lacked "reasoning", which Pi needs
+						// before it will think at all
+						if err := writeDial(); err != nil {
+							return err
+						}
+					}
+					return set(edit.KV{Path: "defaultThinkingLevel", Value: v})
+				},
+				Options: func(map[string]string) []Option {
+					return static("off", "minimal", "low", "medium", "high", "xhigh", "max")
+				},
 			},
-		}},
+		},
 	}
 }
 
