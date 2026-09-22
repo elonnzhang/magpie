@@ -42,6 +42,7 @@ const usage = `dial — one dial for every coding agent's model
   dial models                   every model agents can pick, as provider/model
 
   dial serve                    run the gateway alone (the app runs it too)
+  dial usage [today|7d|30d|all] tokens and cost per agent and model (30d)
   dial sync                     refresh the model catalog and vendor model lists
   dial agents                   list every supported agent
 
@@ -108,6 +109,8 @@ func run(args []string) error {
 		return models()
 	case "serve":
 		return serve()
+	case "usage":
+		return usageCmd(args)
 	}
 
 	a, err := agent.Find(args[0])

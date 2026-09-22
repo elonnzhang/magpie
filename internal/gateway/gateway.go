@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/yetone/dial/internal/provider"
+	"github.com/yetone/dial/internal/usage"
 )
 
 // DefaultAddr is where the gateway listens unless DIAL_ADDR says otherwise.
@@ -54,6 +55,7 @@ func Running() bool {
 // Call is one request the gateway handled, for the status views.
 type Call struct {
 	Time     time.Time         `json:"time"`
+	Agent    string            `json:"agent"` // who called, from the client's User-Agent
 	Model    string            `json:"model"`
 	Provider string            `json:"provider"`
 	From     provider.Protocol `json:"from"`
@@ -61,6 +63,7 @@ type Call struct {
 	Status   int               `json:"status"`
 	Millis   int64             `json:"ms"`
 	Error    string            `json:"error,omitempty"`
+	Usage    Usage             `json:"usage"`
 }
 
 // Server is the gateway.
@@ -228,7 +231,7 @@ func (s *Server) handle(from provider.Protocol) http.HandlerFunc {
 			return
 		}
 		start := time.Now()
-		call := Call{Time: start, From: from, Model: modelOf(body)}
+		call := Call{Time: start, From: from, Model: modelOf(body), Agent: usage.AgentOf(r.Header.Get("User-Agent"))}
 		p, model, ok := provider.Resolve(call.Model)
 		if !ok {
 			call.Status, call.Error = 404, "unknown model"
@@ -245,7 +248,7 @@ func (s *Server) handle(from provider.Protocol) http.HandlerFunc {
 		call.Provider = p.ID
 		if p.Base(from) != "" {
 			call.To = from
-			call.Status, call.Error = s.passthrough(w, r, p, from, model, body)
+			call.Status, call.Error = s.passthrough(w, r, p, from, model, body, &call.Usage)
 		} else {
 			to := p.Speaks()
 			if len(to) == 0 {
@@ -253,10 +256,13 @@ func (s *Server) handle(from provider.Protocol) http.HandlerFunc {
 				return
 			}
 			call.To = to[0]
-			call.Status, call.Error = s.translate(w, r, p, from, to[0], model, body)
+			call.Status, call.Error = s.translate(w, r, p, from, to[0], model, body, &call.Usage)
 		}
 		call.Millis = time.Since(start).Milliseconds()
 		s.record(call)
+		usage.Append(usage.Record{Time: start, Agent: call.Agent, Provider: p.ID, Model: model,
+			Input: call.Usage.Input, Output: call.Usage.Output, CacheRead: call.Usage.CacheRead,
+			CacheWrite: call.Usage.CacheWrite, Reasoning: call.Usage.Reasoning, Millis: call.Millis, Status: call.Status})
 	}
 }
 
@@ -284,8 +290,9 @@ func (s *Server) forward(ctx context.Context, p provider.Provider, to provider.P
 }
 
 // passthrough relays a request the provider understands as-is, with the
-// model name swapped for the provider's own.
-func (s *Server) passthrough(w http.ResponseWriter, r *http.Request, p provider.Provider, proto provider.Protocol, model string, body []byte) (int, string) {
+// model name swapped for the provider's own. The token counts the reply
+// carries are read on the way past into u.
+func (s *Server) passthrough(w http.ResponseWriter, r *http.Request, p provider.Provider, proto provider.Protocol, model string, body []byte, u *Usage) (int, string) {
 	res, err := s.forward(r.Context(), p, proto, pathOf(proto), rewriteModel(body, model), r.Header)
 	if err != nil {
 		return writeError(w, proto, 502, p.Name+": "+err.Error()), err.Error()
@@ -308,10 +315,13 @@ func (s *Server) passthrough(w http.ResponseWriter, r *http.Request, p provider.
 	}
 	w.WriteHeader(res.StatusCode)
 	f, _ := w.(http.Flusher)
+	sniff := newSniffer(proto, res.Header.Get("Content-Type"))
+	defer func() { u.add(sniff.usage()) }()
 	buf := make([]byte, 32<<10)
 	for {
 		n, err := res.Body.Read(buf)
 		if n > 0 {
+			sniff.write(buf[:n])
 			if _, werr := w.Write(buf[:n]); werr != nil {
 				return res.StatusCode, ""
 			}
@@ -329,7 +339,7 @@ func (s *Server) passthrough(w http.ResponseWriter, r *http.Request, p provider.
 // translate serves a client API the provider lacks by speaking another
 // one to it. The provider is always streamed; the client gets whichever
 // it asked for.
-func (s *Server) translate(w http.ResponseWriter, r *http.Request, p provider.Provider, from, to provider.Protocol, model string, body []byte) (int, string) {
+func (s *Server) translate(w http.ResponseWriter, r *http.Request, p provider.Provider, from, to provider.Protocol, model string, body []byte, u *Usage) (int, string) {
 	req, err := parse(from, body)
 	if err != nil {
 		return writeError(w, from, 400, err.Error()), err.Error()
@@ -359,8 +369,11 @@ func (s *Server) translate(w http.ResponseWriter, r *http.Request, p provider.Pr
 		var failed string
 		readSSE(res.Body, func(_, data string) error {
 			return dec(data, func(ev Event) {
-				if ev.Kind == KError {
+				switch ev.Kind {
+				case KError:
 					failed = ev.Text
+				case KStart, KUsage:
+					u.add(ev.Usage)
 				}
 				enc.event(ev)
 			})
@@ -375,7 +388,9 @@ func (s *Server) translate(w http.ResponseWriter, r *http.Request, p provider.Pr
 	if col.err != "" && len(col.res.Parts) == 0 {
 		return writeError(w, from, 502, p.Name+": "+col.err), col.err
 	}
-	out := render(from, col.finish(), req.Model)
+	res2 := col.finish()
+	u.add(res2.Usage)
+	out := render(from, res2, req.Model)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(200)
 	w.Write(out)

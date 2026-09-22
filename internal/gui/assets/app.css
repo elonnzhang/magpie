@@ -97,7 +97,7 @@ code { font: 11.5px var(--code); }
 
 /* ---- header --------------------------------------------------------------- */
 .top { display: flex; align-items: center; gap: 8px; padding: 0 10px 0 14px; height: 46px; flex: none; position: relative; }
-body.window .top { padding-left: 88px; height: 50px; padding-top: 3px; } /* content sits 1.5pt low of centre to meet the traffic lights */
+body.window .top { padding-left: 88px; height: 50px; padding-top: 2px; } /* the traffic lights centre 25.75pt from the top, not 25 */
 .brand { display: flex; align-items: center; gap: 6px; font-weight: 600; letter-spacing: .01em; }
 .logo { color: var(--accent); display: inline-flex; }
 .seg {
@@ -160,6 +160,36 @@ body.panel .field { height: 24px; font-size: 12px; }
 .field:hover .chev, .field.open .chev { color: var(--muted); }
 .field.flash { animation: flash 1.2s ease-out; }
 @keyframes flash { 0%, 35% { box-shadow: inset 0 0 0 1px var(--green); background: var(--green-soft); } 100% {} }
+
+/* ---- usage ---------------------------------------------------------------- */
+.usage-head { display: flex; align-items: center; gap: 10px; height: 34px; margin: 4px 0 6px; flex: none; }
+.usage-cost { display: inline-flex; align-items: baseline; gap: 6px; font-variant-numeric: tabular-nums; color: var(--muted); font-size: 12px; }
+.usage-cost b { font-size: 15px; font-weight: 600; color: var(--fg); }
+.stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; flex: none; }
+.stats.empty { display: block; background: var(--card); }
+.stats .none { padding: 18px 16px; color: var(--muted); text-align: center; line-height: 1.5; }
+.tile { background: var(--card); padding: 12px 14px 11px; display: flex; flex-direction: column; min-width: 0; }
+.tile b { font-size: 20px; font-weight: 600; letter-spacing: -.01em; font-variant-numeric: tabular-nums; line-height: 1.15; }
+.tile span { font-size: 11px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); margin-top: 3px; }
+.tile small { font-size: 11px; color: var(--muted); margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.chart { position: relative; margin-top: 8px; padding: 12px 14px 8px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; flex: none; }
+.chart .peak { position: absolute; top: 8px; right: 12px; font-size: 10.5px; color: var(--faint); font-variant-numeric: tabular-nums; }
+.chart .bars { display: flex; align-items: flex-end; gap: 3px; height: 72px; border-bottom: 1px solid var(--line-2); }
+.chart .bar { flex: 1 1 0; min-width: 2px; height: 100%; display: flex; flex-direction: column; justify-content: flex-end; border-radius: 3px 3px 0 0; overflow: hidden; }
+.chart .bar:hover { background: var(--pill); }
+.chart .bar i { display: block; background: var(--accent); }
+.chart .bar i.in { opacity: .38; }
+.chart .labels { display: flex; gap: 3px; margin-top: 5px; font-size: 10.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.chart .labels span { flex: 1 1 0; min-width: 0; white-space: nowrap; overflow: visible; }
+#view-usage .row-head { margin-top: 10px; }
+.row.stat .who { flex: 0 0 180px; }
+.row.stat .share { flex: 1 1 auto; height: 4px; border-radius: 2px; background: var(--pill); overflow: hidden; margin: 0 6px; }
+.row.stat .share i { display: block; height: 100%; border-radius: 2px; background: var(--accent); opacity: .7; }
+.row.stat .num { display: flex; flex-direction: column; align-items: flex-end; flex: none; min-width: 64px; font-variant-numeric: tabular-nums; }
+.row.stat .num b { font-weight: 600; }
+.row.stat .num small { font-size: 10.5px; color: var(--muted); white-space: nowrap; }
+.row.stat .cost { flex: none; min-width: 58px; text-align: right; color: var(--green); font-variant-numeric: tabular-nums; font-size: 12px; }
+.usage-note { padding: 10px 4px 2px; font-size: 11px; color: var(--faint); user-select: text; -webkit-user-select: text; }
 
 /* ---- profiles ------------------------------------------------------------- */
 .profiles { padding: 8px 2px 0; flex: none; }

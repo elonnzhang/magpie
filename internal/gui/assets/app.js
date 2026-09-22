@@ -1,5 +1,6 @@
 // dial — one state object per view, rendered into a list. No framework.
 const $ = (s) => document.querySelector(s);
+const $$ = (s) => document.querySelectorAll(s);
 const params = new URLSearchParams(location.search);
 const mode = params.get("mode") || "window";
 document.body.classList.add(mode);
@@ -8,6 +9,8 @@ if (params.get("theme")) document.documentElement.dataset.theme = params.get("th
 let state = { agents: [], profiles: [], catalog: "" };
 let providers = null; // { providers, presets, gateway }
 let view = "agents";
+let period = "30d"; // usage window
+let usage = null;   // last usage summary
 let pick = null; // { agent, field, options, items, cursor, anchor }
 let editing = null; // provider id being edited; { preset } or { custom: true } for a new one
 let draft = null; // the editor's working copy
@@ -149,6 +152,7 @@ async function load() {
     state = await api("state");
     renderAgents();
     if (view === "providers") await loadProviders();
+    if (view === "usage") await loadUsage();
   } catch (e) {
     status(e.message, "err");
   }
@@ -699,6 +703,130 @@ function hostOf(u) { try { return new URL(u.includes("://") ? u : "https://" + u
 
 $("#addProvider").onclick = () => { adding = true; editing = null; draft = null; renderProviders(); };
 
+// ---------- usage ----------
+
+const PERIODS = [["today", "Today"], ["7d", "7 days"], ["30d", "30 days"], ["all", "All"]];
+
+async function loadUsage() {
+  usage = await api("usage?period=" + period);
+  renderUsage();
+}
+
+function fmtN(n) {
+  if (n >= 1e9) return (n / 1e9).toFixed(2) + "B";
+  if (n >= 1e7) return Math.round(n / 1e6) + "M";
+  if (n >= 1e6) return (n / 1e6).toFixed(1) + "M";
+  if (n >= 1e5) return Math.round(n / 1e3) + "K";
+  if (n >= 1e3) return (n / 1e3).toFixed(1) + "K";
+  return String(n);
+}
+function fmtCost(t) {
+  if (!t.cost && t.unpriced) return "";
+  const c = t.cost;
+  const s = c >= 100 ? c.toFixed(0) : c >= 1 ? c.toFixed(2) : c.toFixed(3);
+  return "$" + s + (t.unpriced ? "+" : "");
+}
+const tokensOf = (t) => t.input + t.output;
+
+function renderUsage() {
+  const u = usage;
+  const seg = $("#period");
+  seg.replaceChildren();
+  for (const [id, name] of PERIODS) {
+    const b = el("button", "opt" + (id === period ? " on" : ""), name);
+    b.onclick = () => { period = id; loadUsage().catch((e) => status(e.message, "err")); };
+    seg.append(b);
+  }
+  const cost = $("#usageCost");
+  cost.replaceChildren();
+  const c = fmtCost(u);
+  if (c) {
+    cost.append(el("b", "", "≈" + c), el("span", "", "list price"));
+    cost.title = u.unpriced ? `${u.unpriced} call${u.unpriced === 1 ? "" : "s"} had no known price and are not counted` : "At each model's list price on models.dev";
+  } else if (u.calls) {
+    cost.append(el("span", "", "no price for these models"));
+  }
+
+  const stats = $("#stats");
+  stats.replaceChildren();
+  const empty = !u.calls;
+  $("#chart").hidden = empty;
+  for (const id of ["usageAgents", "usageModels"]) $("#" + id).hidden = empty;
+  for (const h of $$("#view-usage .row-head")) h.hidden = empty;
+  if (empty) {
+    stats.classList.add("empty");
+    const when = { today: "today", "7d": "in the last 7 days", "30d": "in the last 30 days", all: "yet" }[period];
+    stats.append(el("div", "none", `No calls ${when}. Point an agent at a catalog model and use it; every call through the gateway is counted here.`));
+    $("#usageNote").textContent = "";
+    return;
+  }
+  stats.classList.remove("empty");
+  const tile = (n, label, sub) => {
+    const t = el("div", "tile");
+    t.append(el("b", "", n), el("span", "", label));
+    if (sub) t.append(el("small", "", sub));
+    stats.append(t);
+  };
+  tile(fmtN(tokensOf(u)), "tokens", `${fmtN(u.input)} in · ${fmtN(u.output)} out`);
+  tile(fmtN(u.cache_read), "cache read", u.cache_write ? `${fmtN(u.cache_write)} written` : "");
+  tile(fmtN(u.reasoning), "reasoning", "inside output");
+  tile(String(u.calls), u.calls === 1 ? "call" : "calls", u.errors ? `${u.errors} failed` : "");
+
+  // the timeline: one bar per hour, day or week; output sits on top of input
+  const chart = $("#chart");
+  chart.replaceChildren();
+  const bars = el("div", "bars");
+  const peak = Math.max(1, ...u.series.map(tokensOf));
+  const labels = el("div", "labels");
+  const n = u.series.length;
+  const every = n <= 8 ? 1 : n <= 31 ? Math.ceil(n / 6) : Math.ceil(n / 5);
+  u.series.forEach((p, i) => {
+    const b = el("div", "bar");
+    const inp = el("i", "in"), out = el("i", "out");
+    inp.style.height = (100 * p.input / peak).toFixed(1) + "%";
+    out.style.height = (100 * p.output / peak).toFixed(1) + "%";
+    b.append(out, inp);
+    const when = u.bucket === "hour" ? `${p.label}:00` : (u.bucket === "week" ? "week of " : "") + p.label;
+    b.title = p.calls ? `${when} · ${fmtN(tokensOf(p))} tokens · ${p.calls} call${p.calls === 1 ? "" : "s"}${fmtCost(p) ? " · ≈" + fmtCost(p) : ""}` : `${when} · nothing`;
+    bars.append(b);
+    const last = i === n - 1 && (n - 1) % every >= every / 2;
+    labels.append(el("span", "", i % every === 0 || last ? p.label : ""));
+  });
+  chart.append(el("div", "peak", fmtN(peak)), bars, labels);
+
+  const total = Math.max(1, tokensOf(u));
+  const list = (id, groups) => {
+    const box = $("#" + id);
+    box.replaceChildren();
+    for (const g of groups) {
+      const r = el("div", "row stat");
+      r.append(icon(g.icon || "generic"));
+      const who = el("div", "who");
+      who.append(el("div", "name", g.name));
+      const sub = [];
+      if (g.sub) sub.push(g.sub);
+      sub.push(`${g.calls} call${g.calls === 1 ? "" : "s"}`);
+      if (g.errors) sub.push(`${g.errors} failed`);
+      who.append(el("div", "sub", sub.join(" · ")));
+      r.append(who);
+      const share = el("div", "share");
+      const fill = el("i");
+      fill.style.width = Math.max(1.5, 100 * tokensOf(g) / total).toFixed(1) + "%";
+      share.append(fill);
+      share.title = Math.round(100 * tokensOf(g) / total) + "% of tokens";
+      r.append(share);
+      const num = el("div", "num");
+      num.append(el("b", "", fmtN(tokensOf(g))), el("small", "", `${fmtN(g.input)} in · ${fmtN(g.output)} out${g.cache_read ? " · " + fmtN(g.cache_read) + " cached" : ""}`));
+      r.append(num);
+      r.append(el("div", "cost", fmtCost(g) ? "≈" + fmtCost(g) : ""));
+      box.append(r);
+    }
+  };
+  list("usageAgents", u.agents);
+  list("usageModels", u.models);
+  $("#usageNote").textContent = `Counted from the providers' own usage reports on every call through the gateway · ${u.path}`;
+}
+
 // ---------- header / footer ----------
 
 function show(v) {
@@ -706,8 +834,10 @@ function show(v) {
   for (const b of $("#nav").children) b.classList.toggle("on", b.dataset.view === v);
   $("#view-agents").hidden = v !== "agents";
   $("#view-providers").hidden = v !== "providers";
+  $("#view-usage").hidden = v !== "usage";
   closePicker();
   if (v === "providers") loadProviders().catch((e) => status(e.message, "err"));
+  if (v === "usage") loadUsage().catch((e) => status(e.message, "err"));
 }
 for (const b of $("#nav").children) b.onclick = () => { show(b.dataset.view); b.blur(); };
 
@@ -735,4 +865,5 @@ else { $("#nav").remove(); }
 // the panel comes back into view.
 document.addEventListener("visibilitychange", () => { if (!document.hidden) load(); });
 window.addEventListener("focus", load);
+if (mode === "window" && ["providers", "usage"].includes(params.get("view"))) show(params.get("view"));
 load();
