@@ -4,8 +4,9 @@
 //
 // The macOS app replaces its own bundle: the new zip is downloaded, checked
 // against its hash, unpacked, and accepted only if it is signed by the same
-// team as the app already installed. A bare binary (the terminal build)
-// replaces itself the same way, minus the signature.
+// team as the app already installed. A bare binary (the terminal build,
+// and the desktop app on Windows and Linux) replaces itself the same way,
+// minus the signature.
 package update
 
 import (
@@ -138,10 +139,18 @@ func parse(v string) *semver {
 	return &s
 }
 
+// GUI says this binary has the desktop app in it. Off the Mac that app is a
+// single binary too, and it updates from its own build, not the terminal
+// one.
+var GUI bool
+
 // AppAsset and BinaryAsset name the files this machine would install.
 func AppAsset() string { return "magpie-darwin-" + runtime.GOARCH + ".zip" }
 func BinaryAsset() string {
 	name := "magpie-cli-" + runtime.GOOS + "-" + runtime.GOARCH
+	if GUI && runtime.GOOS != "darwin" {
+		name = "magpie-" + runtime.GOOS + "-" + runtime.GOARCH
+	}
 	if runtime.GOOS == "windows" {
 		name += ".exe"
 	}
@@ -154,7 +163,7 @@ func Bundle() string {
 	if runtime.GOOS != "darwin" {
 		return ""
 	}
-	exe, err := executable()
+	exe, err := Executable()
 	if err != nil {
 		return ""
 	}
@@ -166,7 +175,8 @@ func Bundle() string {
 	return app
 }
 
-func executable() (string, error) {
+// Executable is the running binary, symlinks resolved.
+func Executable() (string, error) {
 	exe, err := os.Executable()
 	if err != nil {
 		return "", err
@@ -264,38 +274,82 @@ func Relaunch(bundle string) error {
 	return cmd.Start()
 }
 
-// ReplaceBinary puts the release's terminal build where the running binary
-// is.
+// ReplaceBinary puts the release's build for this binary where the
+// running one is.
 func ReplaceBinary(ctx context.Context, rel *Release) error {
-	a, ok := rel.Assets[BinaryAsset()]
-	if !ok {
-		return fmt.Errorf("release %s has no %s", rel.Version, BinaryAsset())
-	}
-	exe, err := executable()
+	staged, err := StageBinary(ctx, rel)
 	if err != nil {
 		return err
 	}
+	return InstallBinary(staged)
+}
+
+// StageBinary downloads the release's build for this binary next to it,
+// ready for InstallBinary.
+func StageBinary(ctx context.Context, rel *Release) (string, error) {
+	a, ok := rel.Assets[BinaryAsset()]
+	if !ok {
+		return "", fmt.Errorf("release %s has no %s", rel.Version, BinaryAsset())
+	}
+	exe, err := Executable()
+	if err != nil {
+		return "", err
+	}
 	tmp := exe + ".new"
 	if err := download(ctx, a, tmp); err != nil {
-		return err
+		return "", err
 	}
 	if err := os.Chmod(tmp, 0o755); err != nil {
 		os.Remove(tmp)
-		return err
+		return "", err
 	}
+	return tmp, nil
+}
+
+// InstallBinary swaps a staged binary in for the running one, which keeps
+// going until it exits.
+func InstallBinary(staged string) error {
+	exe := strings.TrimSuffix(staged, ".new")
 	if runtime.GOOS == "windows" {
 		// A running .exe cannot be overwritten, but it can be moved aside.
 		os.Remove(exe + ".old")
 		if err := os.Rename(exe, exe+".old"); err != nil {
-			os.Remove(tmp)
+			os.Remove(staged)
 			return err
 		}
 	}
-	if err := os.Rename(tmp, exe); err != nil {
-		os.Remove(tmp)
+	if err := os.Rename(staged, exe); err != nil {
+		os.Remove(staged)
 		return err
 	}
 	return nil
+}
+
+// RelaunchBinary starts exe again as the tray app. The new process waits
+// for this one to exit before it takes the gateway's port; see
+// AwaitPredecessor.
+func RelaunchBinary(exe string) error {
+	cmd := exec.Command(exe, "tray")
+	cmd.Env = append(os.Environ(), "MAGPIE_REPLACES="+strconv.Itoa(os.Getpid()))
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = nil, nil, nil
+	detach(cmd)
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+	return cmd.Process.Release()
+}
+
+// AwaitPredecessor blocks, for a while at most, until the magpie that
+// relaunched this one has exited.
+func AwaitPredecessor() {
+	pid, err := strconv.Atoi(os.Getenv("MAGPIE_REPLACES"))
+	os.Unsetenv("MAGPIE_REPLACES")
+	if err != nil || pid <= 0 {
+		return
+	}
+	for deadline := time.Now().Add(20 * time.Second); time.Now().Before(deadline) && alive(pid); {
+		time.Sleep(100 * time.Millisecond)
+	}
 }
 
 // download fetches a to path and checks its hash.

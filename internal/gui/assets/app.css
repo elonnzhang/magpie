@@ -109,8 +109,8 @@ code { font: 11.5px var(--code); }
 
 /* ---- header --------------------------------------------------------------- */
 .top { display: flex; align-items: center; gap: 8px; padding: 0 10px 0 14px; height: 46px; flex: none; position: relative; }
-body.window .top { padding-left: 88px; height: 50px; padding-top: 2px; } /* the traffic lights centre 25.75pt from the top, not 25 */
-body.window .seg { top: calc(50% + 1px); } /* 50% centres in the padding box; the 2px top padding puts the flex row a pixel lower */
+body.window.mac .top { padding-left: 88px; height: 50px; padding-top: 2px; } /* the traffic lights centre 25.75pt from the top, not 25 */
+body.window.mac .seg { top: calc(50% + 1px); } /* 50% centres in the padding box; the 2px top padding puts the flex row a pixel lower */
 .brand { display: flex; align-items: center; gap: 6px; font-weight: 600; letter-spacing: .01em; }
 .logo { color: var(--fg); display: inline-flex; } /* ink, like the wordmark; the accent blue fought the text in light mode */
 .seg {
@@ -688,7 +688,8 @@ html.theming, html.theming *, html.theming *::before, html.theming *::after {
 .modal .dialog::-webkit-scrollbar { width: 0; }
 /* Keep native window chrome outside the scrim and dialog. In particular, the
    macOS traffic lights must never sit on top of modal content. */
-body.window .modal { top: 50px; padding: 16px 24px 24px; }
+body.window.mac .modal { top: 50px; padding: 16px 24px 24px; }
+body.window .modal { padding: 16px 24px 24px; }
 body.panel .modal { padding: 16px 12px; }
 @keyframes fade-in { from { opacity: 0; } }
 @keyframes fade-out { to { opacity: 0; } }

@@ -25,7 +25,7 @@ and there is a terminal version (`magpie tui`) and a plain CLI.
   ↑↓ agent  ·  ←→ field  ·  ↵ change  ·  s save profile  ·  p profiles  ·  q quit
 ```
 
-- **One small binary.** About 11 MB with the desktop app (it uses the system
+- **One small binary.** Under 15 MB with the desktop app (it uses the system
   webview through [Wails](https://wails.io), nothing bundled), 7 MB for the
   terminal-only build. macOS, Linux and Windows.
 - **Edits config files surgically.** Only the one key you change is touched;
@@ -179,14 +179,18 @@ the API key goes to `~/.gemini/.env`. Picking a catalog model points
 
 ## Install
 
-Download the Mac app from [usemagpie.ai](https://usemagpie.ai), or from a
-terminal (macOS installs the app, Linux the command):
+Download the app for macOS, Windows or Linux from
+[usemagpie.ai](https://usemagpie.ai), or install it from a terminal (on
+Linux, the desktop app when WebKitGTK 4.1 is installed, the command
+otherwise):
 
 ```sh
 curl -fsSL https://usemagpie.ai/install.sh | sh
 ```
 
-Releases are signed and notarised, and keep themselves current: the app
+Mac releases are signed and notarised; the Windows and Linux builds are not
+signed yet (Windows SmartScreen may ask before the first run). Every build
+keeps itself current: the app
 downloads a new version in the background and installs it when you restart
 (*Restart to Update* in the menu) or quit; `magpie update` does the same from
 a terminal. Every release is on
@@ -205,9 +209,12 @@ make build            # ./magpie with the desktop app (needs cgo + the platform 
 make app              # macOS: magpie.app, a menu bar app with no Dock icon
 make cli              # terminal-only build, no cgo, cross-compiles anywhere
 make release          # dist/: native app build + cli builds for every platform
+make release-windows  # dist/: the Windows app, amd64 and arm64 (cross-compiles)
+make release-linux    # dist/: the Linux app for this machine's arch
 ```
 
-Linux needs `libgtk-3-dev` and `libwebkit2gtk-4.1-dev` for the app build;
+Linux needs `libgtk-3-dev` and `libwebkit2gtk-4.1-dev` for the app build
+(the Makefile adds the `gtk3` tag; with plain `go build`, pass `-tags gtk3`);
 Windows uses the WebView2 runtime that ships with the OS.
 
 ### Developing

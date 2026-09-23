@@ -14,6 +14,7 @@ import (
 	"github.com/yetone/magpie/internal/catalog"
 	"github.com/yetone/magpie/internal/gateway"
 	"github.com/yetone/magpie/internal/provider"
+	"github.com/yetone/magpie/internal/update"
 )
 
 //go:embed tray.png
@@ -64,6 +65,9 @@ func (h *host) FitPanel(height int) {
 // panel, plus a regular window for when you want it to stay around.
 // showMain opens the window immediately; otherwise only the tray icon appears.
 func Run(version string, showMain bool) error {
+	// After an update off the Mac, the old process starts this one and then
+	// quits; let it go before looking for the gateway.
+	update.AwaitPredecessor()
 	// The gateway runs inside the app. If another magpie already has the
 	// port, that one serves and this one only shows its status.
 	var gw *gateway.Server

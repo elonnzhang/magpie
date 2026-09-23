@@ -9,17 +9,22 @@ ifeq ($(shell uname -s),Darwin)
   export CGO_CFLAGS  = -mmacosx-version-min=11.0
   export CGO_LDFLAGS = -mmacosx-version-min=11.0
 endif
+# On Linux, GTK 3 and WebKitGTK 4.1: older distributions have them, where
+# Wails' default GTK 4 and WebKitGTK 6 would leave them out.
+ifeq ($(shell uname -s),Linux)
+  TAGS += gtk3
+endif
 
-.PHONY: build cli install test app icons release release-cli clean dev dev-once
+.PHONY: build cli install test app icons release release-cli release-windows release-linux clean dev dev-once
 
 build:
-	go build -tags $(TAGS) -trimpath -ldflags="$(LDFLAGS)" -o magpie .
+	go build -tags "$(TAGS)" -trimpath -ldflags="$(LDFLAGS)" -o magpie .
 
 cli:
 	CGO_ENABLED=0 go build -tags nogui -trimpath -ldflags="$(LDFLAGS)" -o magpie .
 
 install:
-	go install -tags $(TAGS) -trimpath -ldflags="$(LDFLAGS)" .
+	go install -tags "$(TAGS)" -trimpath -ldflags="$(LDFLAGS)" .
 
 test:
 	go vet ./... && go test ./...
@@ -56,8 +61,28 @@ release-cli:
 		CGO_ENABLED=0 GOOS=$$os GOARCH=$$arch go build -tags nogui -trimpath -ldflags="$(LDFLAGS)" -o dist/magpie-cli-$$os-$$arch$$ext . ; \
 	done
 
+# The desktop app for Windows: the system WebView2 needs no cgo, so both
+# arches cross-compile. Linked as a GUI program (no console window), with
+# the icon, version and a DPI-aware manifest from build/windows.
+WINVER = $(shell echo $(VERSION) | sed -E 's/^v//; s/[^0-9.].*//')
+release-windows:
+	@mkdir -p dist
+	@go run github.com/tc-hib/go-winres@v0.3.3 make --in build/windows/winres.json --arch amd64,arm64 --out rsrc \
+		--file-version "$(or $(WINVER),0.0.0)" --product-version "$(or $(WINVER),0.0.0)"
+	@for arch in amd64 arm64; do \
+		echo "  windows/$$arch (app)"; \
+		CGO_ENABLED=0 GOOS=windows GOARCH=$$arch go build -tags production -trimpath -ldflags="$(LDFLAGS) -H windowsgui" -o dist/magpie-windows-$$arch.exe . || exit 1; \
+	done; rm -f rsrc_windows_*.syso
+
+# The desktop app for Linux links GTK 3 and WebKitGTK 4.1 through cgo, so it
+# is built natively, one arch per machine.
+release-linux:
+	@mkdir -p dist
+	@echo "  linux/$(shell go env GOARCH) (app)"
+	@go build -tags "$(TAGS)" -trimpath -ldflags="$(LDFLAGS)" -o dist/magpie-linux-$(shell go env GOARCH) .
+
 clean:
-	rm -rf magpie magpie.exe magpie.app dist
+	rm -rf magpie magpie.exe magpie.app dist rsrc_windows_*.syso
 
 # Development: the UI is served from internal/gui/assets and the window
 # reloads itself when a file there is saved; with fswatch installed, Go

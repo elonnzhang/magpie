@@ -4,6 +4,8 @@ const $$ = (s) => document.querySelectorAll(s);
 const params = new URLSearchParams(location.search);
 const mode = params.get("mode") || "window";
 document.body.classList.add(mode);
+// Only the Mac window draws its title bar inside the page (the traffic lights).
+if (/^Mac/.test(navigator.platform)) document.body.classList.add("mac");
 if (params.get("theme")) document.documentElement.dataset.theme = params.get("theme");
 
 let state = { agents: [], profiles: [], catalog: "", settings: {} };

@@ -17,6 +17,7 @@ import (
 	"github.com/yetone/magpie/internal/profile"
 	"github.com/yetone/magpie/internal/settings"
 	"github.com/yetone/magpie/internal/tui"
+	"github.com/yetone/magpie/internal/update"
 )
 
 var version = "dev"
@@ -62,6 +63,7 @@ var (
 
 func main() {
 	gateway.Version = version
+	update.GUI = hasGUI
 	if err := run(os.Args[1:]); err != nil {
 		fmt.Fprintln(os.Stderr, "magpie:", err)
 		os.Exit(1)

@@ -4,7 +4,9 @@ import (
 	"context"
 	"log"
 	"net/http"
+	"os"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"time"
 
@@ -12,9 +14,9 @@ import (
 )
 
 // updater keeps the app current. It asks the feed at start-up and every six
-// hours; when a newer release is out and the app may replace its own
-// bundle, the new one is downloaded and unpacked straight away, so all that
-// is left is a restart. Quitting installs it too, and the next launch is
+// hours; when a newer release is out and the app may replace itself — the
+// bundle on a Mac, the binary elsewhere — the new one is downloaded
+// straight away, so all that is left is a restart. Quitting installs it too, and the next launch is
 // the new version.
 type updater struct {
 	mu      sync.Mutex
@@ -22,6 +24,7 @@ type updater struct {
 	latest  *update.Release
 	err     string
 	bundle  string // the .app to replace, "" when not in one or not writable
+	exe     string // off the Mac: the binary to replace, "" when not writable
 	staged  string
 	onReady func(version string)
 }
@@ -42,6 +45,11 @@ const updateEvery = 6 * time.Hour
 func (u *updater) start() {
 	if b := update.Bundle(); b != "" && update.Writable(filepath.Dir(b)) {
 		u.bundle = b
+	} else if runtime.GOOS != "darwin" {
+		if exe, err := update.Executable(); err == nil && update.Writable(filepath.Dir(exe)) {
+			u.exe = exe
+			os.Remove(exe + ".old") // what the last update on Windows moved aside
+		}
 	}
 	go func() {
 		time.Sleep(5 * time.Second) // let the app settle first
@@ -79,13 +87,18 @@ func (u *updater) check() {
 	case !update.Newer(rel.Version, Version):
 		u.state = "latest"
 		return
-	case u.bundle == "":
+	case u.bundle == "" && u.exe == "":
 		u.state = "available" // the user fetches it from the release page
 		return
 	}
 	u.state = "downloading"
 	u.mu.Unlock()
-	staged, err := update.Stage(ctx, rel, u.bundle)
+	var staged string
+	if u.bundle != "" {
+		staged, err = update.Stage(ctx, rel, u.bundle)
+	} else {
+		staged, err = update.StageBinary(ctx, rel)
+	}
 	u.mu.Lock()
 	if err != nil {
 		log.Println("update:", err)
@@ -105,7 +118,13 @@ func (u *updater) install() bool {
 	if u.staged == "" {
 		return false
 	}
-	if err := update.Install(u.staged, u.bundle); err != nil {
+	var err error
+	if u.bundle != "" {
+		err = update.Install(u.staged, u.bundle)
+	} else {
+		err = update.InstallBinary(u.staged)
+	}
+	if err != nil {
 		log.Println("update:", err)
 		u.state, u.err = "error", err.Error()
 		return false
@@ -151,11 +170,17 @@ func updateRoutes(mux *http.ServeMux, w Windows) {
 // restartToUpdate installs the staged version and arranges for it to open
 // once this process is gone; the caller then quits.
 func restartToUpdate() bool {
-	bundle := updates.bundle
+	bundle, exe := updates.bundle, updates.exe
 	if !updates.install() {
 		return false
 	}
-	if err := update.Relaunch(bundle); err != nil {
+	var err error
+	if bundle != "" {
+		err = update.Relaunch(bundle)
+	} else {
+		err = update.RelaunchBinary(exe)
+	}
+	if err != nil {
 		log.Println("update:", err)
 	}
 	return true
