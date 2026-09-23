@@ -197,7 +197,17 @@ func Run(version string, showMain bool) error {
 	h.tray.AttachWindow(h.panel).WindowOffset(6)
 
 	if showMain {
-		h.app.Event.OnApplicationEvent(events.Common.ApplicationStarted, func(*application.ApplicationEvent) { h.ShowMain("") })
+		if runtime.GOOS == "windows" {
+			// Wails shows a Windows webview 3s after Show whether or not
+			// WebView2 has made its controller yet, and a slow first start
+			// then crashes on the nil controller; wait for the first page.
+			var once sync.Once
+			h.main.OnWindowEvent(events.Windows.WebViewNavigationCompleted, func(*application.WindowEvent) {
+				once.Do(func() { h.ShowMain("") })
+			})
+		} else {
+			h.app.Event.OnApplicationEvent(events.Common.ApplicationStarted, func(*application.ApplicationEvent) { h.ShowMain("") })
+		}
 	}
 	return h.app.Run()
 }
