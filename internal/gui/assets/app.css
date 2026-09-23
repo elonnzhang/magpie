@@ -155,7 +155,11 @@ body.window .row .ic { width: 22px; height: 22px; }
 /* two columns: the model, then the smaller setting; single controls sit at the end.
    Fixed widths keep every chevron on the same vertical line down the list. */
 .agent .who { flex: 1 1 auto; }
-.fields { display: grid; grid-template-columns: minmax(0, 1fr) 124px; gap: 5px; width: 320px; flex: none; margin-left: auto; }
+/* Two fixed columns: the model (or large model) fills the left, the second
+   setting the right, so every chip and its chevron lines up down the list.
+   A single control keeps the left column, so the model always sits in the
+   same place. */
+.fields { display: grid; grid-template-columns: minmax(0, 1fr) 124px; gap: 5px; width: 350px; flex: none; margin-left: auto; }
 body.panel .fields { width: 272px; grid-template-columns: minmax(0, 1fr) 118px; }
 .field {
   display: inline-flex; align-items: center; gap: 5px;
@@ -170,8 +174,6 @@ body.panel .fields { width: 272px; grid-template-columns: minmax(0, 1fr) 118px; 
 body.panel .field { height: 24px; font-size: 12px; box-shadow: inset 0 0 0 1px var(--pill-line), var(--pill-shadow); }
 body.panel .field:hover { box-shadow: inset 0 0 0 1px var(--pill-line), var(--pill-shadow); }
 body.panel .field.open { box-shadow: inset 0 0 0 1px var(--accent), var(--pill-shadow); }
-.field.main, .field.solo { justify-self: end; }
-.field.solo { grid-column: 1 / -1; }
 .field:hover, .field.open { background: var(--pill-hover); }
 .field.open { box-shadow: inset 0 0 0 1px var(--accent); }
 .row .field .ic, body.window .row .field .ic { width: 14px; height: 14px; }
