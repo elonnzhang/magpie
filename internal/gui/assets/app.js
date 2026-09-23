@@ -108,13 +108,17 @@ function renderAgents() {
     row.title = a.path;
     const who = el("div", "who");
     who.append(el("div", "name", a.name));
+    // the model picker takes the wide column, everything else the narrow one,
+    // so the controls line up down the list
     const fields = el("div", "fields");
-    for (const f of a.fields) {
-      const b = el("button", "field");
+    const wide = (f) => f.label === "model" || f.label === "large";
+    const sorted = [...a.fields].sort((x, y) => wide(y) - wide(x));
+    for (const f of sorted) {
+      const b = el("button", "field " + (sorted.length === 1 ? "solo" : wide(f) ? "main" : "side"));
       const opt = optionFor(f, f.value);
       b.title = `${f.label}: ${f.value || "agent default"}` + (opt?.note ? ` · ${opt.note}` : "");
       if (opt?.icon) b.append(icon(opt.icon));
-      else if (f.label !== "model" || !f.value) b.append(el("span", "k", f.label));
+      else if (!wide(f) || !f.value) b.append(el("span", "k", f.label));
       b.append(el("span", "v" + (f.value ? "" : " empty"), opt?.label || f.value || "default"));
       const c = el("span", "chev");
       c.append(svg(CHEV, 11, 1.7));
@@ -128,7 +132,7 @@ function renderAgents() {
 
   const chips = $("#profiles");
   chips.replaceChildren();
-  if (!state.profiles.length) chips.append(el("span", "hint", "Save the current setup to switch everything back in one click."));
+  if (!state.profiles.length) chips.append(el("span", "hint", "none yet · save the setup to switch back in one click"));
   for (const p of state.profiles) {
     const c = el("button", "chip");
     c.title = p.summary;

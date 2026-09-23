@@ -179,7 +179,7 @@ func gemini(home string) *Agent {
 						key.Note = "needs GEMINI_API_KEY — add Google Gemini in dial's providers"
 					}
 					out := []Option{
-						{Value: "google", Label: "Google account", Icon: "gemini-color", Note: "OAuth sign-in"},
+						{Value: "google", Label: "Google", Icon: "gemini-color", Note: "Google account · OAuth sign-in"},
 						key,
 						{Value: "vertex", Label: "Vertex AI", Icon: "googlecloud-color", Note: "Vertex AI · $GOOGLE_CLOUD_PROJECT"},
 					}
