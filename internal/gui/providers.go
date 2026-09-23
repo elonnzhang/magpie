@@ -3,6 +3,7 @@ package gui
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -190,9 +191,9 @@ func ago(t time.Time) string {
 	case d < time.Minute:
 		return "just now"
 	case d < time.Hour:
-		return strings.TrimSuffix(d.Round(time.Minute).String(), "0s") + " ago"
+		return fmt.Sprintf("%dm ago", int(d.Round(time.Minute).Minutes()))
 	case d < 48*time.Hour:
-		return d.Round(time.Hour).String() + " ago"
+		return fmt.Sprintf("%dh ago", int(d.Round(time.Hour).Hours()))
 	default:
 		return t.Format("Jan 2")
 	}
