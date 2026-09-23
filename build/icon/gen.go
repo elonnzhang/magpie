@@ -1,9 +1,10 @@
 //go:build ignore
 
-// Icon generator. Everything dial shows is drawn from one glyph, "detent":
-// a control ring open to the upper right with a detached index reaching
-// through the opening, the instant a knob clicks into position. The same
-// paths live in internal/gui/assets/index.html, on a 44-unit grid.
+// Icon generator. Everything dial shows is drawn from one glyph, "gateway":
+// three inputs come in from the left, two of them curving, and meet at a
+// hollow node in the middle; one line leaves to the right. Many models,
+// one endpoint. The same paths live in internal/gui/assets/index.html, on a
+// 44-unit grid.
 //
 //	go run build/icon/gen.go tray internal/gui/tray.png     # 44px black template icon (macOS menu bar)
 //	go run build/icon/gen.go app 64 internal/gui/icon.png   # coloured app icon at a given size
@@ -117,25 +118,43 @@ func app(n int) image.Image {
 	return img
 }
 
-// mark is the glyph on its 44-unit grid: a 4.5-wide ring of radius 15 about
-// (22,22), open between -75° and -15° (upper right), plus a round-capped
-// index from (25,19) to (34,10). Both strokes have round caps.
+// mark is the glyph on its 44-unit grid: a 4.5-wide ring of radius 6.5 about
+// (22,22); three inputs from x=5, the middle one straight and the outer two
+// curving in from y=11 and y=33; one straight output to x=39. Round caps.
 func mark(u, v float64) bool {
-	const cx, cy, r, w = 22.0, 22.0, 15.0, 4.5
-	dx, dy := u-cx, v-cy
-	d := math.Hypot(dx, dy)
-	ang := math.Atan2(dy, dx) * 180 / math.Pi // y down: -90 is up
-	if math.Abs(d-r) <= w/2 && !(ang > -75 && ang < -15) {
+	const w = 4.5
+	if d := math.Hypot(u-22, v-22); math.Abs(d-6.5) <= w/2 {
 		return true
 	}
-	// round caps at the two ends of the opening
-	for _, a := range []float64{-75, -15} {
-		ex, ey := cx+r*math.Cos(a*math.Pi/180), cy+r*math.Sin(a*math.Pi/180)
-		if math.Hypot(u-ex, v-ey) <= w/2 {
+	if segDist(u, v, 5, 22, 15.5, 22) <= w/2 || segDist(u, v, 28.5, 22, 39, 22) <= w/2 {
+		return true
+	}
+	for _, c := range [][8]float64{
+		{5, 11, 12, 11, 11, 22, 16, 22},
+		{5, 33, 12, 33, 11, 22, 16, 22},
+	} {
+		if bezDist(u, v, c) <= w/2 {
 			return true
 		}
 	}
-	return segDist(u, v, 25, 19, 34, 10) <= w/2
+	return false
+}
+
+// bezDist is the distance from (px,py) to a cubic bezier, flattened into
+// short segments; plenty for a stroke this wide.
+func bezDist(px, py float64, c [8]float64) float64 {
+	const n = 32
+	best := math.Inf(1)
+	x0, y0 := c[0], c[1]
+	for i := 1; i <= n; i++ {
+		t := float64(i) / n
+		m := 1 - t
+		x := m*m*m*c[0] + 3*m*m*t*c[2] + 3*m*t*t*c[4] + t*t*t*c[6]
+		y := m*m*m*c[1] + 3*m*m*t*c[3] + 3*m*t*t*c[5] + t*t*t*c[7]
+		best = math.Min(best, segDist(px, py, x0, y0, x, y))
+		x0, y0 = x, y
+	}
+	return best
 }
 
 func roundRect(px, py, x, y, w, h, r float64) bool {
