@@ -184,7 +184,6 @@ body.panel .field { height: 24px; font-size: 12px; }
 .chart .bar i.in { opacity: .38; }
 .chart .labels { display: flex; gap: 3px; margin-top: 5px; font-size: 10.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
 .chart .labels span { flex: 1 1 0; min-width: 0; white-space: nowrap; overflow: visible; }
-#view-usage .row-head { margin-top: 10px; }
 .row.stat .who { flex: 0 0 180px; }
 .row.stat .share { flex: 1 1 auto; height: 4px; border-radius: 2px; background: var(--pill); overflow: hidden; margin: 0 6px; }
 .row.stat .share i { display: block; height: 100%; border-radius: 2px; background: var(--accent); opacity: .7; }
@@ -284,7 +283,7 @@ body.window .foot { padding-left: 18px; }
 .gw .url:hover { background: var(--pill-hover); box-shadow: inset 0 0 0 1px var(--line); }
 .gw .url code { color: var(--fg-2); font-size: 11px; }
 .gw .url:hover code { color: var(--fg); }
-#view-gateway .row-head { margin-top: 10px; }
+#view-gateway .row-head, #view-usage .row-head { margin: 14px 0 6px; padding: 0 2px; }
 #view-gateway .row-head .note { font-size: 11px; color: var(--faint); }
 
 /* the connect card: label column, then the value with a copy button */
