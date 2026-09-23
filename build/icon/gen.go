@@ -1,10 +1,9 @@
 //go:build ignore
 
-// Icon generator. Everything dial shows is drawn from one glyph, "gateway":
-// three inputs come in from the left, two of them curving, and meet at a
-// hollow node in the middle; one line leaves to the right. Many models,
-// one endpoint. The same paths live in internal/gui/assets/index.html, on a
-// 44-unit grid.
+// Icon generator. Everything dial shows is drawn from one glyph: a
+// kingfisher in profile, facing right, big head and dagger beak, a short
+// tail, the wing suggested by one thin line, the eye a hole. The same path
+// lives in internal/gui/assets/index.html, on a 44-unit grid.
 //
 //	go run build/icon/gen.go tray internal/gui/tray.png     # 44px black template icon (macOS menu bar)
 //	go run build/icon/gen.go app 64 internal/gui/icon.png   # coloured app icon at a given size
@@ -19,6 +18,7 @@ import (
 	"math"
 	"os"
 	"strconv"
+	"strings"
 )
 
 func main() {
@@ -68,7 +68,7 @@ func tray() image.Image {
 	return img
 }
 
-// app draws a rounded indigo square with the glyph in white.
+// app draws a rounded square, kingfisher blue, with the glyph in white.
 func app(n int) image.Image {
 	S := float64(n)
 	img := image.NewNRGBA(image.Rect(0, 0, n, n))
@@ -76,11 +76,12 @@ func app(n int) image.Image {
 	inset := S * 0.1
 	side := S - 2*inset
 	radius := side * 0.225
-	// the mark fills 75% of the tile, as in the reference SVG (scale 14 on 824)
-	k := side * 0.747 / 44
-	ox, oy := inset+(side-44*k)/2, inset+(side-44*k)/2
-	bg1 := [3]float64{0x5b, 0x55, 0xf0} // top: lighter indigo
-	bg2 := [3]float64{0x3f, 0x37, 0xc9} // bottom: deeper
+	// the bird spans 42 of the 44 units across and sits a little high, so
+	// it is drawn at 70% of the tile and nudged down to sit on centre
+	k := side * 0.70 / 44
+	ox, oy := inset+(side-44*k)/2, inset+(side-44*k)/2+1.5*k
+	bg1 := [3]float64{0x22, 0xb8, 0xd4} // top: kingfisher teal
+	bg2 := [3]float64{0x14, 0x67, 0xb4} // bottom: deeper blue
 	ss := 4
 	if n <= 64 {
 		ss = 8
@@ -118,26 +119,69 @@ func app(n int) image.Image {
 	return img
 }
 
-// mark is the glyph on its 44-unit grid: a 4.5-wide ring of radius 6.5 about
-// (22,22); three inputs from x=5, the middle one straight and the outer two
-// curving in from y=11 and y=33; one straight output to x=39. Round caps.
+// mark is the glyph on its 44-unit grid. The outline is drawn facing left
+// (beak at x=1) and mirrored, so the bird looks right, toward the name.
 func mark(u, v float64) bool {
-	const w = 4.5
-	if d := math.Hypot(u-22, v-22); math.Abs(d-6.5) <= w/2 {
-		return true
+	u = 44 - u
+	if !inside(u, v) {
+		return false
 	}
-	if segDist(u, v, 5, 22, 15.5, 22) <= w/2 || segDist(u, v, 28.5, 22, 39, 22) <= w/2 {
-		return true
+	if math.Hypot(u-18.4, v-13.3) <= 1.6 { // eye
+		return false
 	}
-	for _, c := range [][8]float64{
-		{5, 11, 12, 11, 11, 22, 16, 22},
-		{5, 33, 12, 33, 11, 22, 16, 22},
-	} {
-		if bezDist(u, v, c) <= w/2 {
-			return true
+	if bezDist(u, v, wing) <= 0.7 { // wing line
+		return false
+	}
+	return true
+}
+
+// outline is the body, beak to tail and back, as a flattened polygon.
+var outline = flatten(`M1 15.5 L13.5 11.2 C15.5 6.8 21 4.2 26 5.6 C29.5 6.6 31 9.2 30.6 12.2 C34 14.8 37.5 19.5 39.2 25.5 L43.5 31.5 L39.2 34 C36 34.3 33.5 33.8 32 32.8 C28 37 19.5 36.5 15 29.5 C12.8 26 12.6 21.5 13.5 17.6 Z`)
+
+var wing = [8]float64{27, 16.5, 31, 19.5, 35, 24.5, 37.5, 30.5}
+
+// inside is even-odd point-in-polygon against the outline.
+func inside(px, py float64) bool {
+	in := false
+	n := len(outline)
+	for i, j := 0, n-1; i < n; j, i = i, i+1 {
+		xi, yi := outline[i][0], outline[i][1]
+		xj, yj := outline[j][0], outline[j][1]
+		if (yi > py) != (yj > py) && px < (xj-xi)*(py-yi)/(yj-yi)+xi {
+			in = !in
 		}
 	}
-	return false
+	return in
+}
+
+// flatten turns an SVG path of M, L, C and Z commands (absolute, as in
+// index.html) into a polygon, each curve cut into short segments.
+func flatten(d string) [][2]float64 {
+	var pts [][2]float64
+	f := strings.Fields(strings.NewReplacer("M", " M ", "L", " L ", "C", " C ", "Z", " Z ").Replace(d))
+	num := func(i int) float64 { x, _ := strconv.ParseFloat(f[i], 64); return x }
+	for i := 0; i < len(f); {
+		switch f[i] {
+		case "M", "L":
+			pts = append(pts, [2]float64{num(i + 1), num(i + 2)})
+			i += 3
+		case "C":
+			p := pts[len(pts)-1]
+			c := [8]float64{p[0], p[1], num(i + 1), num(i + 2), num(i + 3), num(i + 4), num(i + 5), num(i + 6)}
+			for k := 1; k <= 24; k++ {
+				t := float64(k) / 24
+				m := 1 - t
+				pts = append(pts, [2]float64{
+					m*m*m*c[0] + 3*m*m*t*c[2] + 3*m*t*t*c[4] + t*t*t*c[6],
+					m*m*m*c[1] + 3*m*m*t*c[3] + 3*m*t*t*c[5] + t*t*t*c[7],
+				})
+			}
+			i += 7
+		default: // Z
+			i++
+		}
+	}
+	return pts
 }
 
 // bezDist is the distance from (px,py) to a cubic bezier, flattened into

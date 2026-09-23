@@ -111,7 +111,7 @@ code { font: 11.5px var(--code); }
 .top { display: flex; align-items: center; gap: 8px; padding: 0 10px 0 14px; height: 46px; flex: none; position: relative; }
 body.window .top { padding-left: 88px; height: 50px; padding-top: 2px; } /* the traffic lights centre 25.75pt from the top, not 25 */
 .brand { display: flex; align-items: center; gap: 6px; font-weight: 600; letter-spacing: .01em; }
-.logo { color: var(--accent); display: inline-flex; }
+.logo { color: var(--fg); display: inline-flex; } /* ink, like the wordmark; the accent blue fought the text in light mode */
 .seg {
   position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
   display: inline-flex; padding: 2px; border-radius: 8px;
