@@ -26,11 +26,15 @@ type host struct {
 	tray  *application.SystemTray
 
 	panelHeight int
+	query       string // what the windows' URLs carry (a forced theme)
 }
 
 func (h *host) HidePanel() { h.panel.Hide() }
-func (h *host) ShowMain() {
+func (h *host) ShowMain(view string) {
 	h.panel.Hide()
+	if view != "" {
+		h.main.SetURL("/?view=" + view + h.query)
+	}
 	h.main.Show()
 	h.main.Focus()
 }
@@ -73,7 +77,8 @@ func Run(version string, showMain bool) error {
 	if t := os.Getenv("DIAL_THEME"); t != "" {
 		theme = "&theme=" + t
 	}
-	h := &host{}
+	Version = version
+	h := &host{query: theme}
 	h.app = application.New(application.Options{
 		Name:        "dial",
 		Description: "one dial for every coding agent's model",
@@ -124,7 +129,7 @@ func Run(version string, showMain bool) error {
 	})
 
 	menu := h.app.NewMenu()
-	menu.Add("Open dial").OnClick(func(*application.Context) { h.ShowMain() })
+	menu.Add("Open dial").OnClick(func(*application.Context) { h.ShowMain("") })
 	menu.AddSeparator()
 	menu.Add("Version " + version).SetEnabled(false)
 	menu.Add("Quit dial").OnClick(func(*application.Context) { h.app.Quit() })
@@ -140,7 +145,7 @@ func Run(version string, showMain bool) error {
 	h.tray.AttachWindow(h.panel).WindowOffset(6)
 
 	if showMain {
-		h.app.Event.OnApplicationEvent(events.Common.ApplicationStarted, func(*application.ApplicationEvent) { h.ShowMain() })
+		h.app.Event.OnApplicationEvent(events.Common.ApplicationStarted, func(*application.ApplicationEvent) { h.ShowMain("") })
 	}
 	return h.app.Run()
 }

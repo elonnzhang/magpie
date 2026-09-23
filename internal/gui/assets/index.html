@@ -13,17 +13,20 @@
     <span>dial</span>
   </div>
   <nav class="seg" id="nav" style="--wails-draggable:no-drag">
-    <button data-view="agents" class="on">Agents</button>
-    <button data-view="providers">Providers</button>
-    <button data-view="gateway">Gateway</button>
-    <button data-view="usage">Usage</button>
+    <button data-view="agents" class="on" data-t>Agents</button>
+    <button data-view="providers" data-t>Providers</button>
+    <button data-view="gateway" data-t>Gateway</button>
+    <button data-view="usage" data-t>Usage</button>
   </nav>
   <div class="actions" style="--wails-draggable:no-drag">
-    <button class="icon" id="sync" title="Refresh model lists (models.dev and every vendor)">
+    <button class="icon" id="sync" title="Refresh model lists (models.dev and every vendor)" data-tt>
       <svg viewBox="0 0 16 16" width="14" height="14"><path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9M13.5 2v3h-3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
     </button>
-    <button class="icon" id="open" title="Open as a window">
+    <button class="icon" id="open" title="Open as a window" data-tt>
       <svg viewBox="0 0 16 16" width="14" height="14"><path d="M6 3H3.5A1.5 1.5 0 0 0 2 4.5v8A1.5 1.5 0 0 0 3.5 14h8a1.5 1.5 0 0 0 1.5-1.5V10M9 2h5v5M14 2 8 8" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </button>
+    <button class="icon" id="prefs" title="Settings" data-tt>
+      <svg viewBox="0 0 24 24" width="14" height="14"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></g></svg>
     </button>
   </div>
 </header>
@@ -31,9 +34,9 @@
 <main class="view" id="view-agents">
   <div class="list" id="agents"></div>
   <section class="profiles">
-    <span class="label">Profiles</span>
+    <span class="label" data-t>Profiles</span>
     <div id="profiles" class="chips"></div>
-    <button class="text" id="save">＋ Save current</button>
+    <button class="text" id="save" data-t>＋ Save current</button>
   </section>
 </main>
 
@@ -41,7 +44,7 @@
   <div class="list" id="providers"></div>
   <div id="excluded"></div>
   <div class="after-list">
-    <button class="text" id="addProvider">＋ Add provider</button>
+    <button class="text" id="addProvider" data-t>＋ Add provider</button>
   </div>
   <section class="sheet" id="addSheet" hidden></section>
 </main>
@@ -50,11 +53,11 @@
   <div class="list gwcard">
     <div class="row gw" id="gateway"></div>
   </div>
-  <div class="row-head"><span class="label">Connect</span><span class="grow"></span><span class="note" id="connectNote"></span></div>
+  <div class="row-head"><span class="label" data-t>Connect</span><span class="grow"></span><span class="note" id="connectNote"></span></div>
   <section class="list connect" id="connect"></section>
-  <div class="row-head"><span class="label">Models</span><span class="grow"></span><button class="text" id="copyModels">Copy all ids</button></div>
+  <div class="row-head"><span class="label" data-t>Models</span><span class="grow"></span><button class="text" id="copyModels" data-t>Copy all ids</button></div>
   <div class="list" id="gwModels"></div>
-  <div class="row-head"><span class="label">Recent calls</span><span class="grow"></span><span class="note" id="callsNote"></span></div>
+  <div class="row-head"><span class="label" data-t>Recent calls</span><span class="grow"></span><span class="note" id="callsNote"></span></div>
   <div class="list activity" id="activity"></div>
 </main>
 
@@ -66,28 +69,45 @@
   </div>
   <section class="stats" id="stats"></section>
   <section class="chart" id="chart"></section>
-  <div class="row-head"><span class="label">Agents</span></div>
+  <div class="row-head"><span class="label" data-t>Agents</span></div>
   <div class="list" id="usageAgents"></div>
-  <div class="row-head"><span class="label">Models</span></div>
+  <div class="row-head"><span class="label" data-t>Models</span></div>
   <div class="list" id="usageModels"></div>
   <p class="usage-note" id="usageNote"></p>
+</main>
+
+<main class="view" id="view-settings" hidden>
+  <div class="row-head"><span class="label" data-t>Preferences</span></div>
+  <div class="list prefs">
+    <div class="row pref">
+      <div class="who"><div class="name" data-t>Appearance</div><div class="sub" data-t>Light or dark, or whatever the system is showing</div></div>
+      <div id="themeSegs"></div>
+    </div>
+    <div class="row pref">
+      <div class="who"><div class="name" data-t>Language</div><div class="sub" data-t>Applies at once, no restart</div></div>
+      <div id="langSegs"></div>
+    </div>
+  </div>
+  <div class="row-head"><span class="label" data-t>About</span></div>
+  <div class="list prefs" id="about"></div>
 </main>
 
 <footer class="foot">
   <span id="status" class="status"></span>
   <span class="grow"></span>
-  <button class="text" id="openMain">Open dial</button>
-  <button class="text" id="quit">Quit</button>
+  <button class="text" id="openMain" data-t>Open dial</button>
+  <button class="text" id="quit" data-t>Quit</button>
 </footer>
 
 <div id="pop" class="pop" hidden>
   <div class="search">
     <svg viewBox="0 0 16 16" width="13" height="13"><circle cx="7" cy="7" r="4.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="m10.5 10.5 3 3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
-    <input id="q" type="text" spellcheck="false" autocomplete="off" placeholder="Filter…">
+    <input id="q" type="text" spellcheck="false" autocomplete="off" placeholder="Filter…" data-tp>
   </div>
   <ul id="list"></ul>
 </div>
 
+<script src="i18n.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

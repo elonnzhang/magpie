@@ -6,7 +6,8 @@ const mode = params.get("mode") || "window";
 document.body.classList.add(mode);
 if (params.get("theme")) document.documentElement.dataset.theme = params.get("theme");
 
-let state = { agents: [], profiles: [], catalog: "" };
+let state = { agents: [], profiles: [], catalog: "", settings: {} };
+let prefs = null; // the settings page: theme, lang, version, dir, gateway
 let providers = null; // { providers, presets, gateway }
 let view = "agents";
 let period = "30d"; // usage window
@@ -99,7 +100,7 @@ function renderAgents() {
   list.replaceChildren();
   if (!state.agents.length) {
     const e = el("div", "empty-state");
-    e.append(el("b", "", "No coding agents found"), el("span", "", "Install Claude Code, Codex, Gemini CLI, OpenCode… and dial will list them here."));
+    e.append(el("b", "", t("No coding agents found")), el("span", "", t("Install Claude Code, Codex, Gemini CLI, OpenCode… and dial will list them here.")));
     list.append(e);
   }
   for (const a of state.agents) {
@@ -116,10 +117,10 @@ function renderAgents() {
     for (const f of sorted) {
       const b = el("button", "field " + (sorted.length === 1 ? "solo" : wide(f) ? "main" : "side"));
       const opt = optionFor(f, f.value);
-      b.title = `${f.label}: ${f.value || "agent default"}` + (opt?.note ? ` · ${opt.note}` : "");
+      b.title = t("{label}: {value}", { label: t(f.label), value: f.value || t("agent default") }) + (opt?.note ? ` · ${opt.note}` : "");
       if (opt?.icon) b.append(icon(opt.icon));
-      else if (!wide(f) || !f.value) b.append(el("span", "k", f.label));
-      b.append(el("span", "v" + (f.value ? "" : " empty"), opt?.label || f.value || "default"));
+      else if (!wide(f) || !f.value) b.append(el("span", "k", t(f.label)));
+      b.append(el("span", "v" + (f.value ? "" : " empty"), opt?.label || f.value || t("default")));
       const c = el("span", "chev");
       c.append(svg(CHEV, 11, 1.7));
       b.append(c);
@@ -132,13 +133,13 @@ function renderAgents() {
 
   const chips = $("#profiles");
   chips.replaceChildren();
-  if (!state.profiles.length) chips.append(el("span", "hint", "none yet · save the setup to switch back in one click"));
+  if (!state.profiles.length) chips.append(el("span", "hint", t("none yet · save the setup to switch back in one click")));
   for (const p of state.profiles) {
     const c = el("button", "chip");
     c.title = p.summary;
     c.append(el("span", "", p.name));
     const x = el("span", "x", "×");
-    x.title = "Delete profile";
+    x.title = t("Delete profile");
     x.onclick = (ev) => { ev.stopPropagation(); profileAction("delete", p.name); };
     c.append(x);
     c.onclick = () => profileAction("use", p.name);
@@ -157,9 +158,11 @@ function fit() {
 async function load() {
   try {
     state = await api("state");
+    applyPrefs(state.settings);
     renderAgents();
     if (view === "providers" || view === "gateway") await loadProviders();
     if (view === "usage") await loadUsage();
+    if (view === "settings") await loadSettings();
   } catch (e) {
     status(e.message, "err");
   }
@@ -203,9 +206,9 @@ function openPicker(agent, field, anchor, ev, only) {
   // current value first, then the rest in catalog order
   const i = options.findIndex((o) => o.value === cur);
   if (i > 0) { const [c] = options.splice(i, 1); options.unshift({ ...c, group: "" }); }
-  else if (i < 0 && cur && !only) options.unshift({ value: cur, note: "current value" });
+  else if (i < 0 && cur && !only) options.unshift({ value: cur, note: t("current value") });
   // the agent's own default: dial's wiring comes out and the key is removed
-  if (!only) options.unshift({ value: "", label: "Default", note: `what ${agent.name} ships with`, icon: agent.icon, reset: true });
+  if (!only) options.unshift({ value: "", label: t("Default"), note: t("what {agent} ships with", { agent: agent.name }), icon: agent.icon, reset: true });
   pick = { agent, field, options, anchor, cursor: 0, free: !only };
   anchor.classList.add("open");
   const pop = $("#pop");
@@ -213,7 +216,7 @@ function openPicker(agent, field, anchor, ev, only) {
   placePop(anchor, options.some((o) => o.note && o.note !== o.value) ? 372 : 300, 340);
   const q = $("#q");
   q.value = "";
-  q.placeholder = field.label === "model" ? (only ? "Filter models…" : "Filter, or type any model id…") : `Filter ${field.label}…`;
+  q.placeholder = field.label === "model" ? (only ? t("Filter models…") : t("Filter, or type any model id…")) : t("Filter {field}…", { field: t(field.label) });
   filter();
   q.focus();
 }
@@ -227,7 +230,7 @@ function filter() {
   pick.items = scored.map((x) => x.o);
   const typed = $("#q").value.trim();
   if (typed && pick.free && pick.field.label === "model" && !pick.items.some((o) => o.value === typed)) {
-    pick.items.push({ value: typed, note: "use as typed", custom: true });
+    pick.items.push({ value: typed, note: t("use as typed"), custom: true });
   }
   pick.cursor = 0;
   renderList();
@@ -236,7 +239,7 @@ function filter() {
 function renderList() {
   const list = $("#list");
   list.replaceChildren();
-  if (!pick.items.length) { list.append(el("div", "none", "No matches.")); return; }
+  if (!pick.items.length) { list.append(el("div", "none", t("No matches."))); return; }
   const hasIcons = pick.items.some((o) => o.icon);
   const q = $("#q").value.trim();
   let group = null;
@@ -279,7 +282,7 @@ async function commit(value) {
     b?.classList.add("flash");
     const shown = opt?.label || value;
     if (state.notice) status(`${agent.name} → ${shown}. ${state.notice}`, "warn", 9000);
-    else status(`${agent.name} ${field.label} → ${shown}`, "ok");
+    else status(`${agent.name} ${t(field.label)} → ${shown}`, "ok");
     if (providers) loadProviders();
   } catch (e) {
     status(e.message, "err");
@@ -312,9 +315,9 @@ async function profileAction(action, name) {
     const data = await api("profile/" + action, { name });
     state = data;
     renderAgents();
-    if (action === "use") status(`${name} applied · ${data.changed} setting${data.changed === 1 ? "" : "s"} changed`, "ok");
-    else if (action === "save") status(`Saved ${name}`, "ok");
-    else status(`Deleted ${name}`);
+    if (action === "use") status(t(data.changed === 1 ? "{name} applied · {n} setting changed" : "{name} applied · {n} settings changed", { name, n: data.changed }), "ok");
+    else if (action === "save") status(t("Saved {name}", { name }), "ok");
+    else status(t("Deleted {name}", { name }));
   } catch (e) {
     status(e.message, "err");
   }
@@ -324,7 +327,7 @@ $("#save").onclick = () => {
   const chips = $("#profiles");
   if (chips.querySelector(".chip-input")) return;
   const input = el("input", "chip-input");
-  input.placeholder = "Profile name";
+  input.placeholder = t("Profile name");
   input.onkeydown = (e) => {
     if (e.key === "Enter" && input.value.trim()) profileAction("save", input.value.trim());
     else if (e.key === "Escape") input.remove();
@@ -361,22 +364,22 @@ function renderProviders() {
     row.dataset.id = p.id;
     const who = el("div", "who");
     const name = el("div", "name", p.name);
-    if (p.sponsored) name.append(el("span", "badge", "sponsored"));
+    if (p.sponsored) name.append(el("span", "badge", t("sponsored")));
     const n = p.models.filter((m) => m.on).length;
-    const models = n ? `${n} model${n === 1 ? "" : "s"}` : "no models exposed";
-    who.append(name, el("div", "sub", (p.account ? "signed in as " + p.account.user : p.host) + " · " + models));
+    const models = n ? t(n === 1 ? "{n} model" : "{n} models", { n }) : t("no models exposed");
+    who.append(name, el("div", "sub", (p.account ? t("signed in as {user}", { user: p.account.user }) : p.host) + " · " + models));
     const using = p.agents.filter((a) => a.current);
     const uses = el("div", "uses");
     for (const a of using) {
       const b = el("button", "use");
-      b.title = `${a.name} · ${a.model} — click to change`;
+      b.title = t("{name} · {model} — click to change", { name: a.name, model: a.model });
       b.append(icon(a.icon));
       b.onclick = (ev) => pickForAgent(a, p, b, ev);
       uses.append(b);
     }
     if (p.agents.some((a) => !a.current && canUse(a, p))) {
       const b = el("button", "use add");
-      b.title = using.length ? "Point another agent at " + p.name : "Point an agent at " + p.name;
+      b.title = t(using.length ? "Point another agent at {p}" : "Point an agent at {p}", { p: p.name });
       b.append(svg(PLUS, 11, 1.8));
       b.onclick = (ev) => { ev.stopPropagation(); editing = p.id; draft = null; adding = false; renderProviders(); };
       uses.append(b);
@@ -384,10 +387,10 @@ function renderProviders() {
     let key;
     if (p.account) {
       key = el("span", "key acct", accountPlan(p.account));
-      key.title = `${p.account.agentName} is signed in; its models are here for every other agent`;
+      key.title = t("{agent} is signed in; its models are here for every other agent", { agent: p.account.agentName });
     } else {
-      key = el("span", "key " + (p.key.set ? "on" : p.ready ? "free" : "none"), p.key.set ? p.key.masked : p.ready ? "no key" : "needs a key");
-      key.title = p.key.set ? "API key " + p.key.masked : p.ready ? "Local servers need no key" : "Open the row and paste an API key";
+      key = el("span", "key " + (p.key.set ? "on" : p.ready ? "free" : "none"), p.key.set ? p.key.masked : p.ready ? t("no key") : t("needs a key"));
+      key.title = p.key.set ? t("API key {masked}", { masked: p.key.masked }) : p.ready ? t("Local servers need no key") : t("Open the row and paste an API key");
     }
     const chev = el("span", "chev");
     chev.append(svg(CHEV_R, 11, 1.7));
@@ -409,7 +412,7 @@ function renderExcluded() {
   for (const x of providers.excluded) {
     const r = el("div", "excluded");
     r.append(icon(x.agentIcon), el("span", "", ""));
-    r.lastChild.append(el("b", "", x.agentName + " is signed in, but stays out of this list. "), x.why);
+    r.lastChild.append(el("b", "", t("{agent} is signed in, but stays out of this list. ", { agent: x.agentName })), x.why);
     box.append(r);
   }
 }
@@ -418,7 +421,7 @@ function renderExcluded() {
 function accountPlan(a) {
   if (a.agent === "codex") return "ChatGPT" + (a.plan ? " " + a.plan[0].toUpperCase() + a.plan.slice(1) : "");
   if (a.agent === "copilot") return "GitHub";
-  return "signed in";
+  return t("signed in");
 }
 
 // ---------- gateway view ----------
@@ -428,11 +431,11 @@ function accountPlan(a) {
 // and a snippet in whichever language the reader is holding.
 
 async function copy(text, what) {
-  try { await navigator.clipboard.writeText(text); status(what + " copied", "ok"); } catch { status(text); }
+  try { await navigator.clipboard.writeText(text); status(t("{what} copied", { what }), "ok"); } catch { status(text); }
 }
 function copyBtn(text, what) {
   const b = el("button", "copy");
-  b.title = "Copy";
+  b.title = t("Copy");
   b.append(svg("M5.5 5.5V3.5h7v7h-2M3.5 5.5h7v7h-7z", 12, 1.5));
   b.onclick = (ev) => { ev.stopPropagation(); copy(text, what); };
   return b;
@@ -452,18 +455,18 @@ function renderGateway() {
   box.replaceChildren();
   const dot = el("span", "dot " + (g.running ? "on" : ""));
   const who = el("div", "who");
-  const name = el("div", "name", "Gateway");
-  name.append(el("span", "state", g.running ? (g.mine ? "running" : "running · served by another dial") : "not running"));
+  const name = el("div", "name", t("Gateway"));
+  name.append(el("span", "state", t(g.running ? (g.mine ? "running" : "running · served by another dial") : "not running")));
   const routed = new Set();
   for (const p of providers.providers) for (const a of p.agents) if (a.current) routed.add(a.id);
   const n = routed.size;
   who.append(name, el("div", "sub", g.running
-    ? `${g.models} model${g.models === 1 ? "" : "s"} · ${n ? `${n} agent${n === 1 ? "" : "s"} routed through it` : "no agent routed through it yet"} · four APIs, one URL`
-    : "start it with dial serve, or open dial at login"));
+    ? [t(g.models === 1 ? "{n} model" : "{n} models", { n: g.models }), n ? t(n === 1 ? "{n} agent routed through it" : "{n} agents routed through it", { n }) : t("no agent routed through it yet"), t("four APIs, one URL")].join(" · ")
+    : t("start it with dial serve, or open dial at login")));
   const url = el("button", "url");
   url.append(el("code", "", g.url));
-  url.title = "Copy the gateway URL";
-  url.onclick = () => copy(g.url, "Gateway URL");
+  url.title = t("Copy the gateway URL");
+  url.onclick = () => copy(g.url, t("Gateway URL"));
   box.append(dot, who, url);
 }
 
@@ -593,21 +596,21 @@ function renderConnect() {
   const model = exampleModel || "provider/model";
   const f = FLAVORS[flavor] || FLAVORS.openai;
   const base = f.base(g.url);
-  $("#connectNote").textContent = "Loopback only · the key can be anything";
+  $("#connectNote").textContent = t("Loopback only · the key can be anything");
 
-  box.append(...field("API", segs(Object.entries(FLAVORS).map(([k, v]) => [k, v.name]), flavor, (id) => { flavor = id; localStorage.setItem("dial.flavor", id); renderConnect(); }), f.note));
+  box.append(...field("API", segs(Object.entries(FLAVORS).map(([k, v]) => [k, v.name]), flavor, (id) => { flavor = id; localStorage.setItem("dial.flavor", id); renderConnect(); }), t(f.note)));
 
   const b = el("div", "val");
   b.append(el("code", "", base), copyBtn(base, "Base URL"));
-  box.append(...field("Base URL", b, `What ${f.baseEnv} takes.`));
+  box.append(...field("Base URL", b, t("What {env} takes.", { env: f.baseEnv })));
 
   const k = el("div", "val");
-  k.append(el("code", "", "dial"), copyBtn("dial", "Key"));
-  box.append(...field("API key", k, `${f.keyEnv}=dial. The gateway trusts everything on loopback, so any value works.`));
+  k.append(el("code", "", "dial"), copyBtn("dial", t("Key")));
+  box.append(...field(t("API key"), k, t("{env}=dial. The gateway trusts everything on loopback, so any value works.", { env: f.keyEnv })));
 
   const m = el("div", "val");
-  m.append(el("code", "", model), copyBtn(model, "Model id"));
-  box.append(...field("Model", m, models.length ? "provider/model, as listed below. Click a model there to put it in the snippets." : "No models yet. Add a provider, or sign in to Codex or Copilot."));
+  m.append(el("code", "", model), copyBtn(model, t("Model id")));
+  box.append(...field(t("Model"), m, t(models.length ? "provider/model, as listed below. Click a model there to put it in the snippets." : "No models yet. Add a provider, or sign in to Codex or Copilot.")));
 
   const ex = el("div", "stack");
   ex.append(segs(LANGS, lang, (id) => { lang = id; localStorage.setItem("dial.lang", id); renderConnect(); }));
@@ -617,9 +620,9 @@ function renderConnect() {
   const pre = el("pre", "snip");
   const c = el("code");
   c.append(highlight(code, lang));
-  pre.append(c, copyBtn(code, "Snippet"));
+  pre.append(c, copyBtn(code, t("Snippet")));
   ex.append(pre);
-  box.append(...field("Example", ex, lang === "shell" ? "Put these in the shell (or the tool's settings) and the tool talks to dial instead of the vendor." : ""));
+  box.append(...field(t("Example"), ex, lang === "shell" ? t("Put these in the shell (or the tool's settings) and the tool talks to dial instead of the vendor.") : ""));
 }
 
 // A small highlighter for the four snippet dialects: strings, comments,
@@ -658,17 +661,17 @@ function renderGatewayModels() {
   list.replaceChildren();
   const models = gatewayModels();
   $("#copyModels").hidden = !models.length;
-  $("#copyModels").onclick = () => copy(models.map((m) => m.id).join("\n"), "Model ids");
+  $("#copyModels").onclick = () => copy(models.map((m) => m.id).join("\n"), t("Model ids"));
   if (!models.length) {
-    list.append(el("div", "empty-state", "")).append(el("b", "", "No models exposed yet"), "Add a provider, or sign in to Codex or Copilot; their models show up here for every agent.");
+    list.append(el("div", "empty-state", "")).append(el("b", "", t("No models exposed yet")), t("Add a provider, or sign in to Codex or Copilot; their models show up here for every agent."));
     return;
   }
   for (const m of models) {
     const row = el("div", "row model" + (m.id === exampleModel ? " selected" : ""));
     const who = el("div", "who");
     who.append(el("div", "name", m.id), el("div", "sub", m.name && m.name !== m.id.split("/")[1] ? `${m.name} · ${m.provider.name}` : m.provider.name));
-    row.append(icon(m.provider.icon || "generic"), who, copyBtn(m.id, "Model id"));
-    row.title = "Use this model in the snippets";
+    row.append(icon(m.provider.icon || "generic"), who, copyBtn(m.id, t("Model id")));
+    row.title = t("Use this model in the snippets");
     row.onclick = () => { exampleModel = m.id; localStorage.setItem("dial.model", m.id); renderConnect(); renderGatewayModels(); };
     list.append(row);
   }
@@ -678,9 +681,9 @@ function renderActivity() {
   const g = providers.gateway;
   const box = $("#activity");
   box.replaceChildren();
-  $("#callsNote").textContent = g.running && !g.mine ? "shown by the dial that serves the gateway" : "";
+  $("#callsNote").textContent = g.running && !g.mine ? t("shown by the dial that serves the gateway") : "";
   const calls = g.calls.slice(0, 20);
-  if (!calls.length) { box.append(el("div", "none", "No requests yet. Point an agent at a model, or run the example above; every call shows up here as it happens.")); return; }
+  if (!calls.length) { box.append(el("div", "none", t("No requests yet. Point an agent at a model, or run the example above; every call shows up here as it happens."))); return; }
   for (const c of calls) {
     const r = el("div", "call" + (c.status >= 400 ? " bad" : ""));
     r.append(el("span", "when", new Date(c.time).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })));
@@ -710,7 +713,7 @@ function pickForAgent(a, p, btn, ev) {
   const pre = ofProvider(p);
   if (!field.options.some((o) => pre.test(o.value))) {
     ev.stopPropagation();
-    status(`${p.name} exposes no models yet — pick some below`, "warn");
+    status(t("{p} exposes no models yet — pick some below", { p: p.name }), "warn");
     editing = p.id; draft = null; renderProviders();
     return;
   }
@@ -726,13 +729,13 @@ function renderAdd() {
   $("#addProvider").hidden = adding;
   if (!adding) return;
   const head = el("div", "row-head");
-  head.append(el("span", "label", providers.providers.length ? "Add a provider" : "Add your first provider"), el("span", "grow"));
-  const q = input(presetQuery, "Find a vendor…");
+  head.append(el("span", "label", t(providers.providers.length ? "Add a provider" : "Add your first provider")), el("span", "grow"));
+  const q = input(presetQuery, t("Find a vendor…"));
   q.className = "find";
   q.oninput = () => { presetQuery = q.value; drawTiles(); };
   head.append(q);
   if (providers.providers.length) {
-    const x = el("button", "text", "Close");
+    const x = el("button", "text", t("Close"));
     x.onclick = () => { adding = false; editing = null; draft = null; presetQuery = ""; renderProviders(); };
     head.append(x);
   }
@@ -748,7 +751,7 @@ function renderAdd() {
       const ps = providers.presets.filter((p) => p.kind === kind && hit(p));
       if (!ps.length && !(kind === "local" && !f)) continue;
       any = true;
-      tiles.append(el("div", "kind", title));
+      tiles.append(el("div", "kind", t(title)));
       const grid = el("div", "grid");
       for (const pr of ps) grid.append(tile(pr));
       if (kind === "local" && !f) {
@@ -756,7 +759,7 @@ function renderAdd() {
         const ic = el("span", "ic plus");
         ic.append(svg(PLUS, 13, 1.8));
         c.append(ic, el("span", "tt"));
-        c.lastChild.append(el("span", "n", "Custom"), el("span", "s", "any compatible URL"));
+        c.lastChild.append(el("span", "n", t("Custom")), el("span", "s", t("any compatible URL")));
         c.onclick = () => { editing = { custom: true }; draft = null; renderProviders(); };
         grid.append(c);
       }
@@ -764,8 +767,8 @@ function renderAdd() {
     }
     if (!any) {
       const none = el("div", "none");
-      none.append(`Nothing called “${presetQuery.trim()}”. `);
-      const b = el("button", "link", "Add it as a custom provider");
+      none.append(t("Nothing called “{q}”. ", { q: presetQuery.trim() }));
+      const b = el("button", "link", t("Add it as a custom provider"));
       b.onclick = () => { editing = { custom: true }; draft = null; renderProviders(); };
       none.append(b);
       tiles.append(none);
@@ -776,23 +779,23 @@ function renderAdd() {
 }
 
 function tile(pr) {
-  const t = el("button", "tile" + (pr.added ? " added" : "") + (editing?.preset === pr.id ? " on" : ""));
-  t.append(icon(pr.icon || "generic"));
+  const b = el("button", "tile" + (pr.added ? " added" : "") + (editing?.preset === pr.id ? " on" : ""));
+  b.append(icon(pr.icon || "generic"));
   const tt = el("span", "tt");
   const n = el("span", "n", pr.name);
-  if (pr.sponsored) n.append(el("span", "badge", "sponsored"));
+  if (pr.sponsored) n.append(el("span", "badge", t("sponsored")));
   tt.append(n, el("span", "s", pr.note || hostOf(pr.chat || pr.responses || pr.anthropic)));
-  t.append(tt);
+  b.append(tt);
   if (pr.added) {
     const ck = el("span", "check");
     ck.append(svg(CHECK, 10, 2));
-    t.append(ck);
-    t.title = `${pr.name} is already added — open it`;
-    t.onclick = () => { editing = pr.id; adding = false; draft = null; renderProviders(); };
+    b.append(ck);
+    b.title = t("{name} is already added — open it", { name: pr.name });
+    b.onclick = () => { editing = pr.id; adding = false; draft = null; renderProviders(); };
   } else {
-    t.onclick = () => { editing = { preset: pr.id }; draft = null; renderProviders(); };
+    b.onclick = () => { editing = { preset: pr.id }; draft = null; renderProviders(); };
   }
-  return t;
+  return b;
 }
 
 function field(label, control, hint) {
@@ -830,7 +833,7 @@ function renderEditor(p, presetID) {
 
   if (isNew) {
     const h = el("div", "ehead");
-    h.append(icon(pr?.icon || "generic"), el("b", "", pr ? pr.name : "Custom provider"));
+    h.append(icon(pr?.icon || "generic"), el("b", "", pr ? pr.name : t("Custom provider")));
     if (pr?.note) h.append(el("span", "note", pr.note));
     h.append(el("span", "grow"));
     if (pr?.website) { const b = el("button", "link", hostOf(pr.website) + " ↗"); b.onclick = () => api("open", { url: pr.website }); h.append(b); }
@@ -845,23 +848,23 @@ function renderEditor(p, presetID) {
       const c = el("button", "achip" + (a.current ? " on" : ""));
       c.append(icon(a.icon), el("span", "n", a.name));
       if (a.current) c.append(el("span", "m", a.model));
-      c.title = a.current ? `${a.name} is on ${a.model} — click to change` : `Point ${a.name} at a ${p.name} model`;
+      c.title = a.current ? t("{agent} is on {model} — click to change", { agent: a.name, model: a.model }) : t("Point {agent} at a {p} model", { agent: a.name, p: p.name });
       c.onclick = (ev) => pickForAgent(a, p, c, ev);
       chips.append(c);
     }
-    ed.append(...field("Agents", chips, p.agents.some((a) => a.current) ? "" : "None yet. Click an agent to pick one of these models for it."));
+    ed.append(...field(t("Agents"), chips, p.agents.some((a) => a.current) ? "" : t("None yet. Click an agent to pick one of these models for it.")));
   }
 
   let name, url;
   if (custom) {
-    name = input(draft.name, "e.g. My Relay");
+    name = input(draft.name, t("e.g. My Relay"));
     name.oninput = () => { draft.name = name.value; if (isNew) draft.id = slug(name.value); };
-    ed.append(...field("Name", name));
+    ed.append(...field(t("Name"), name));
 
     const seg = el("div", "segs");
     for (const [v, l, hint] of [["openai", "OpenAI compatible", "…/v1 — chat completions, and responses when the vendor has it"], ["anthropic", "Anthropic compatible", "the root URL, what ANTHROPIC_BASE_URL would take"]]) {
-      const b = el("button", "opt" + (draft.api === v ? " on" : ""), l);
-      b.title = hint;
+      const b = el("button", "opt" + (draft.api === v ? " on" : ""), t(l));
+      b.title = t(hint);
       b.onclick = () => { draft.api = v; const u = url.value; if (v === "anthropic") { draft.anthropic = u; draft.chat = ""; } else { draft.chat = u; draft.anthropic = ""; } for (const x of seg.children) x.classList.toggle("on", x === b); url.placeholder = v === "anthropic" ? "https://…" : "https://…/v1"; };
       seg.append(b);
     }
@@ -877,89 +880,89 @@ function renderEditor(p, presetID) {
     const a = p.account;
     const acct = el("div", "acct");
     acct.append(icon(a.agentIcon), el("span", "n", a.user), el("span", "plan", accountPlan(a)));
-    ed.append(...field("Account", acct, `${a.agentName}'s sign-in, read from its own files. Sign out there and this provider goes away.`));
-    ed.append(...field("Models", renderModels(p), ""));
-    ed.append(...field("Endpoints", renderEndpoints(p, null)));
+    ed.append(...field(t("Account"), acct, t("{agent}'s sign-in, read from its own files. Sign out there and this provider goes away.", { agent: a.agentName })));
+    ed.append(...field(t("Models"), renderModels(p), ""));
+    ed.append(...field(t("Endpoints"), renderEndpoints(p, null)));
     const bar = el("div", "bar");
     bar.append(el("span", "grow"));
-    const cancel = el("button", "text", "Cancel");
+    const cancel = el("button", "text", t("Cancel"));
     cancel.onclick = cancelEdit;
-    const saveBtn = el("button", "text primary", "Save");
-    saveBtn.onclick = () => { saveBtn.classList.add("busy"); providerAction("save", { id: p.id, models: draft.chosen }, `${p.name} saved`, p.id); };
+    const saveBtn = el("button", "text primary", t("Save"));
+    saveBtn.onclick = () => { saveBtn.classList.add("busy"); providerAction("save", { id: p.id, models: draft.chosen }, t("{name} saved", { name: p.name }), p.id); };
     bar.append(cancel, saveBtn);
     ed.append(bar);
     return ed;
   }
 
-  const key = input("", p?.key.set ? `${p.key.masked} · paste a new key to replace it` : pr?.noKey || p?.key.optional ? "optional for local servers" : "paste an API key", "password");
+  const key = input("", p?.key.set ? t("{masked} · paste a new key to replace it", { masked: p.key.masked }) : t(pr?.noKey || p?.key.optional ? "optional for local servers" : "paste an API key"), "password");
   key.oninput = () => { draft.key = key.value; };
   key.onkeydown = (e) => { e.stopPropagation(); if (e.key === "Enter" && isNew) save(); else if (e.key === "Escape") cancelEdit(); };
   const side = el("div", "side");
-  const eye = el("button", "text", "Show");
+  const eye = el("button", "text", t("Show"));
   let revealed = false; // the saved key is in the box, not a draft
   eye.onclick = async () => {
     if (key.type === "password") {
       if (!key.value && p?.key.set) {
         try { key.value = (await api("provider/key", { id: p.id })).key; revealed = true; } catch (e) { status(e.message, "err"); return; }
       }
-      key.type = "text"; eye.textContent = "Hide";
+      key.type = "text"; eye.textContent = t("Hide");
     } else {
       if (revealed && !draft.key) key.value = "";
       revealed = false;
-      key.type = "password"; eye.textContent = "Show";
+      key.type = "password"; eye.textContent = t("Show");
     }
   };
   side.append(eye);
   const keysUrl = p?.keysUrl || pr?.keysUrl;
-  if (keysUrl) { const b = el("button", "link", "Get a key ↗"); b.onclick = () => api("open", { url: keysUrl }); side.append(b); }
+  if (keysUrl) { const b = el("button", "link", t("Get a key ↗")); b.onclick = () => api("open", { url: keysUrl }); side.append(b); }
   const keyWrap = el("div", "pair");
   keyWrap.append(key, side);
-  ed.append(...field("API key", keyWrap, isNew ? "Kept in ~/.config/dial/providers.json, readable by you alone. Nothing is read from your shell." : ""));
+  ed.append(...field(t("API key"), keyWrap, isNew ? t("Kept in ~/.config/dial/providers.json, readable by you alone. Nothing is read from your shell.") : ""));
 
-  if (p) ed.append(...field("Models", renderModels(p), ""));
+  if (p) ed.append(...field(t("Models"), renderModels(p), ""));
   else if (custom) {
-    const ex = input("", "model ids, comma separated · e.g. gpt-5.5, claude-sonnet-5");
+    const ex = input("", t("model ids, comma separated · e.g. gpt-5.5, claude-sonnet-5"));
     ex.oninput = () => { draft.extra = ex.value.split(/[,\s]+/).filter(Boolean); };
-    ed.append(...field("Models", ex, "Optional: dial asks the vendor for its list after saving."));
+    ed.append(...field(t("Models"), ex, t("Optional: dial asks the vendor for its list after saving.")));
   }
 
-  if (!custom) ed.append(...field("Endpoints", renderEndpoints(p, pr)));
+  if (!custom) ed.append(...field(t("Endpoints"), renderEndpoints(p, pr)));
 
   if (custom) {
     const more = el("details", "more");
-    more.append(el("summary", "", "More endpoints"));
+    more.append(el("summary", "", t("More endpoints")));
     const inner = el("div", "inner");
     const add = (label, key, ph, hint) => {
       const i = input(draft[key], ph, "url");
       i.oninput = () => { draft[key] = i.value; };
-      inner.append(...field(label, i, hint));
+      inner.append(...field(t(label), i, t(hint)));
     };
     if (draft.api === "anthropic") add("OpenAI URL", "chat", "https://…/v1", "if the vendor also serves chat completions");
     else add("Anthropic URL", "anthropic", "https://…", "if the vendor also serves Anthropic messages");
     add("Responses URL", "responses", "https://…/v1", "if the vendor serves the OpenAI Responses API (Codex uses it natively)");
-    const cat = input(draft.catalog, "models.dev id, e.g. openai");
+    const cat = input(draft.catalog, t("models.dev id, e.g. openai"));
     cat.oninput = () => { draft.catalog = cat.value; };
-    inner.append(...field("Catalog", cat, "Display names and reasoning levels for the models"));
+    inner.append(...field(t("Catalog"), cat, t("Display names and reasoning levels for the models")));
     more.append(inner);
     ed.append(more);
   }
 
   const bar = el("div", "bar");
   if (p) {
-    const del = el("button", "text danger", "Remove");
-    del.onclick = () => providerAction("delete", { id: p.id }, `${p.name} removed`);
+    const del = el("button", "text danger", t("Remove"));
+    del.onclick = () => providerAction("delete", { id: p.id }, t("{name} removed", { name: p.name }));
     bar.append(del);
   }
   bar.append(el("span", "grow"));
-  const cancel = el("button", "text", "Cancel");
+  const cancel = el("button", "text", t("Cancel"));
   cancel.onclick = cancelEdit;
-  const saveBtn = el("button", "text primary", isNew ? "Add" : "Save");
+  const saveBtn = el("button", "text primary", t(isNew ? "Add" : "Save"));
   const save = () => {
     const body = { id: draft.id, name: draft.name, preset: draft.preset, key: draft.key || "", chat: draft.chat, responses: draft.responses, anthropic: draft.anthropic, catalog: draft.catalog, models: p ? draft.chosen : draft.extra };
-    if (isNew && custom && !body.name) { name.focus(); return status("Give it a name", "warn"); }
-    if (isNew && custom && !body.chat && !body.anthropic) { url.focus(); return status("A base URL is needed", "warn"); }
+    if (isNew && custom && !body.name) { name.focus(); return status(t("Give it a name"), "warn"); }
+    if (isNew && custom && !body.chat && !body.anthropic) { url.focus(); return status(t("A base URL is needed"), "warn"); }
     saveBtn.classList.add("busy");
-    providerAction("save", body, `${draft.name || draft.id} ${isNew ? "added" : "saved"}`, body.id || slug(body.name));
+    providerAction("save", body, t(isNew ? "{name} added" : "{name} saved", { name: draft.name || draft.id }), body.id || slug(body.name));
   };
   saveBtn.onclick = save;
   bar.append(cancel, saveBtn);
@@ -979,26 +982,26 @@ function renderEndpoints(p, pr) {
     if (!src[proto]) continue;
     const e = el("div", "ep");
     const pl = el("span", "pl", label);
-    pl.title = hint;
+    pl.title = t(hint);
     e.append(pl, el("code", "", src[proto]), slots[proto] = el("span", "res"));
     eps.append(e);
   }
   if (p) {
-    const test = el("button", "text", "Test");
-    test.title = "Send a tiny request through each endpoint";
+    const test = el("button", "text", t("Test"));
+    test.title = t("Send a tiny request through each endpoint");
     test.onclick = async () => {
       test.classList.add("busy");
       for (const s of Object.values(slots)) { s.className = "res wait"; s.textContent = "…"; }
       try {
         const r = await api("provider/test", { id: p.id });
-        for (const t of r.results) {
-          const s = slots[t.protocol];
+        for (const x of r.results) {
+          const s = slots[x.protocol];
           if (!s) continue;
-          s.className = "res " + (t.ok ? "ok" : "bad");
+          s.className = "res " + (x.ok ? "ok" : "bad");
           s.replaceChildren();
-          s.append(svg(t.ok ? CHECK : "M4.5 4.5l7 7M11.5 4.5l-7 7", 10, 2));
-          s.append(el("span", "", t.ok ? `${t.ms} ms` : t.status ? `${t.status} · ${t.error}` : t.error));
-          s.title = t.ok ? `model ${t.model}` : t.error;
+          s.append(svg(x.ok ? CHECK : "M4.5 4.5l7 7M11.5 4.5l-7 7", 10, 2));
+          s.append(el("span", "", x.ok ? `${x.ms} ms` : x.status ? `${x.status} · ${x.error}` : x.error));
+          s.title = x.ok ? t("model {model}", { model: x.model }) : x.error;
         }
       } catch (e) { for (const s of Object.values(slots)) { s.className = "res"; s.textContent = ""; } status(e.message, "err"); }
       test.classList.remove("busy");
@@ -1011,7 +1014,7 @@ function renderEndpoints(p, pr) {
 function renderModels(p) {
   const box = el("div", "models");
   const chips = el("div", "mchips");
-  const q = p.models.length > 24 ? input("", `filter ${p.models.length} models…`) : null;
+  const q = p.models.length > 24 ? input("", t("filter {n} models…", { n: p.models.length })) : null;
   const draw = () => {
     chips.replaceChildren();
     const f = (q?.value || "").trim().toLowerCase();
@@ -1024,34 +1027,34 @@ function renderModels(p) {
       if (m.name && m.name !== m.id) c.title = m.id;
       c.onclick = () => { draft.chosen = on ? draft.chosen.filter((x) => x !== m.id) : [...draft.chosen, m.id]; draw(); };
       chips.append(c);
-      if (++shown >= 80 && !f) { chips.append(el("span", "hint", `… ${p.models.length - shown} more, filter to find them`)); break; }
+      if (++shown >= 80 && !f) { chips.append(el("span", "hint", t("… {n} more, filter to find them", { n: p.models.length - shown }))); break; }
     }
     for (const id of draft.chosen) {
       if (p.models.some((m) => m.id === id)) continue;
       const c = el("button", "mchip on own");
       c.append(el("span", "", id));
-      c.title = "Added by hand";
+      c.title = t("Added by hand");
       c.onclick = () => { draft.chosen = draft.chosen.filter((x) => x !== id); draw(); };
       chips.append(c);
     }
-    if (!p.models.length && !draft.chosen.length) chips.append(el("span", "hint", "The vendor's list is empty. Refresh, or type a model id."));
+    if (!p.models.length && !draft.chosen.length) chips.append(el("span", "hint", t("The vendor's list is empty. Refresh, or type a model id.")));
   };
   if (q) { q.oninput = draw; box.append(q); }
   box.append(chips);
   const foot = el("div", "mfoot");
-  const add = input("", "add a model id…");
+  const add = input("", t("add a model id…"));
   add.onkeydown = (e) => {
     e.stopPropagation();
     if (e.key === "Enter" && add.value.trim()) { const id = add.value.trim(); if (!draft.chosen.includes(id)) draft.chosen.push(id); add.value = ""; draw(); }
     else if (e.key === "Escape") cancelEdit();
   };
-  const refresh = el("button", "text", "Refresh");
-  refresh.title = "Ask the vendor which models it serves";
+  const refresh = el("button", "text", t("Refresh"));
+  refresh.title = t("Ask the vendor which models it serves");
   refresh.onclick = async () => {
     refresh.classList.add("busy");
     try {
       const r = await api("provider/models", { id: p.id });
-      status(`${p.name}: ${r.count} models`, "ok");
+      status(t("{p}: {n} models", { p: p.name, n: r.count }), "ok");
       const chosen = draft.chosen;
       await loadProviders();
       draft = draft || {};
@@ -1060,8 +1063,8 @@ function renderModels(p) {
     } catch (e) { status(e.message, "err"); refresh.classList.remove("busy"); }
   };
   foot.append(add, refresh);
-  if (p.fetched) foot.append(el("span", "hint", `vendor list · ${p.fetched}`));
-  else if (p.models.length) foot.append(el("span", "hint", "from models.dev · Refresh asks the vendor"));
+  if (p.fetched) foot.append(el("span", "hint", t("vendor list · {when}", { when: p.fetched })));
+  else if (p.models.length) foot.append(el("span", "hint", t("from models.dev · Refresh asks the vendor")));
   box.append(foot);
   draw();
   return box;
@@ -1119,7 +1122,7 @@ function renderUsage() {
   const seg = $("#period");
   seg.replaceChildren();
   for (const [id, name] of PERIODS) {
-    const b = el("button", "opt" + (id === period ? " on" : ""), name);
+    const b = el("button", "opt" + (id === period ? " on" : ""), t(name));
     b.onclick = () => { period = id; loadUsage().catch((e) => status(e.message, "err")); };
     seg.append(b);
   }
@@ -1127,10 +1130,10 @@ function renderUsage() {
   cost.replaceChildren();
   const c = fmtCost(u);
   if (c) {
-    cost.append(el("b", "", "≈" + c), el("span", "", "list price"));
-    cost.title = u.unpriced ? `${u.unpriced} call${u.unpriced === 1 ? "" : "s"} had no known price and are not counted` : "At each model's list price on models.dev";
+    cost.append(el("b", "", "≈" + c), el("span", "", t("list price")));
+    cost.title = u.unpriced ? t(u.unpriced === 1 ? "{n} call had no known price and is not counted" : "{n} calls had no known price and are not counted", { n: u.unpriced }) : t("At each model's list price on models.dev");
   } else if (u.calls) {
-    cost.append(el("span", "", "no price for these models"));
+    cost.append(el("span", "", t("no price for these models")));
   }
 
   const stats = $("#stats");
@@ -1141,8 +1144,8 @@ function renderUsage() {
   for (const h of $$("#view-usage .row-head")) h.hidden = empty;
   if (empty) {
     stats.classList.add("empty");
-    const when = { today: "today", "7d": "in the last 7 days", "30d": "in the last 30 days", all: "yet" }[period];
-    stats.append(el("div", "none", `No calls ${when}. Point an agent at a catalog model and use it; every call through the gateway is counted here.`));
+    const none = { today: "No calls today.", "7d": "No calls in the last 7 days.", "30d": "No calls in the last 30 days.", all: "No calls yet." }[period];
+    stats.append(el("div", "none", t(none) + " " + t("Point an agent at a catalog model and use it; every call through the gateway is counted here.")));
     $("#usageNote").textContent = "";
     return;
   }
@@ -1153,10 +1156,10 @@ function renderUsage() {
     if (sub) t.append(el("small", "", sub));
     stats.append(t);
   };
-  tile(fmtN(tokensOf(u)), "tokens", `${fmtN(u.input)} in · ${fmtN(u.output)} out`);
-  tile(fmtN(u.cache_read), "cache read", u.cache_write ? `${fmtN(u.cache_write)} written` : "");
-  tile(fmtN(u.reasoning), "reasoning", "inside output");
-  tile(String(u.calls), u.calls === 1 ? "call" : "calls", u.errors ? `${u.errors} failed` : "");
+  tile(fmtN(tokensOf(u)), t("tokens"), t("{a} in · {b} out", { a: fmtN(u.input), b: fmtN(u.output) }));
+  tile(fmtN(u.cache_read), t("cache read"), u.cache_write ? t("{n} written", { n: fmtN(u.cache_write) }) : "");
+  tile(fmtN(u.reasoning), t("reasoning"), t("inside output"));
+  tile(String(u.calls), t(u.calls === 1 ? "call" : "calls"), u.errors ? t("{n} failed", { n: u.errors }) : "");
 
   // the timeline: one bar per hour, day or week; output sits on top of input
   const chart = $("#chart");
@@ -1172,8 +1175,8 @@ function renderUsage() {
     inp.style.height = (100 * p.input / peak).toFixed(1) + "%";
     out.style.height = (100 * p.output / peak).toFixed(1) + "%";
     b.append(out, inp);
-    const when = u.bucket === "hour" ? `${p.label}:00` : (u.bucket === "week" ? "week of " : "") + p.label;
-    b.title = p.calls ? `${when} · ${fmtN(tokensOf(p))} tokens · ${p.calls} call${p.calls === 1 ? "" : "s"}${fmtCost(p) ? " · ≈" + fmtCost(p) : ""}` : `${when} · nothing`;
+    const when = u.bucket === "hour" ? `${p.label}:00` : u.bucket === "week" ? t("week of {label}", { label: p.label }) : p.label;
+    b.title = p.calls ? t(p.calls === 1 ? "{when} · {tokens} tokens · {n} call" : "{when} · {tokens} tokens · {n} calls", { when, tokens: fmtN(tokensOf(p)), n: p.calls }) + (fmtCost(p) ? " · ≈" + fmtCost(p) : "") : t("{when} · nothing", { when });
     bars.append(b);
     const last = i === n - 1 && (n - 1) % every >= every / 2;
     labels.append(el("span", "", i % every === 0 || last ? p.label : ""));
@@ -1191,18 +1194,18 @@ function renderUsage() {
       who.append(el("div", "name", g.name));
       const sub = [];
       if (g.sub) sub.push(g.sub);
-      sub.push(`${g.calls} call${g.calls === 1 ? "" : "s"}`);
-      if (g.errors) sub.push(`${g.errors} failed`);
+      sub.push(t(g.calls === 1 ? "{n} call" : "{n} calls", { n: g.calls }));
+      if (g.errors) sub.push(t("{n} failed", { n: g.errors }));
       who.append(el("div", "sub", sub.join(" · ")));
       r.append(who);
       const share = el("div", "share");
       const fill = el("i");
       fill.style.width = Math.max(1.5, 100 * tokensOf(g) / total).toFixed(1) + "%";
       share.append(fill);
-      share.title = Math.round(100 * tokensOf(g) / total) + "% of tokens";
+      share.title = t("{n}% of tokens", { n: Math.round(100 * tokensOf(g) / total) });
       r.append(share);
       const num = el("div", "num");
-      num.append(el("b", "", fmtN(tokensOf(g))), el("small", "", `${fmtN(g.input)} in · ${fmtN(g.output)} out${g.cache_read ? " · " + fmtN(g.cache_read) + " cached" : ""}`));
+      num.append(el("b", "", fmtN(tokensOf(g))), el("small", "", t("{a} in · {b} out", { a: fmtN(g.input), b: fmtN(g.output) }) + (g.cache_read ? " · " + t("{n} cached", { n: fmtN(g.cache_read) }) : "")));
       r.append(num);
       r.append(el("div", "cost", fmtCost(g) ? "≈" + fmtCost(g) : ""));
       box.append(r);
@@ -1210,23 +1213,86 @@ function renderUsage() {
   };
   list("usageAgents", u.agents);
   list("usageModels", u.models);
-  $("#usageNote").textContent = `Counted from the providers' own usage reports on every call through the gateway · ${u.path}`;
+  $("#usageNote").textContent = t("Counted from the providers' own usage reports on every call through the gateway · {path}", { path: u.path });
+}
+
+// ---------- settings ----------
+//
+// Two choices (palette, language) and the facts people come looking for:
+// the version, where dial keeps its files, the gateway's address.
+
+const THEMES = [["system", "System"], ["light", "Light"], ["dark", "Dark"]];
+const LOCALES = [["system", "System"], ["en", "English"], ["zh", "中文"]];
+
+// applyPrefs paints and speaks as the saved settings say. A ?theme= or
+// ?locale= in the URL wins, so a forced look stays forced.
+function applyPrefs(s) {
+  s = s || {};
+  if (!params.get("theme")) {
+    if (!s.theme || s.theme === "system") delete document.documentElement.dataset.theme;
+    else document.documentElement.dataset.theme = s.theme;
+  }
+  const was = locale;
+  setLocale(s.lang);
+  return was !== locale;
+}
+
+async function loadSettings() {
+  prefs = await api("settings");
+  renderSettings();
+}
+
+function renderSettings() {
+  const s = prefs;
+  $("#themeSegs").replaceChildren(segs(THEMES.map(([id, name]) => [id, t(name)]), s.theme, (theme) => savePrefs({ theme, lang: s.lang })));
+  $("#langSegs").replaceChildren(segs(LOCALES.map(([id, name]) => [id, t(name)]), s.lang, (lang) => savePrefs({ theme: s.theme, lang })));
+
+  const about = $("#about");
+  about.replaceChildren();
+  const row = (name, sub, value, ...tools) => {
+    const r = el("div", "row pref");
+    const who = el("div", "who");
+    who.append(el("div", "name", name));
+    if (sub) who.append(el("div", "sub", sub));
+    const val = el("div", "val");
+    val.append(el("code", "", value), ...tools);
+    r.append(who, val);
+    about.append(r);
+  };
+  row(t("Version"), "", s.version);
+  const open = el("button", "text", t("Open"));
+  open.onclick = () => api("open", { url: "file://" + s.path });
+  row(t("Config folder"), t("providers, profiles and these settings"), s.dir, copyBtn(s.dir, t("Path")), open);
+  row(t("Gateway URL"), t("the address every agent is pointed at"), s.gateway, copyBtn(s.gateway, t("Gateway URL")));
+}
+
+async function savePrefs(body) {
+  try {
+    prefs = await api("settings", body);
+    state.settings = prefs;
+    const spoke = applyPrefs(prefs);
+    renderSettings();
+    if (spoke) { renderAgents(); providers = null; usage = null; }
+    status(t("Saved"), "ok", 1500);
+  } catch (e) {
+    status(e.message, "err");
+  }
 }
 
 // ---------- header / footer ----------
 
 function show(v) {
   view = v;
-  for (const b of $("#nav").children) b.classList.toggle("on", b.dataset.view === v);
-  $("#view-agents").hidden = v !== "agents";
-  $("#view-providers").hidden = v !== "providers";
-  $("#view-gateway").hidden = v !== "gateway";
-  $("#view-usage").hidden = v !== "usage";
+  if (mode === "window") for (const b of $("#nav").children) b.classList.toggle("on", b.dataset.view === v);
+  $("#prefs").classList.toggle("on", v === "settings");
+  for (const id of ["agents", "providers", "gateway", "usage", "settings"]) $("#view-" + id).hidden = v !== id;
   closePicker();
   if (v === "providers" || v === "gateway") loadProviders().catch((e) => status(e.message, "err"));
   if (v === "usage") loadUsage().catch((e) => status(e.message, "err"));
+  if (v === "settings") loadSettings().catch((e) => status(e.message, "err"));
 }
-for (const b of $("#nav").children) b.onclick = () => { show(b.dataset.view); b.blur(); };
+if (mode === "window") for (const b of $("#nav").children) b.onclick = () => { show(b.dataset.view); b.blur(); };
+$("#prefs").onclick = () => { if (mode === "window") show("settings"); else api("window/main?view=settings", {}); $("#prefs").blur(); };
 
 $("#sync").onclick = async () => {
   const b = $("#sync");
@@ -1235,9 +1301,9 @@ $("#sync").onclick = async () => {
     state = await api("sync", {});
     renderAgents();
     if (providers) await loadProviders();
-    status("Model lists refreshed", "ok");
+    status(t("Model lists refreshed"), "ok");
   } catch (e) {
-    status("Sync failed: " + e.message, "err");
+    status(t("Sync failed: {e}", { e: e.message }), "err");
   } finally {
     b.classList.remove("spin");
   }
@@ -1252,5 +1318,5 @@ else { $("#nav").remove(); }
 // the panel comes back into view.
 document.addEventListener("visibilitychange", () => { if (!document.hidden) load(); });
 window.addEventListener("focus", load);
-if (mode === "window" && ["providers", "gateway", "usage"].includes(params.get("view"))) show(params.get("view"));
+if (mode === "window" && ["providers", "gateway", "usage", "settings"].includes(params.get("view"))) show(params.get("view"));
 load();
