@@ -20,7 +20,9 @@ type Option struct {
 	Group string `json:"group,omitempty"` // section header in the picker
 }
 
-// Field is one tunable setting of an agent.
+// Field is one tunable setting of an agent. Set with an empty value puts
+// the field back to the agent's own default: anything dial wired in (the
+// gateway as a provider, its model catalog) comes out and the key is removed.
 type Field struct {
 	Key     string
 	Label   string

@@ -42,7 +42,22 @@ func jsonGet(path, key string) func() string {
 }
 
 func jsonSet(path, key string) func(string) error {
-	return func(v string) error { return edit.SetJSON(path, edit.KV{Path: key, Value: v}) }
+	return func(v string) error {
+		if v == "" {
+			return edit.DelJSON(path, key)
+		}
+		return edit.SetJSON(path, edit.KV{Path: key, Value: v})
+	}
+}
+
+// usesDial reports whether any of the values is a dial/… reference.
+func usesDial(vals ...string) bool {
+	for _, v := range vals {
+		if strings.HasPrefix(v, dialID+"/") {
+			return true
+		}
+	}
+	return false
 }
 
 // pair joins a provider field and a model field into one "provider/model"
@@ -170,8 +185,18 @@ func opencode(home, cfg string) *Agent {
 			return append(ownOptions(auth, cur[key]), viaDial(dialID+"/")...)
 		}
 	}
+	get := func(k string) string { v, _ := edit.GetJSON(path, k); return v }
 	set := func(key string) func(string) error {
 		return func(v string) error {
+			if v == "" {
+				if err := edit.DelJSON(path, key); err != nil {
+					return err
+				}
+				if usesDial(get("model"), get("small_model")) {
+					return nil
+				}
+				return edit.DelJSON(path, "provider."+dialID)
+			}
 			if ref, ok := strings.CutPrefix(v, dialID+"/"); ok && isDial(ref) {
 				if err := edit.SetJSON(path, edit.KV{Path: "provider." + dialID, Value: dialProviderJSON("opencode")}); err != nil {
 					return err
@@ -208,6 +233,12 @@ func pi(home string) *Agent {
 				Key: "model", Label: "model",
 				Get: pairGet(get, "defaultProvider", "defaultModel"),
 				Set: func(v string) error {
+					if v == "" {
+						if err := edit.DelJSON(path, "defaultProvider", "defaultModel"); err != nil {
+							return err
+						}
+						return edit.DelJSON(modelsPath, "providers."+dialID)
+					}
 					if ref, ok := strings.CutPrefix(v, dialID+"/"); ok && isDial(ref) {
 						if err := writeDial(); err != nil {
 							return err
@@ -225,6 +256,9 @@ func pi(home string) *Agent {
 				Key: "effort", Label: "thinking",
 				Get: func() string { v, _ := get("defaultThinkingLevel"); return v },
 				Set: func(v string) error {
+					if v == "" {
+						return edit.DelJSON(path, "defaultThinkingLevel")
+					}
 					if p, _ := get("defaultProvider"); p == dialID {
 						// older dial entries lacked "reasoning", which Pi needs
 						// before it will think at all
@@ -256,7 +290,12 @@ func goose(home, cfg string) *Agent {
 		Fields: []Field{{
 			Key: "model", Label: "model",
 			Get: pairGet(get, "GOOSE_PROVIDER", "GOOSE_MODEL"),
-			Set: pairSet(set, "GOOSE_PROVIDER", "GOOSE_MODEL"),
+			Set: func(v string) error {
+				if v == "" {
+					return edit.DelYAMLTop(path, "GOOSE_PROVIDER", "GOOSE_MODEL")
+				}
+				return pairSet(set, "GOOSE_PROVIDER", "GOOSE_MODEL")(v)
+			},
 			Options: func(cur map[string]string) []Option {
 				return ownOptions("", cur["model"], "anthropic", "openai", "google", "openrouter")
 			},
@@ -273,6 +312,9 @@ func cursor(home string) *Agent {
 			Key: "model", Label: "model",
 			Get: jsonGet(path, "model.modelId"),
 			Set: func(v string) error {
+				if v == "" {
+					return edit.DelJSON(path, "model", "hasChangedDefaultModel")
+				}
 				return edit.SetJSON(path,
 					edit.KV{Path: "model.modelId", Value: v},
 					edit.KV{Path: "model.displayModelId", Value: v},
@@ -340,6 +382,17 @@ func crush(home, cfg string) *Agent {
 	setter := func(pKey, mKey string) func(string) error {
 		pair := pairSet(set, pKey, mKey)
 		return func(v string) error {
+			if v == "" {
+				if err := edit.DelJSON(path, strings.TrimSuffix(pKey, ".provider")); err != nil {
+					return err
+				}
+				large := pairGet(get, "models.large.provider", "models.large.model")()
+				small := pairGet(get, "models.small.provider", "models.small.model")()
+				if usesDial(large, small) {
+					return nil
+				}
+				return edit.DelJSON(path, "providers."+dialID)
+			}
 			if ref, ok := strings.CutPrefix(v, dialID+"/"); ok && isDial(ref) {
 				if err := set(edit.KV{Path: "providers." + dialID, Value: dialProviderJSON("crush")}); err != nil {
 					return err

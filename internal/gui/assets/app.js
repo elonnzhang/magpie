@@ -197,6 +197,8 @@ function openPicker(agent, field, anchor, ev, only) {
   const i = options.findIndex((o) => o.value === cur);
   if (i > 0) { const [c] = options.splice(i, 1); options.unshift({ ...c, group: "" }); }
   else if (i < 0 && cur && !only) options.unshift({ value: cur, note: "current value" });
+  // the agent's own default: dial's wiring comes out and the key is removed
+  if (!only) options.unshift({ value: "", label: "Default", note: `what ${agent.name} ships with`, icon: agent.icon, reset: true });
   pick = { agent, field, options, anchor, cursor: 0, free: !only };
   anchor.classList.add("open");
   const pop = $("#pop");
@@ -234,7 +236,7 @@ function renderList() {
   pick.items.forEach((o, idx) => {
     if (!q && o.group && o.group !== group) list.append(el("li", "group", o.group));
     if (!q) group = o.group ?? group;
-    const li = el("li", (idx === pick.cursor ? "sel" : "") + (o.value === pick.field.value ? " cur" : "") + (o.custom ? " custom" : ""));
+    const li = el("li", (idx === pick.cursor ? "sel" : "") + (o.value === pick.field.value ? " cur" : "") + (o.custom ? " custom" : "") + (o.reset ? " reset" : ""));
     li.dataset.i = idx;
     if (hasIcons) li.append(icon(o.icon));
     li.append(el("span", "v", o.label || o.value));
@@ -258,7 +260,7 @@ function move(d) {
 }
 
 async function commit(value) {
-  if (!pick || !value) return;
+  if (!pick || value == null) return;
   const { agent, field } = pick;
   const opt = pick.options.find((o) => o.value === value);
   closePicker();

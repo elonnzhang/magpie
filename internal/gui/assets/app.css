@@ -152,7 +152,7 @@ body.panel .agent .who { flex: 0 0 auto; max-width: 150px; }
 body.panel .field { height: 24px; font-size: 12px; }
 .field:hover, .field.open { background: var(--pill-hover); box-shadow: inset 0 0 0 1px var(--line); }
 .field.open { box-shadow: inset 0 0 0 1px var(--accent); }
-.field .ic { width: 14px; height: 14px; }
+.row .field .ic, body.window .row .field .ic { width: 14px; height: 14px; }
 .field .k { color: var(--muted); font-size: 11.5px; }
 .field .v { min-width: 0; flex: 0 1 auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
 .field .v.empty { color: var(--muted); }
@@ -260,6 +260,9 @@ body.window .foot { padding-left: 18px; }
 .pop li.cur .check { display: inline-flex; }
 .pop li.group { height: 22px; padding: 6px 8px 0; font-size: 10.5px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--faint); pointer-events: none; }
 .pop li.group:not(:first-child) { margin-top: 2px; }
+.pop li.reset { margin-bottom: 3px; }
+.pop li.reset .v { color: var(--fg); }
+.pop li.reset .ic { opacity: .75; }
 .pop li.custom .v { color: var(--fg); }
 .pop li.custom .n { color: var(--muted); }
 .pop .none { padding: 10px 12px; color: var(--muted); font-size: 12px; white-space: normal; line-height: 1.45; }

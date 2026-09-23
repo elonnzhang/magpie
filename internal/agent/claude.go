@@ -45,6 +45,15 @@ func claude(home string) *Agent {
 		return model()
 	}
 	set := func(v string) error {
+		if v == "" {
+			// Claude Code as installed: Anthropic's own endpoint and model
+			keys := []string{"model"}
+			for _, k := range claudeEnv {
+				keys = append(keys, "env."+k)
+			}
+			forget("claude.model", "claude.base_url", "claude.auth_token")
+			return edit.DelJSON(path, keys...)
+		}
 		if isDial(v) {
 			if !routed() {
 				stash(map[string]string{

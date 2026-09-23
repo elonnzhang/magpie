@@ -45,6 +45,11 @@ func gemini(home string) *Agent {
 	}
 	use := func(id string) error {
 		switch id {
+		case "":
+			// back to the CLI's own first-run choice
+			if err := edit.DelJSON(path, "security.auth.selectedType"); err != nil {
+				return err
+			}
 		case "custom":
 			if current() != "custom" {
 				return fmt.Errorf("custom means whatever GOOGLE_GEMINI_BASE_URL is already in %s; set it there", envPath)
