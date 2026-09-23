@@ -18,7 +18,7 @@
     const t = mode === "system" ? (q.matches ? "dark" : "light") : mode;
     document.documentElement.dataset.theme = t;
     document.querySelector('meta[name="theme-color"]').content = t === "dark" ? "#0b0b0c" : "#fafafa";
-    document.querySelectorAll(".theme").forEach((b) => (b.dataset.mode = mode));
+    document.querySelectorAll("button.theme").forEach((b) => { b.dataset.mode = mode; b.title = "Theme: " + mode; });
   };
   q.addEventListener("change", () => mode === "system" && apply());
   window.setTheme = (m) => { mode = m; try { m === "system" ? localStorage.removeItem("theme") : localStorage.setItem("theme", m); } catch {} apply(); };
@@ -439,10 +439,10 @@ magpie tui                             <span class="c"># the whole app, in the t
 
   // The theme button steps system → light → dark.
   const next = { system: "light", light: "dark", dark: "system" };
-  document.querySelectorAll(".theme").forEach((b) => {
+  document.querySelectorAll("button.theme").forEach((b) => {
     b.dataset.mode = themeMode();
     b.title = "Theme: " + themeMode();
-    b.addEventListener("click", () => { setTheme(next[themeMode()]); b.title = "Theme: " + themeMode(); });
+    b.addEventListener("click", () => setTheme(next[themeMode()]));
   });
   const onScroll = () => nav.classList.toggle("scrolled", scrollY > 8);
   addEventListener("scroll", onScroll, { passive: true }); onScroll();
