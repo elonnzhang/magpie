@@ -13,19 +13,30 @@ const (
 
 // PresetDef describes one preset.
 type PresetDef struct {
+	ID        string   `json:"id"`
+	Name      string   `json:"name"`
+	Icon      string   `json:"icon"`
+	Kind      Kind     `json:"kind"`
+	Chat      string   `json:"chat,omitempty"`
+	Responses string   `json:"responses,omitempty"`
+	Anthropic string   `json:"anthropic,omitempty"`
+	Catalog   string   `json:"catalog,omitempty"`
+	Website   string   `json:"website,omitempty"`
+	KeysURL   string   `json:"keysUrl,omitempty"`
+	NoKey     bool     `json:"noKey,omitempty"`     // local servers: a key is optional
+	Sponsored bool     `json:"sponsored,omitempty"` // shown first, with a tag
+	Note      string   `json:"note,omitempty"`      // one line under the name
+	Regions   []Region `json:"regions,omitempty"`   // base-URL choices (a relay's regional endpoints)
+}
+
+// Region is one base-URL option of a preset that offers several. The first
+// is the default; picking another in the editor swaps the endpoints.
+type Region struct {
 	ID        string `json:"id"`
 	Name      string `json:"name"`
-	Icon      string `json:"icon"`
-	Kind      Kind   `json:"kind"`
 	Chat      string `json:"chat,omitempty"`
 	Responses string `json:"responses,omitempty"`
 	Anthropic string `json:"anthropic,omitempty"`
-	Catalog   string `json:"catalog,omitempty"`
-	Website   string `json:"website,omitempty"`
-	KeysURL   string `json:"keysUrl,omitempty"`
-	NoKey     bool   `json:"noKey,omitempty"`     // local servers: a key is optional
-	Sponsored bool   `json:"sponsored,omitempty"` // shown first, with a tag
-	Note      string `json:"note,omitempty"`      // one line under the name
 }
 
 // presets are ordered as they appear in the picker.
@@ -93,10 +104,18 @@ var presets = []PresetDef{
 		Website: "https://cloud.siliconflow.cn", KeysURL: "https://cloud.siliconflow.cn/account/ak"},
 	{ID: "aihubmix", Name: "AiHubMix", Icon: "aihubmix-color", Kind: KindRelay,
 		Chat: "https://aihubmix.com/v1", Anthropic: "https://aihubmix.com",
-		Website: "https://aihubmix.com", KeysURL: "https://aihubmix.com/token"},
+		Website: "https://aihubmix.com", KeysURL: "https://console.aihubmix.com/token"},
 	{ID: "302ai", Name: "302.AI", Icon: "ai302-color", Kind: KindRelay,
 		Chat: "https://api.302.ai/v1", Anthropic: "https://api.302.ai",
 		Website: "https://302.ai", KeysURL: "https://302.ai/api-keys/list"},
+	{ID: "yylx", Name: "鱼鱼连线", Icon: "yylx", Kind: KindRelay,
+		Chat: "https://app.yylx.io/v1", Anthropic: "https://app.yylx.io",
+		Website: "https://yylx.io", KeysURL: "https://app.yylx.io/keys",
+		Regions: []Region{
+			{ID: "auto", Name: "Auto", Chat: "https://app.yylx.io/v1", Anthropic: "https://app.yylx.io"},
+			{ID: "global", Name: "Global", Chat: "https://global.yylx.io/v1", Anthropic: "https://global.yylx.io"},
+			{ID: "cn", Name: "China Mainland", Chat: "https://cn.yylx.io/v1", Anthropic: "https://cn.yylx.io"},
+		}},
 
 	{ID: "ollama", Name: "Ollama", Icon: "ollama", Kind: KindLocal, NoKey: true,
 		Chat: "http://localhost:11434/v1", Anthropic: "http://localhost:11434",

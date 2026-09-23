@@ -55,6 +55,7 @@ const CHEV = "m5.5 6.5 2.5 2.5 2.5-2.5";
 const CHEV_R = "m6.5 4.5 3 3.5-3 3.5";
 const CHECK = "m3.5 8.5 3 3 6-7";
 const PLUS = "M8 3.5v9M3.5 8h9";
+const COPY_ICON = "M5.5 5.5V3.5h7v7h-2M3.5 5.5h7v7h-7z";
 
 // A brand icon: colour logos are images, mono logos take the text colour.
 // Nothing is ever invented: a model with no known vendor keeps the slot
@@ -597,14 +598,35 @@ function accountPlan(a) {
 // page that gets anything else connected to it: base URL, key, model ids,
 // and a snippet in whichever language the reader is holding.
 
-async function copy(text, what) {
-  try { await navigator.clipboard.writeText(text); status(t("{what} copied", { what }), "ok"); } catch { status(text); }
+async function copy(text, what, btn) {
+  try { await navigator.clipboard.writeText(text); status(t("{what} copied", { what }), "ok"); flashCopied(btn); }
+  catch { status(text); }
 }
+
+// flashCopied answers on the button itself: the icon becomes a tick and
+// the button takes a green breath, then it reverts on its own. The footer
+// toast says what was copied; this says it landed. Clicking again restarts
+// the pop and re-arms the timer.
+function flashCopied(b) {
+  if (!b) return;
+  b.classList.remove("done");
+  void b.offsetWidth; // restart the animation when clicked again
+  b.classList.add("done");
+  b.title = t("Copied");
+  b.replaceChildren(svg(CHECK, 12, 1.7));
+  clearTimeout(b.copiedT);
+  b.copiedT = setTimeout(() => {
+    b.classList.remove("done");
+    b.title = t("Copy");
+    b.replaceChildren(svg(COPY_ICON, 12, 1.5));
+  }, 1200);
+}
+
 function copyBtn(text, what) {
   const b = el("button", "copy");
   b.title = t("Copy");
-  b.append(svg("M5.5 5.5V3.5h7v7h-2M3.5 5.5h7v7h-7z", 12, 1.5));
-  b.onclick = (ev) => { ev.stopPropagation(); copy(text, what); };
+  b.append(svg(COPY_ICON, 12, 1.5));
+  b.onclick = (ev) => { ev.stopPropagation(); copy(text, what, b); };
   return b;
 }
 
@@ -1187,7 +1209,7 @@ function renderEditor(p, presetID) {
     acct.append(icon(a.agentIcon), el("span", "n", a.user), el("span", "plan", accountPlan(a)));
     ed.append(...field(t("Account"), acct, t("{agent}'s sign-in, read from its own files. Sign out there and this provider goes away.", { agent: a.agentName })));
     ed.append(...field(t("Models"), renderModels(p), ""));
-    ed.append(...field(t("Endpoints"), renderEndpoints(p, null)));
+    ed.append(...field(t("Endpoints"), renderEndpoints(p, p)));
     const bar = el("div", "bar");
     bar.append(el("span", "grow"));
     const cancel = el("button", "text", t("Cancel"));
@@ -1224,6 +1246,26 @@ function renderEditor(p, presetID) {
   keyWrap.append(key, side);
   ed.append(...field(t("API key"), keyWrap, isNew ? t("Kept in ~/.config/magpie/providers.json, readable by you alone. Nothing is read from your shell.") : ""));
 
+  // a relay that offers several regional endpoints: one selector, and the
+  // provider's base URLs follow it
+  let refreshEndpoints = () => {};
+  if (pr?.regions?.length) {
+    const seg = el("div", "segs");
+    const cur = pr.regions.find((r) => r.chat && r.chat === (draft.chat || pr.chat)) || pr.regions[0];
+    for (const r of pr.regions) {
+      const b = el("button", "opt" + (r.id === cur.id ? " on" : ""), t(r.name));
+      b.onclick = () => {
+        draft.chat = r.chat || ""; draft.responses = r.responses || ""; draft.anthropic = r.anthropic || "";
+        for (const x of seg.querySelectorAll(".opt")) x.classList.toggle("on", x === b);
+        slide(seg, "regions");
+        refreshEndpoints();
+      };
+      seg.append(b);
+    }
+    queueMicrotask(() => slide(seg, "regions"));
+    ed.append(...field(t("Region"), seg, t("which endpoint {p} is reached through", { p: pr.name })));
+  }
+
   if (p) ed.append(...field(t("Models"), renderModels(p), ""));
   else if (custom) {
     const ex = input("", t("model ids, comma separated · e.g. gpt-5.5, claude-sonnet-5"));
@@ -1231,7 +1273,16 @@ function renderEditor(p, presetID) {
     ed.append(...field(t("Models"), ex, t("Optional: magpie asks the vendor for its list after saving.")));
   }
 
-  if (!custom) ed.append(...field(t("Endpoints"), renderEndpoints(p, pr)));
+  if (!custom) {
+    const ebox = el("div");
+    refreshEndpoints = () => {
+      const base = p || pr || {};
+      const src = { chat: draft.chat || base.chat || "", responses: draft.responses || base.responses || "", anthropic: draft.anthropic || base.anthropic || "" };
+      ebox.replaceChildren(renderEndpoints(p, src));
+    };
+    refreshEndpoints();
+    ed.append(...field(t("Endpoints"), ebox, ""));
+  }
 
   if (custom) {
     const more = el("details", "more");
@@ -1279,16 +1330,16 @@ function renderEditor(p, presetID) {
 // Which of the vendor's models the agents get to see: click to toggle, type
 // to add one the vendor's list lacks, Refresh to ask the vendor again.
 // The endpoints a provider serves, with a Test that reports against each one.
-function renderEndpoints(p, pr) {
+function renderEndpoints(p, src) {
   const eps = el("div", "eps");
   const slots = {};
-  const src = p || pr;
+  const urls = src || {};
   for (const [proto, label, hint] of PROTOS) {
-    if (!src[proto]) continue;
+    if (!urls[proto]) continue;
     const e = el("div", "ep");
     const pl = el("span", "pl", label);
     pl.title = t(hint);
-    e.append(pl, el("code", "", src[proto]), slots[proto] = el("span", "res"));
+    e.append(pl, el("code", "", urls[proto]), slots[proto] = el("span", "res"));
     eps.append(e);
   }
   if (p) {
@@ -1526,14 +1577,21 @@ function renderUsage() {
     return;
   }
   stats.classList.remove("empty");
-  const tile = (n, label, sub) => {
+  const tile = (n, label, sub, title) => {
     const t = el("div", "kpi");
+    if (title) t.title = title;
     t.append(el("b", "", n), el("span", "", label));
     if (sub) t.append(el("small", "", sub));
     stats.append(t);
   };
   tile(fmtN(tokensOf(u)), t("tokens"), t("{a} in · {b} out", { a: fmtN(u.input), b: fmtN(u.output) }));
-  tile(fmtN(u.cache_read), t("cache read"), u.cache_write ? t("{n} written", { n: fmtN(u.cache_write) }) : "");
+  // cache reads are billed at a fraction of input, so how much of the prompt
+  // came from cache is the number that explains the bill; input here already
+  // excludes the cached tokens (the gateway subtracts them). The written
+  // count is secondary and only fits in the tooltip.
+  const promptTokens = u.input + u.cache_read;
+  const hit = u.cache_read && promptTokens ? t("hit rate {p}", { p: Math.round(100 * u.cache_read / promptTokens) + "%" }) : "";
+  tile(fmtN(u.cache_read), t("cache read"), hit, u.cache_write ? t("{n} written", { n: fmtN(u.cache_write) }) : "");
   tile(fmtN(u.reasoning), t("reasoning"), t("inside output"));
   tile(String(u.calls), t(u.calls === 1 ? "call" : "calls"), u.errors ? t("{n} failed", { n: u.errors }) : "");
 
