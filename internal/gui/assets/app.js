@@ -16,7 +16,6 @@ let pick = null; // { agent, field, options, items, cursor, anchor }
 let editing = null; // provider id being edited; { preset } or { custom: true } for a new one
 let draft = null; // the editor's working copy
 let adding = false; // the preset sheet is open
-let editorAdd = false; // the editor was opened from a row's "+", so it offers agents to add
 // the gateway tab's choices, kept per machine
 let flavor = params.get("flavor") || localStorage.getItem("magpie.flavor") || "openai"; // which API the snippets speak
 let lang = params.get("lang") || localStorage.getItem("magpie.lang") || "shell";        // which snippet
@@ -545,13 +544,6 @@ function renderProviders() {
       b.onclick = (ev) => pickForAgent(a, p, b, ev);
       uses.append(b);
     }
-    if (p.agents.some((a) => !a.current && canUse(a, p))) {
-      const b = el("button", "use add");
-      b.title = t(using.length ? "Point another agent at {p}" : "Point an agent at {p}", { p: p.name });
-      b.append(svg(PLUS, 11, 1.8));
-      b.onclick = (ev) => { ev.stopPropagation(); editing = p.id; draft = null; adding = false; editorAdd = true; renderProviders(); };
-      uses.append(b);
-    }
     let key;
     if (p.account) {
       key = el("span", "key acct", accountPlan(p.account));
@@ -563,7 +555,7 @@ function renderProviders() {
     const chev = el("span", "chev");
     chev.append(svg(CHEV_R, 11, 1.7));
     row.append(icon(p.icon || "generic"), who, uses, key, chev);
-    row.onclick = () => { editing = open ? null : p.id; draft = null; adding = false; editorAdd = false; renderProviders(); };
+    row.onclick = () => { editing = open ? null : p.id; draft = null; adding = false; renderProviders(); };
     list.append(row);
     if (open) dialog = renderEditor(p);
   }
@@ -986,7 +978,6 @@ function modelField(a) {
   return agent?.fields.find((f) => f.key === "model") || null;
 }
 function ofProvider(p) { return new RegExp(`^(magpie/)?${p.id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/`); }
-function canUse(a, p) { const f = modelField(a); return !!f && f.options.some((o) => ofProvider(p).test(o.value)); }
 
 // Pick one of this provider's models for an agent, straight from the row.
 function pickForAgent(a, p, btn, ev) {
@@ -1098,7 +1089,7 @@ function input(value, placeholder, type = "text") {
   i.onkeydown = (e) => { e.stopPropagation(); if (e.key === "Escape") cancelEdit(); };
   return i;
 }
-function cancelEdit() { editing = null; draft = null; editorAdd = false; renderProviders(); }
+function cancelEdit() { editing = null; draft = null; renderProviders(); }
 
 // ---------- modal ----------
 // The provider editor opens as a dialog over the page; Escape, the backdrop
@@ -1167,23 +1158,21 @@ function renderEditor(p, presetID) {
     ed.append(h);
   }
 
-  // who uses it: the agents already pointed here. A plain edit is a summary —
-  // the agents that merely *could* use it live behind the row's "+", or in
-  // the Agent tab's picker, so they don't sit here doing nothing.
+  // who uses it: just the agents already pointed here, so a click changes
+  // one's model. Pointing a new agent at the provider happens in the Agent
+  // tab's picker, not here.
   if (p) {
     const on = p.agents.filter((a) => a.current);
-    const add = editorAdd ? p.agents.filter((a) => !a.current && canUse(a, p)) : [];
-    if (on.length || add.length) {
+    if (on.length) {
       const chips = el("div", "achips");
-      for (const a of [...on, ...add]) {
-        const c = el("button", "achip" + (a.current ? " on" : ""));
-        c.append(icon(a.icon), el("span", "n", a.name));
-        if (a.current) c.append(el("span", "m", a.model));
-        c.title = a.current ? t("{agent} is on {model} — click to change", { agent: a.name, model: a.model }) : t("Point {agent} at a {p} model", { agent: a.name, p: p.name });
+      for (const a of on) {
+        const c = el("button", "achip on");
+        c.append(icon(a.icon), el("span", "n", a.name), el("span", "m", a.model));
+        c.title = t("{agent} is on {model} — click to change", { agent: a.name, model: a.model });
         c.onclick = (ev) => pickForAgent(a, p, c, ev);
         chips.append(c);
       }
-      ed.append(...field(t("Agents"), chips, on.length ? "" : t("None yet. Click an agent to pick one of these models for it.")));
+      ed.append(...field(t("Agents"), chips, ""));
     }
   }
 
@@ -1438,7 +1427,6 @@ async function providerAction(action, body, okMsg) {
     editing = null;
     draft = null;
     adding = false;
-    editorAdd = false;
     presetQuery = "";
     renderProviders();
     state = await api("state");
@@ -1453,7 +1441,7 @@ async function providerAction(action, body, okMsg) {
 function slug(s) { return s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, ""); }
 function hostOf(u) { try { return new URL(u.includes("://") ? u : "https://" + u).host; } catch { return ""; } }
 
-$("#addProvider").onclick = () => { adding = true; editing = null; draft = null; editorAdd = false; renderProviders(); };
+$("#addProvider").onclick = () => { adding = true; editing = null; draft = null; renderProviders(); };
 
 // ---------- usage ----------
 
