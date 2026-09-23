@@ -1644,12 +1644,59 @@ function renderSettings() {
     val.append(el("code", "", value), ...tools);
     r.append(who, val);
     about.append(r);
+    return r;
   };
-  row(t("Version"), "", s.version);
+  renderUpdate(row(t("Version"), "", s.version));
   const open = el("button", "text", t("Open"));
   open.onclick = () => api("open", { url: "file://" + s.path });
   row(t("Config folder"), t("providers, profiles and these settings"), s.dir, copyBtn(s.dir, t("Path")), open);
   row(t("Gateway URL"), t("the address every agent is pointed at"), s.gateway, copyBtn(s.gateway, t("Gateway URL")));
+}
+
+// renderUpdate fills in the version row: whether a newer magpie is out.
+// The app checks and downloads on its own, so usually the row just offers
+// the restart; a check can also be asked for.
+async function renderUpdate(r, u) {
+  u = u || await api("update").catch(() => null);
+  if (!u || !r.isConnected) return;
+  const who = r.querySelector(".who"), val = r.querySelector(".val");
+  const sub = who.querySelector(".sub") || who.appendChild(el("div", "sub"));
+  sub.title = "";
+  for (const b of val.querySelectorAll("button")) b.remove();
+  const btn = (label, fn) => { const b = el("button", "text", label); b.onclick = fn; val.append(b); };
+  const check = async () => {
+    sub.textContent = t("Checking for updates…");
+    renderUpdate(r, await api("update/check", {}).catch((e) => ({ state: "error", error: e.message })));
+  };
+  switch (u.state) {
+    case "ready":
+      sub.textContent = t("{v} is downloaded", { v: u.latest });
+      btn(t("Restart to update"), () => api("update/install", {}));
+      break;
+    case "available":
+      sub.textContent = t("{v} is out", { v: u.latest });
+      btn(t("Download"), () => api("update/install", {}));
+      break;
+    case "downloading":
+      sub.textContent = t("Downloading {v}…", { v: u.latest });
+      setTimeout(() => renderUpdate(r), 2000);
+      break;
+    case "checking":
+      sub.textContent = t("Checking for updates…");
+      setTimeout(() => renderUpdate(r), 1000);
+      break;
+    case "latest":
+      sub.textContent = t("Up to date");
+      btn(t("Check"), check);
+      break;
+    case "error":
+      sub.textContent = t("Couldn't check for updates");
+      sub.title = u.error || "";
+      btn(t("Check"), check);
+      break;
+    default: // built from source, or not asked yet
+      sub.textContent = "";
+  }
 }
 
 async function savePrefs(body) {

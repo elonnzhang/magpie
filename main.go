@@ -48,6 +48,7 @@ const usage = `magpie — one place to pick every coding agent's model
   magpie usage [today|7d|30d|all] tokens and cost per agent and model (30d)
   magpie sync                     refresh the model catalog and vendor model lists
   magpie agents                   list every supported agent
+  magpie update [check]           install the newest release (check: only say if there is one)
 
 agents: claude (cc), codex, gemini, opencode (oc), pi, goose, cursor, copilot, crush
 `
@@ -116,6 +117,8 @@ func run(args []string) error {
 		return serve()
 	case "usage":
 		return usageCmd(args)
+	case "update":
+		return updateCmd(args)
 	case "claude-mcp-helper": // internal: stdio MCP subprocess spawned by Claude Code
 		return claudebridge.RunMCP(args[1:])
 	}

@@ -116,6 +116,9 @@ func Run(version string, showMain bool) error {
 		Assets:      application.AssetOptions{Handler: Handler(h, gw)},
 		Mac:         application.MacOptions{ActivationPolicy: application.ActivationPolicyAccessory},
 		Windows:     application.WindowsOptions{DisableQuitOnLastWindowClosed: true},
+		// A version downloaded but not restarted into is installed on the
+		// way out, so the next launch is the new one.
+		OnShutdown: func() { updates.install() },
 	})
 
 	h.panel = h.app.Window.NewWithOptions(application.WebviewWindowOptions{
@@ -162,7 +165,20 @@ func Run(version string, showMain bool) error {
 	menu.Add("Open magpie").OnClick(func(*application.Context) { h.ShowMain("") })
 	menu.AddSeparator()
 	menu.Add("Version " + version).SetEnabled(false)
+	restart := menu.Add("Restart to Update").SetHidden(true)
+	restart.OnClick(func(*application.Context) {
+		if restartToUpdate() {
+			h.app.Quit()
+		}
+	})
 	menu.Add("Quit magpie").OnClick(func(*application.Context) { h.app.Quit() })
+	updates.onReady = func(v string) {
+		application.InvokeSync(func() {
+			restart.SetLabel("Restart to Update to " + v).SetHidden(false)
+			menu.Update()
+		})
+	}
+	updates.start()
 
 	h.tray = h.app.SystemTray.New()
 	h.tray.SetTooltip("magpie")

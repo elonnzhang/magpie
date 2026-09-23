@@ -178,6 +178,21 @@ the API key goes to `~/.gemini/.env`. Picking a catalog model points
 
 ## Install
 
+Download the Mac app from [usemagpie.ai](https://usemagpie.ai), or from a
+terminal (macOS installs the app, Linux the command):
+
+```sh
+curl -fsSL https://usemagpie.ai/install.sh | sh
+```
+
+Releases are signed and notarised, and keep themselves current: the app
+downloads a new version in the background and installs it when you restart
+(*Restart to Update* in the menu) or quit; `magpie update` does the same from
+a terminal. Every release is on
+[yetone/magpie-releases](https://github.com/yetone/magpie-releases/releases).
+
+From source:
+
 ```sh
 go install github.com/yetone/magpie@latest
 ```

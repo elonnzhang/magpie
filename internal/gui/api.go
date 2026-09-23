@@ -164,6 +164,7 @@ func Handler(w Windows, gw *gateway.Server) http.Handler {
 	})
 	providerRoutes(mux, w, gw)
 	usageRoutes(mux)
+	updateRoutes(mux, w)
 	mux.HandleFunc("GET /api/settings", func(rw http.ResponseWriter, r *http.Request) {
 		writeJSON(rw, settingsState())
 	})
