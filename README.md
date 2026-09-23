@@ -36,6 +36,9 @@ and there is a terminal version (`dial tui`) and a plain CLI.
   OpenCode and the rest all point at `http://127.0.0.1:3425/v1` and pick
   from one catalog; the translation between APIs happens in dial, streaming
   and tool calls included.
+- **Your subscriptions, shared.** Sign in to Codex (ChatGPT) or Copilot
+  and that login shows up as a provider: every other agent can use its
+  models through the gateway, with nothing copied and no key to paste.
 - **Providers with one field.** Pick a preset (Anthropic, OpenAI, Gemini,
   DeepSeek, Kimi, GLM, MiniMax, Qwen, Mistral, Groq, xAI, OpenRouter,
   Together, Fireworks, SiliconFlow, AiHubMix, 302.AI, Ollama, LM Studio…),
@@ -94,6 +97,27 @@ separate Responses endpoint, `catalog=` to borrow a models.dev list, and
 `models=` to name the models to expose. Anything a preset does not know can
 be overridden the same way.
 
+### Signed-in agents as providers
+
+An agent you have signed in to is a subscription with models behind it, so
+dial offers it as a provider too. Codex (a ChatGPT login in
+`~/.codex/auth.json`) and Copilot (a GitHub login in
+`~/.config/github-copilot/apps.json`) appear in `dial providers` and in the
+Providers tab as *signed in as …*, with their models spelled `codex/gpt-5.5`
+or `copilot/claude-sonnet-4.5` in every other agent's picker. dial reads the
+agent's own credential file each time, refreshes tokens the way the agent
+does, and stores nothing but your model picks; sign out of the agent and
+the provider is gone. The ChatGPT backend only streams and rejects a few
+parameters, so dial translates non-streaming requests and drops what it
+would refuse.
+
+Claude Code is signed in too, but is deliberately not offered: Anthropic's
+terms keep a Claude subscription for Claude Code itself. dial says so under
+the provider list rather than leaving you to wonder; use an Anthropic API
+key as a provider instead. A Gemini CLI Google login is planned.
+
+### Connecting anything else
+
 The gateway listens on `127.0.0.1:3425` (`DIAL_ADDR` changes it) and starts
 with the app; `dial serve` runs it alone. It exposes:
 
@@ -108,8 +132,19 @@ with the app; `dial serve` runs it alone. It exposes:
 
 Requests pass straight through when the vendor speaks the agent's API and
 are translated otherwise, streaming, tool calls and reasoning included. The
-bearer token is `dial`; the gateway only listens on loopback. `DIAL_DEBUG=1`
-logs every call, and the *Activity* toggle in the app shows the recent ones.
+key is `dial` (any value works; the gateway only listens on loopback), and
+models are named `provider/model`. Anything with a base-URL setting can use
+it:
+
+| Tool speaks | Base URL                   | Environment                                   |
+| ----------- | -------------------------- | --------------------------------------------- |
+| OpenAI      | `http://127.0.0.1:3425/v1` | `OPENAI_BASE_URL`, `OPENAI_API_KEY=dial`      |
+| Anthropic   | `http://127.0.0.1:3425`    | `ANTHROPIC_BASE_URL`, `ANTHROPIC_API_KEY=dial` |
+| Gemini      | `http://127.0.0.1:3425`    | `GOOGLE_GEMINI_BASE_URL`, `GEMINI_API_KEY=dial` |
+
+The *Gateway* tab in the app has this as copy buttons and ready-made
+snippets (shell, curl, Python, Node) for each API, the list of model ids,
+and the recent calls; `DIAL_DEBUG=1` logs every call to the terminal.
 
 **Claude Code** gets `ANTHROPIC_BASE_URL`, `ANTHROPIC_AUTH_TOKEN` and the
 model variables in the `env` block of `settings.json`; picking a native

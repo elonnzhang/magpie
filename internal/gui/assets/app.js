@@ -15,7 +15,10 @@ let pick = null; // { agent, field, options, items, cursor, anchor }
 let editing = null; // provider id being edited; { preset } or { custom: true } for a new one
 let draft = null; // the editor's working copy
 let adding = false; // the preset sheet is open
-let activity = false; // recent gateway calls are shown
+// the gateway tab's choices, kept per machine
+let flavor = params.get("flavor") || localStorage.getItem("dial.flavor") || "openai"; // which API the snippets speak
+let lang = params.get("lang") || localStorage.getItem("dial.lang") || "shell";        // which snippet
+let exampleModel = localStorage.getItem("dial.model") || "";  // the model in the snippets
 
 async function api(path, body) {
   const res = await fetch("/api/" + path, {
@@ -151,7 +154,7 @@ async function load() {
   try {
     state = await api("state");
     renderAgents();
-    if (view === "providers") await loadProviders();
+    if (view === "providers" || view === "gateway") await loadProviders();
     if (view === "usage") await loadUsage();
   } catch (e) {
     status(e.message, "err");
@@ -338,13 +341,13 @@ $("#save").onclick = () => {
 async function loadProviders() {
   providers = await api("providers");
   if (!providers.providers.length && editing === null) adding = true;
-  renderProviders();
+  if (view === "gateway") renderGatewayView();
+  else renderProviders();
 }
 
 // One row per provider: logo, name, the agents pointed at it, key status.
 // Everything else lives in the editor that opens under the row.
 function renderProviders() {
-  renderGateway();
   const list = $("#providers");
   list.replaceChildren();
   list.hidden = !providers.providers.length;
@@ -356,7 +359,8 @@ function renderProviders() {
     const name = el("div", "name", p.name);
     if (p.sponsored) name.append(el("span", "badge", "sponsored"));
     const n = p.models.filter((m) => m.on).length;
-    who.append(name, el("div", "sub", p.host + " · " + (n ? `${n} model${n === 1 ? "" : "s"}` : "no models exposed")));
+    const models = n ? `${n} model${n === 1 ? "" : "s"}` : "no models exposed";
+    who.append(name, el("div", "sub", (p.account ? "signed in as " + p.account.user : p.host) + " · " + models));
     const using = p.agents.filter((a) => a.current);
     const uses = el("div", "uses");
     for (const a of using) {
@@ -373,8 +377,14 @@ function renderProviders() {
       b.onclick = (ev) => { ev.stopPropagation(); editing = p.id; draft = null; adding = false; renderProviders(); };
       uses.append(b);
     }
-    const key = el("span", "key " + (p.key.set ? "on" : p.ready ? "free" : "none"), p.key.set ? p.key.masked : p.ready ? "no key" : "needs a key");
-    key.title = p.key.set ? "API key " + p.key.masked : p.ready ? "Local servers need no key" : "Open the row and paste an API key";
+    let key;
+    if (p.account) {
+      key = el("span", "key acct", accountPlan(p.account));
+      key.title = `${p.account.agentName} is signed in; its models are here for every other agent`;
+    } else {
+      key = el("span", "key " + (p.key.set ? "on" : p.ready ? "free" : "none"), p.key.set ? p.key.masked : p.ready ? "no key" : "needs a key");
+      key.title = p.key.set ? "API key " + p.key.masked : p.ready ? "Local servers need no key" : "Open the row and paste an API key";
+    }
     const chev = el("span", "chev");
     chev.append(svg(CHEV_R, 11, 1.7));
     row.append(icon(p.icon || "generic"), who, uses, key, chev);
@@ -382,43 +392,295 @@ function renderProviders() {
     list.append(row);
     if (open) list.append(renderEditor(p));
   }
+  renderExcluded();
   renderAdd();
-  renderActivity();
   (list.querySelector(".editor") || $("#addSheet .editor"))?.scrollIntoView({ block: "nearest" });
 }
 
-// The gateway: where every agent sends its requests. Opens to the recent calls.
+// Sign-ins dial found but leaves alone (Claude Code), so nobody wonders
+// why an agent that is clearly logged in is not in the list.
+function renderExcluded() {
+  const box = $("#excluded");
+  box.replaceChildren();
+  for (const x of providers.excluded) {
+    const r = el("div", "excluded");
+    r.append(icon(x.agentIcon), el("span", "", ""));
+    r.lastChild.append(el("b", "", x.agentName + " is signed in, but stays out of this list. "), x.why);
+    box.append(r);
+  }
+}
+
+// accountPlan names a signed-in account's subscription: "ChatGPT Pro", "GitHub".
+function accountPlan(a) {
+  if (a.agent === "codex") return "ChatGPT" + (a.plan ? " " + a.plan[0].toUpperCase() + a.plan.slice(1) : "");
+  if (a.agent === "copilot") return "GitHub";
+  return "signed in";
+}
+
+// ---------- gateway view ----------
+//
+// The gateway is one local endpoint speaking four APIs; this tab is the
+// page that gets anything else connected to it: base URL, key, model ids,
+// and a snippet in whichever language the reader is holding.
+
+async function copy(text, what) {
+  try { await navigator.clipboard.writeText(text); status(what + " copied", "ok"); } catch { status(text); }
+}
+function copyBtn(text, what) {
+  const b = el("button", "copy");
+  b.title = "Copy";
+  b.append(svg("M5.5 5.5V3.5h7v7h-2M3.5 5.5h7v7h-7z", 12, 1.5));
+  b.onclick = (ev) => { ev.stopPropagation(); copy(text, what); };
+  return b;
+}
+
+function renderGatewayView() {
+  renderGateway();
+  renderConnect();
+  renderGatewayModels();
+  renderActivity();
+}
+
+// The status card: dot, state, the URL.
 function renderGateway() {
   const g = providers.gateway;
   const box = $("#gateway");
   box.replaceChildren();
-  box.classList.toggle("selected", activity);
   const dot = el("span", "dot " + (g.running ? "on" : ""));
   const who = el("div", "who");
   const name = el("div", "name", "Gateway");
-  name.append(el("span", "state", g.running ? (g.mine ? "running" : "running · another dial") : "not running"));
-  who.append(name, el("div", "sub", g.running ? `${g.models} model${g.models === 1 ? "" : "s"} · OpenAI, Responses, Anthropic and Gemini APIs` : "start it with dial serve, or open dial at login"));
+  name.append(el("span", "state", g.running ? (g.mine ? "running" : "running · served by another dial") : "not running"));
+  const routed = new Set();
+  for (const p of providers.providers) for (const a of p.agents) if (a.current) routed.add(a.id);
+  const n = routed.size;
+  who.append(name, el("div", "sub", g.running
+    ? `${g.models} model${g.models === 1 ? "" : "s"} · ${n ? `${n} agent${n === 1 ? "" : "s"} routed through it` : "no agent routed through it yet"} · four APIs, one URL`
+    : "start it with dial serve, or open dial at login"));
   const url = el("button", "url");
-  url.append(el("code", "", g.url + "/v1"));
-  url.title = "Copy the base URL";
-  url.onclick = async (ev) => { ev.stopPropagation(); try { await navigator.clipboard.writeText(g.url + "/v1"); status("Base URL copied", "ok"); } catch { status(g.url + "/v1"); } };
-  const chev = el("span", "chev");
-  chev.append(svg(CHEV_R, 11, 1.7));
-  chev.title = activity ? "Hide recent calls" : "Recent calls";
-  box.append(dot, who, url, chev);
-  box.onclick = () => { activity = !activity; renderProviders(); };
+  url.append(el("code", "", g.url));
+  url.title = "Copy the gateway URL";
+  url.onclick = () => copy(g.url, "Gateway URL");
+  box.append(dot, who, url);
+}
+
+// One entry per API the gateway serves: where each SDK's base URL points,
+// the env vars the usual tools read, and a request in four dialects.
+const FLAVORS = {
+  openai: {
+    name: "OpenAI", base: (u) => u + "/v1", baseEnv: "OPENAI_BASE_URL", keyEnv: "OPENAI_API_KEY",
+    note: "Chat Completions, the API most tools speak. Anything with an OpenAI base-URL setting works.",
+    curl: (b, m) => `curl ${b}/chat/completions \\
+  -H "Authorization: Bearer dial" \\
+  -H "Content-Type: application/json" \\
+  -d '{"model": "${m}",
+       "messages": [{"role": "user", "content": "hi"}]}'`,
+    python: (b, m) => `from openai import OpenAI
+
+client = OpenAI(base_url="${b}", api_key="dial")
+r = client.chat.completions.create(
+    model="${m}",
+    messages=[{"role": "user", "content": "hi"}],
+)
+print(r.choices[0].message.content)`,
+    node: (b, m) => `import OpenAI from "openai";
+
+const client = new OpenAI({ baseURL: "${b}", apiKey: "dial" });
+const r = await client.chat.completions.create({
+  model: "${m}",
+  messages: [{ role: "user", content: "hi" }],
+});
+console.log(r.choices[0].message.content);`,
+  },
+  responses: {
+    name: "Responses", base: (u) => u + "/v1", baseEnv: "OPENAI_BASE_URL", keyEnv: "OPENAI_API_KEY",
+    note: "OpenAI's newer API: reasoning, built-in tool items, encrypted reasoning. Codex speaks this.",
+    curl: (b, m) => `curl ${b}/responses \\
+  -H "Authorization: Bearer dial" \\
+  -H "Content-Type: application/json" \\
+  -d '{"model": "${m}", "input": "hi"}'`,
+    python: (b, m) => `from openai import OpenAI
+
+client = OpenAI(base_url="${b}", api_key="dial")
+r = client.responses.create(model="${m}", input="hi")
+print(r.output_text)`,
+    node: (b, m) => `import OpenAI from "openai";
+
+const client = new OpenAI({ baseURL: "${b}", apiKey: "dial" });
+const r = await client.responses.create({ model: "${m}", input: "hi" });
+console.log(r.output_text);`,
+  },
+  anthropic: {
+    name: "Anthropic", base: (u) => u, baseEnv: "ANTHROPIC_BASE_URL", keyEnv: "ANTHROPIC_API_KEY",
+    note: "Messages API. Claude Code reads ANTHROPIC_AUTH_TOKEN instead of the key; the Agents tab sets that for you.",
+    curl: (b, m) => `curl ${b}/v1/messages \\
+  -H "x-api-key: dial" \\
+  -H "anthropic-version: 2023-06-01" \\
+  -H "Content-Type: application/json" \\
+  -d '{"model": "${m}", "max_tokens": 1024,
+       "messages": [{"role": "user", "content": "hi"}]}'`,
+    python: (b, m) => `import anthropic
+
+client = anthropic.Anthropic(
+    base_url="${b}", api_key="dial",
+)
+m = client.messages.create(
+    model="${m}",
+    max_tokens=1024,
+    messages=[{"role": "user", "content": "hi"}],
+)
+print(m.content[0].text)`,
+    node: (b, m) => `import Anthropic from "@anthropic-ai/sdk";
+
+const client = new Anthropic({ baseURL: "${b}", apiKey: "dial" });
+const m = await client.messages.create({
+  model: "${m}",
+  max_tokens: 1024,
+  messages: [{ role: "user", content: "hi" }],
+});
+console.log(m.content[0].text);`,
+  },
+  gemini: {
+    name: "Gemini", base: (u) => u, baseEnv: "GOOGLE_GEMINI_BASE_URL", keyEnv: "GEMINI_API_KEY",
+    note: "Google's generateContent API, v1beta. Gemini CLI and the google-genai SDKs speak this.",
+    curl: (b, m) => `curl ${b}/v1beta/models/${m}:generateContent \\
+  -H "x-goog-api-key: dial" \\
+  -H "Content-Type: application/json" \\
+  -d '{"contents": [{"parts": [{"text": "hi"}]}]}'`,
+    python: (b, m) => `from google import genai
+
+client = genai.Client(api_key="dial", http_options={"base_url": "${b}"})
+r = client.models.generate_content(model="${m}", contents="hi")
+print(r.text)`,
+    node: (b, m) => `import { GoogleGenAI } from "@google/genai";
+
+const ai = new GoogleGenAI({
+  apiKey: "dial",
+  httpOptions: { baseUrl: "${b}" },
+});
+const r = await ai.models.generateContent({ model: "${m}", contents: "hi" });
+console.log(r.text);`,
+  },
+};
+const LANGS = [["shell", "Shell"], ["curl", "curl"], ["python", "Python"], ["node", "Node"]];
+
+// every exposed model, as the ids agents use
+function gatewayModels() {
+  const out = [];
+  for (const p of providers.providers) for (const m of p.models) if (m.on) out.push({ id: `${p.id}/${m.id}`, name: m.name, provider: p });
+  return out;
+}
+
+function segs(items, current, onPick) {
+  const box = el("div", "segs");
+  for (const [id, name] of items) {
+    const b = el("button", "opt" + (id === current ? " on" : ""), name);
+    b.onclick = () => onPick(id);
+    box.append(b);
+  }
+  return box;
+}
+
+function renderConnect() {
+  const g = providers.gateway;
+  const box = $("#connect");
+  box.replaceChildren();
+  const models = gatewayModels();
+  if (!models.some((m) => m.id === exampleModel)) exampleModel = models[0]?.id || "";
+  const model = exampleModel || "provider/model";
+  const f = FLAVORS[flavor] || FLAVORS.openai;
+  const base = f.base(g.url);
+  $("#connectNote").textContent = "Loopback only · the key can be anything";
+
+  box.append(...field("API", segs(Object.entries(FLAVORS).map(([k, v]) => [k, v.name]), flavor, (id) => { flavor = id; localStorage.setItem("dial.flavor", id); renderConnect(); }), f.note));
+
+  const b = el("div", "val");
+  b.append(el("code", "", base), copyBtn(base, "Base URL"));
+  box.append(...field("Base URL", b, `What ${f.baseEnv} takes.`));
+
+  const k = el("div", "val");
+  k.append(el("code", "", "dial"), copyBtn("dial", "Key"));
+  box.append(...field("API key", k, `${f.keyEnv}=dial. The gateway trusts everything on loopback, so any value works.`));
+
+  const m = el("div", "val");
+  m.append(el("code", "", model), copyBtn(model, "Model id"));
+  box.append(...field("Model", m, models.length ? "provider/model, as listed below. Click a model there to put it in the snippets." : "No models yet. Add a provider, or sign in to Codex or Copilot."));
+
+  const ex = el("div", "stack");
+  ex.append(segs(LANGS, lang, (id) => { lang = id; localStorage.setItem("dial.lang", id); renderConnect(); }));
+  const code = lang === "shell"
+    ? `export ${f.baseEnv}=${base}\nexport ${f.keyEnv}=dial`
+    : f[lang](base, model);
+  const pre = el("pre", "snip");
+  const c = el("code");
+  c.append(highlight(code, lang));
+  pre.append(c, copyBtn(code, "Snippet"));
+  ex.append(pre);
+  box.append(...field("Example", ex, lang === "shell" ? "Put these in the shell (or the tool's settings) and the tool talks to dial instead of the vendor." : ""));
+}
+
+// A small highlighter for the four snippet dialects: strings, comments,
+// keywords, numbers, calls, and the env vars and flags shells care about.
+const KEYWORDS = {
+  python: /^(from|import|def|return|await|async|for|in|if|else|None|True|False)$/,
+  node: /^(import|from|const|let|await|async|new|return|function|export|default)$/,
+  shell: /^(export|curl)$/,
+  curl: /^(curl)$/,
+};
+function highlight(code, lang) {
+  const re = lang === "node"
+    ? /("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`)|(\/\/.*)|(\b\d+(?:\.\d+)?\b)|([A-Za-z_$][\w$]*)(?=\s*\()|([A-Za-z_$][\w$]*)|(\s+|.)/g
+    : /("(?:[^"\\]|\\.)*"|'[^']*'|(?<==)\S+)|(#.*)|(\b\d+(?:\.\d+)?\b(?=[,\s\]}]))|(-{1,2}[A-Za-z][\w-]*)|([A-Z][A-Z0-9_]+)(?==)|([A-Za-z_][\w.]*)(?=\s*\()|([A-Za-z_][\w.]*)|(\\\n)|(\s+|.)/g;
+  const out = document.createDocumentFragment();
+  const kw = KEYWORDS[lang] || KEYWORDS.shell;
+  let m;
+  while ((m = re.exec(code))) {
+    let cls = "";
+    if (lang === "node") {
+      if (m[1]) cls = "s"; else if (m[2]) cls = "c"; else if (m[3]) cls = "n";
+      else if (m[4]) cls = kw.test(m[4]) ? "k" : "f"; else if (m[5] && kw.test(m[5])) cls = "k";
+    } else {
+      if (m[1]) cls = "s"; else if (m[2]) cls = "c"; else if (m[3]) cls = "n"; else if (m[4]) cls = "o";
+      else if (m[5]) cls = "v"; else if (m[6]) cls = kw.test(m[6]) ? "k" : "f"; else if (m[7] && kw.test(m[7])) cls = "k";
+      else if (m[9]) cls = "o";
+    }
+    if (cls) out.append(el("span", "tk-" + cls, m[0]));
+    else out.append(m[0]);
+  }
+  return out;
+}
+
+function renderGatewayModels() {
+  const list = $("#gwModels");
+  list.replaceChildren();
+  const models = gatewayModels();
+  $("#copyModels").hidden = !models.length;
+  $("#copyModels").onclick = () => copy(models.map((m) => m.id).join("\n"), "Model ids");
+  if (!models.length) {
+    list.append(el("div", "empty-state", "")).append(el("b", "", "No models exposed yet"), "Add a provider, or sign in to Codex or Copilot; their models show up here for every agent.");
+    return;
+  }
+  for (const m of models) {
+    const row = el("div", "row model" + (m.id === exampleModel ? " selected" : ""));
+    const who = el("div", "who");
+    who.append(el("div", "name", m.id), el("div", "sub", m.name && m.name !== m.id.split("/")[1] ? `${m.name} · ${m.provider.name}` : m.provider.name));
+    row.append(icon(m.provider.icon || "generic"), who, copyBtn(m.id, "Model id"));
+    row.title = "Use this model in the snippets";
+    row.onclick = () => { exampleModel = m.id; localStorage.setItem("dial.model", m.id); renderConnect(); renderGatewayModels(); };
+    list.append(row);
+  }
 }
 
 function renderActivity() {
+  const g = providers.gateway;
   const box = $("#activity");
   box.replaceChildren();
-  box.hidden = !activity;
-  if (!activity) return;
-  const calls = providers.gateway.calls.slice(0, 12);
-  if (!calls.length) { box.append(el("div", "none", "No requests yet. Point an agent at a model here and use it; its calls show up as they happen.")); return; }
+  $("#callsNote").textContent = g.running && !g.mine ? "shown by the dial that serves the gateway" : "";
+  const calls = g.calls.slice(0, 20);
+  if (!calls.length) { box.append(el("div", "none", "No requests yet. Point an agent at a model, or run the example above; every call shows up here as it happens.")); return; }
   for (const c of calls) {
     const r = el("div", "call" + (c.status >= 400 ? " bad" : ""));
     r.append(el("span", "when", new Date(c.time).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })));
+    r.append(el("span", "a", c.agent || "—"));
     r.append(el("span", "m", c.model));
     r.append(el("span", "p", c.from === c.to ? c.from : `${c.from} → ${c.to}`));
     r.append(el("span", "grow"));
@@ -606,6 +868,25 @@ function renderEditor(p, presetID) {
     ed.append(...field("Base URL", urlWrap));
   }
 
+  if (p?.account) {
+    // the sign-in belongs to the agent; dial only borrows it
+    const a = p.account;
+    const acct = el("div", "acct");
+    acct.append(icon(a.agentIcon), el("span", "n", a.user), el("span", "plan", accountPlan(a)));
+    ed.append(...field("Account", acct, `${a.agentName}'s sign-in, read from its own files. Sign out there and this provider goes away.`));
+    ed.append(...field("Models", renderModels(p), ""));
+    ed.append(...field("Endpoints", renderEndpoints(p, null)));
+    const bar = el("div", "bar");
+    bar.append(el("span", "grow"));
+    const cancel = el("button", "text", "Cancel");
+    cancel.onclick = cancelEdit;
+    const saveBtn = el("button", "text primary", "Save");
+    saveBtn.onclick = () => { saveBtn.classList.add("busy"); providerAction("save", { id: p.id, models: draft.chosen }, `${p.name} saved`, p.id); };
+    bar.append(cancel, saveBtn);
+    ed.append(bar);
+    return ed;
+  }
+
   const key = input("", p?.key.set ? `${p.key.masked} · paste a new key to replace it` : pr?.noKey || p?.key.optional ? "optional for local servers" : "paste an API key", "password");
   key.oninput = () => { draft.key = key.value; };
   key.onkeydown = (e) => { e.stopPropagation(); if (e.key === "Enter" && isNew) save(); else if (e.key === "Escape") cancelEdit(); };
@@ -638,43 +919,7 @@ function renderEditor(p, presetID) {
     ed.append(...field("Models", ex, "Optional: dial asks the vendor for its list after saving."));
   }
 
-  // the endpoints, with a Test that reports against each one
-  const eps = el("div", "eps");
-  const slots = {};
-  if (!custom) {
-    const src = p || pr;
-    for (const [proto, label, hint] of PROTOS) {
-      if (!src[proto]) continue;
-      const e = el("div", "ep");
-      const pl = el("span", "pl", label);
-      pl.title = hint;
-      e.append(pl, el("code", "", src[proto]), slots[proto] = el("span", "res"));
-      eps.append(e);
-    }
-    if (p) {
-      const test = el("button", "text", "Test");
-      test.title = "Send a tiny request through each endpoint";
-      test.onclick = async () => {
-        test.classList.add("busy");
-        for (const s of Object.values(slots)) { s.className = "res wait"; s.textContent = "…"; }
-        try {
-          const r = await api("provider/test", { id: p.id });
-          for (const t of r.results) {
-            const s = slots[t.protocol];
-            if (!s) continue;
-            s.className = "res " + (t.ok ? "ok" : "bad");
-            s.replaceChildren();
-            s.append(svg(t.ok ? CHECK : "M4.5 4.5l7 7M11.5 4.5l-7 7", 10, 2));
-            s.append(el("span", "", t.ok ? `${t.ms} ms` : t.status ? `${t.status} · ${t.error}` : t.error));
-            s.title = t.ok ? `model ${t.model}` : t.error;
-          }
-        } catch (e) { for (const s of Object.values(slots)) { s.className = "res"; s.textContent = ""; } status(e.message, "err"); }
-        test.classList.remove("busy");
-      };
-      eps.append(test);
-    }
-    ed.append(...field("Endpoints", eps));
-  }
+  if (!custom) ed.append(...field("Endpoints", renderEndpoints(p, pr)));
 
   if (custom) {
     const more = el("details", "more");
@@ -721,6 +966,44 @@ function renderEditor(p, presetID) {
 
 // Which of the vendor's models the agents get to see: click to toggle, type
 // to add one the vendor's list lacks, Refresh to ask the vendor again.
+// The endpoints a provider serves, with a Test that reports against each one.
+function renderEndpoints(p, pr) {
+  const eps = el("div", "eps");
+  const slots = {};
+  const src = p || pr;
+  for (const [proto, label, hint] of PROTOS) {
+    if (!src[proto]) continue;
+    const e = el("div", "ep");
+    const pl = el("span", "pl", label);
+    pl.title = hint;
+    e.append(pl, el("code", "", src[proto]), slots[proto] = el("span", "res"));
+    eps.append(e);
+  }
+  if (p) {
+    const test = el("button", "text", "Test");
+    test.title = "Send a tiny request through each endpoint";
+    test.onclick = async () => {
+      test.classList.add("busy");
+      for (const s of Object.values(slots)) { s.className = "res wait"; s.textContent = "…"; }
+      try {
+        const r = await api("provider/test", { id: p.id });
+        for (const t of r.results) {
+          const s = slots[t.protocol];
+          if (!s) continue;
+          s.className = "res " + (t.ok ? "ok" : "bad");
+          s.replaceChildren();
+          s.append(svg(t.ok ? CHECK : "M4.5 4.5l7 7M11.5 4.5l-7 7", 10, 2));
+          s.append(el("span", "", t.ok ? `${t.ms} ms` : t.status ? `${t.status} · ${t.error}` : t.error));
+          s.title = t.ok ? `model ${t.model}` : t.error;
+        }
+      } catch (e) { for (const s of Object.values(slots)) { s.className = "res"; s.textContent = ""; } status(e.message, "err"); }
+      test.classList.remove("busy");
+    };
+    eps.append(test);
+  }
+  return eps;
+}
+
 function renderModels(p) {
   const box = el("div", "models");
   const chips = el("div", "mchips");
@@ -933,9 +1216,10 @@ function show(v) {
   for (const b of $("#nav").children) b.classList.toggle("on", b.dataset.view === v);
   $("#view-agents").hidden = v !== "agents";
   $("#view-providers").hidden = v !== "providers";
+  $("#view-gateway").hidden = v !== "gateway";
   $("#view-usage").hidden = v !== "usage";
   closePicker();
-  if (v === "providers") loadProviders().catch((e) => status(e.message, "err"));
+  if (v === "providers" || v === "gateway") loadProviders().catch((e) => status(e.message, "err"));
   if (v === "usage") loadUsage().catch((e) => status(e.message, "err"));
 }
 for (const b of $("#nav").children) b.onclick = () => { show(b.dataset.view); b.blur(); };
@@ -964,5 +1248,5 @@ else { $("#nav").remove(); }
 // the panel comes back into view.
 document.addEventListener("visibilitychange", () => { if (!document.hidden) load(); });
 window.addEventListener("focus", load);
-if (mode === "window" && ["providers", "usage"].includes(params.get("view"))) show(params.get("view"));
+if (mode === "window" && ["providers", "gateway", "usage"].includes(params.get("view"))) show(params.get("view"));
 load();
