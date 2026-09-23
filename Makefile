@@ -62,15 +62,18 @@ clean:
 # Development: the UI is served from internal/gui/assets and the window
 # reloads itself when a file there is saved; with fswatch installed, Go
 # changes rebuild and relaunch the app. Uses its own gateway port so a
-# running dial keeps serving the agents.
+# running dial keeps serving the agents. Ctrl-C ends the loop: fswatch
+# swallows the interrupt, so without the trap the shell would just go round
+# again.
 DEV_ADDR ?= 127.0.0.1:3426
 DEV_UI ?= 127.0.0.1:3427
 dev:
 	@if command -v fswatch >/dev/null; then \
+	  trap 'pkill -P $$pid 2>/dev/null; kill $$pid 2>/dev/null; wait $$pid 2>/dev/null; exit 0' INT TERM; \
 	  while true; do \
 	    $(MAKE) --no-print-directory dev-once & pid=$$!; \
 	    fswatch -1 -r -e '.*' -i '\.go$$' -i '\.md$$' . >/dev/null; \
-	    echo "  go changed · rebuilding"; kill $$pid 2>/dev/null; pkill -x dial-dev 2>/dev/null; wait $$pid 2>/dev/null; \
+	    echo "  go changed · rebuilding"; pkill -P $$pid 2>/dev/null; kill $$pid 2>/dev/null; wait $$pid 2>/dev/null; \
 	  done; \
 	else $(MAKE) --no-print-directory dev-once; fi
 

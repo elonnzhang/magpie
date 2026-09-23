@@ -408,7 +408,7 @@ body.window .foot { padding-left: 18px; }
 .tile .check { margin-left: auto; color: var(--green); display: inline-flex; flex: none; }
 .tile.custom { border-style: dashed; }
 /* the provider editor, in a dialog */
-.editor { padding: 16px 18px 14px; display: grid; grid-template-columns: 72px 1fr; gap: 10px 14px; align-items: start; }
+.editor { padding: 16px 18px 14px; display: grid; grid-template-columns: 72px minmax(0, 1fr); gap: 10px 14px; align-items: start; }
 .editor .ehead { grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; padding-bottom: 8px; margin-bottom: 2px; border-bottom: 1px solid var(--line-2); }
 .editor .ehead .ic { width: 20px; height: 20px; }
 .editor .ehead b { font-weight: 600; }
@@ -448,7 +448,7 @@ body.window .foot { padding-left: 18px; }
 .editor .more summary::before { content: "▸"; font-size: 10px; color: var(--faint); }
 .editor .more[open] summary::before { content: "▾"; }
 .editor .more summary:hover { color: var(--fg); }
-.editor .more .inner { display: grid; grid-template-columns: 72px 1fr; gap: 10px 14px; align-items: start; padding-top: 8px; }
+.editor .more .inner { display: grid; grid-template-columns: 72px minmax(0, 1fr); gap: 10px 14px; align-items: start; padding-top: 8px; }
 .editor .bar { grid-column: 1 / -1; display: flex; align-items: center; gap: 4px; padding-top: 10px; border-top: 1px solid var(--line-2); margin-top: 2px; }
 .editor .bar .danger { margin-left: -7px; }
 .busy { opacity: .55; pointer-events: none; }
@@ -543,7 +543,7 @@ html.theming, html.theming *, html.theming *::before, html.theming *::after {
 }
 .modal.out { animation: fade-out .16s var(--ease) forwards; pointer-events: none; }
 .modal .dialog {
-  width: min(600px, 100%); max-height: 100%; overflow-y: auto;
+  width: min(600px, 100%); min-width: 0; max-height: 100%; overflow-y: auto;
   border-radius: 14px; background: var(--card);
   box-shadow: 0 0 0 1px var(--line), 0 24px 60px rgba(0, 0, 0, .32), 0 2px 8px rgba(0, 0, 0, .12);
   animation: dialog-in .26s var(--ease);
