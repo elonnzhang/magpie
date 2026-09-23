@@ -1,6 +1,7 @@
 # magpie
 
-One place to pick every coding agent's model.
+One place to pick every coding agent's model: Codex on DeepSeek, Claude Code
+on Kimi, Gemini CLI on GLM, from the menu bar. [usemagpie.ai](https://usemagpie.ai)
 
 `magpie` is a single screen that lists each AI coding agent on your machine and
 the model it is set to. Click a value, pick a model. That is the whole app.
@@ -289,3 +290,7 @@ until you start a new one.
 - `~/.cache/magpie/models/<provider>.json` — model lists fetched from vendors
 
 `XDG_CONFIG_HOME` and `XDG_CACHE_HOME` are respected.
+
+## License
+
+MIT. See [LICENSE](LICENSE).

@@ -1,8 +1,8 @@
 name: Release
 
 # Pushing a v* tag hands off to yetone/magpie-releases, which builds, signs,
-# notarises and publishes magpie there — this repo is private, that one is
-# where people download from.
+# notarises and publishes magpie there; that repo is where people download
+# from, and the signing secrets live only there.
 
 on:
   push:
