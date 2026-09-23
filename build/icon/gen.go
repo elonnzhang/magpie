@@ -1,25 +1,36 @@
 //go:build ignore
 
-// Icon generator. Everything magpie shows is drawn from one glyph: a small
-// round magpie in profile, facing right, one outline on a 44-unit grid with the
-// eye a hole. The app tile adds what a silhouette cannot: the white belly
-// and the blue-green sheen on the tail. The same path lives in
+// Icon generator. Everything magpie shows is drawn from one bird: a round
+// little magpie in profile, tail cocked, black and white, on a 44-unit grid.
+// magpie.svg is the full drawing, its belly, shoulder and the slits in its
+// tail cut out of the black; the app tile uses it from 64px up.
+// magpie-small.svg drops the eye, which would only be a speck; the tray and
+// the smaller tiles use it, and so does the header in
 // internal/gui/assets/index.html.
 //
 //	go run build/icon/gen.go tray internal/gui/tray.png     # 44px black template icon (macOS menu bar)
-//	go run build/icon/gen.go app 64 internal/gui/icon.png   # coloured app icon at a given size
+//	go run build/icon/gen.go app 64 internal/gui/icon.png   # app icon at a given size
 //	make icons                                              # regenerates all of them plus magpie.icns
 package main
 
 import (
+	_ "embed"
 	"fmt"
 	"image"
 	"image/color"
 	"image/png"
 	"math"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
+)
+
+var (
+	//go:embed magpie.svg
+	fullSVG string
+	//go:embed magpie-small.svg
+	smallSVG string
 )
 
 func main() {
@@ -49,183 +60,140 @@ func main() {
 // tray draws the silhouette as a macOS template image (black + alpha).
 func tray() image.Image {
 	const S = 44
+	cov := coverage(parse(smallSVG), S, 8, 1, 0, 0)
 	img := image.NewNRGBA(image.Rect(0, 0, S, S))
-	for y := 0; y < S; y++ {
-		for x := 0; x < S; x++ {
-			a := 0.0
-			// supersample 4x4
-			for sy := 0; sy < 4; sy++ {
-				for sx := 0; sx < 4; sx++ {
-					fx := float64(x) + (float64(sx)+0.5)/4
-					fy := float64(y) + (float64(sy)+0.5)/4
-					if mark(fx, fy) != none {
-						a++
-					}
-				}
-			}
-			img.SetNRGBA(x, y, color.NRGBA{0, 0, 0, uint8(a / 16 * 255)})
-		}
+	for i, a := range cov {
+		img.SetNRGBA(i%S, i/S, color.NRGBA{0, 0, 0, uint8(a*255 + 0.5)})
 	}
 	return img
 }
 
-// app draws a rounded square, pale like paper, with the bird in ink, its
-// belly white and its tail in the blue-green a magpie's tail really has.
+// app draws a rounded square, white shading to the palest grey, with the
+// bird on it in ink.
 func app(n int) image.Image {
 	S := float64(n)
-	img := image.NewNRGBA(image.Rect(0, 0, n, n))
 	// macOS icon grid: the squircle occupies ~80% of the canvas
 	inset := S * 0.1
 	side := S - 2*inset
 	radius := side * 0.225
-	// the glyph's box is x 0.5..39.5, y 4.7..35.8; centre it on the tile
-	k := side * 0.84 / 44
-	ox, oy := inset+side/2-20*k, inset+side/2-20.25*k
-	bg1 := [3]float64{0xfb, 0xfb, 0xfd} // top
-	bg2 := [3]float64{0xe4, 0xe5, 0xec} // bottom
-	black := [3]float64{0x17, 0x17, 0x1c}
-	white := [3]float64{0xf3, 0xf3, 0xf7}
-	sh1 := [3]float64{0x1e, 0x7f, 0xd0} // sheen at the tail base
-	sh2 := [3]float64{0x24, 0xc3, 0xc4} // sheen at the tip
+	k := side * 0.8 / 44
+	o := inset + side/2 - 22*k
 	ss := 4
 	if n <= 64 {
 		ss = 8
 	}
+	// under 64px the eye is a grey speck; leave it out
+	shape := fullSVG
+	if n < 64 {
+		shape = smallSVG
+	}
+	bird := coverage(parse(shape), n, ss, k, o, o)
+	bg1, bg2 := 0xff, 0xec // top, bottom
+	const ink = 0x16
+	img := image.NewNRGBA(image.Rect(0, 0, n, n))
 	for y := 0; y < n; y++ {
 		for x := 0; x < n; x++ {
-			var aBg float64
-			var sum [3]float64 // colour of the glyph samples, premultiplied by count
-			var aFg float64
+			var tile float64
 			for sy := 0; sy < ss; sy++ {
 				for sx := 0; sx < ss; sx++ {
 					fx := float64(x) + (float64(sx)+0.5)/float64(ss)
 					fy := float64(y) + (float64(sy)+0.5)/float64(ss)
-					if !roundRect(fx, fy, inset, inset, side, side, radius) {
-						continue
-					}
-					aBg++
-					u, v := (fx-ox)/k, (fy-oy)/k
-					var c [3]float64
-					switch mark(u, v) {
-					case none:
-						continue
-					case ink:
-						c = black
-					case belly:
-						c = white
-					case sheen:
-						// along the tail, base to tip
-						t := math.Min(1, math.Max(0, (11.5-u)/11))
-						for i := range c {
-							c[i] = sh1[i]*(1-t) + sh2[i]*t
-						}
-					}
-					aFg++
-					for i := range c {
-						sum[i] += c[i]
+					if roundRect(fx, fy, inset, inset, side, side, radius) {
+						tile++
 					}
 				}
 			}
-			tot := float64(ss * ss)
-			if aBg == 0 {
-				img.SetNRGBA(x, y, color.NRGBA{})
+			if tile == 0 {
 				continue
 			}
 			t := float64(y) / S
-			var px [3]float64
-			for i := range px {
-				bg := bg1[i]*(1-t) + bg2[i]*t
-				px[i] = (bg*(aBg-aFg) + sum[i]) / aBg
-			}
-			img.SetNRGBA(x, y, color.NRGBA{uint8(px[0]), uint8(px[1]), uint8(px[2]), uint8(aBg / tot * 255)})
+			bg := float64(bg1)*(1-t) + float64(bg2)*t
+			a := bird[y*n+x]
+			g := uint8(bg*(1-a) + ink*a + 0.5)
+			img.SetNRGBA(x, y, color.NRGBA{g, g, g, uint8(tile / float64(ss*ss) * 255)})
 		}
 	}
 	return img
 }
 
-type region int
-
-const (
-	none region = iota
-	ink
-	belly
-	sheen
-)
-
-// The bird, on its 44-unit grid, facing right: beak tip, crown, back,
-// tail, belly, chest, throat.
-var (
-	outline            = flatten(`M39.5 16 L35 14.5 C33 7 24.5 4 18.5 7.5 C14.5 10 12 14.5 11.5 20 L0.5 27 L2.5 31 L12 27 C13.5 33 20 36.5 26 35 C31.5 33.5 34.5 29 35.5 24 C36 21 36 19 35.2 17.5 Z`)
-	tail               = [][2]float64{{11.5, 20}, {0.5, 27}, {2.5, 31}, {12, 27}}
-	eyeCX, eyeCY, eyeR = 31.0, 12.3, 2.3
-	// the white belly: an oval kept inside the outline
-	bellyCX, bellyCY, bellyRX, bellyRY, bellyRot = 24.0, 27.5, 8.5, 5.5, -12.0
-)
-
-// mark says what the glyph shows at a point: ink, the white belly, the
-// tail's sheen, or nothing. Tray and header paint every region the same,
-// so there the bird is a plain silhouette.
-func mark(u, v float64) region {
-	if math.Hypot(u-eyeCX, v-eyeCY) <= eyeR {
-		return none
+// coverage rasterises a shape, scaled by k and moved to (ox, oy), onto an n×n
+// grid of pixels with ss×ss samples each, and gives each pixel's coverage in
+// 0..1. It fills even-odd, a scanline at a time.
+func coverage(rings [][][2]float64, n, ss int, k, ox, oy float64) []float64 {
+	cov := make([]float64, n*n)
+	per := 1 / float64(ss*ss)
+	var xs []float64
+	for y := 0; y < n*ss; y++ {
+		v := ((float64(y)+0.5)/float64(ss) - oy) / k
+		xs = xs[:0]
+		for _, r := range rings {
+			for i, j := 0, len(r)-1; i < len(r); j, i = i, i+1 {
+				a, b := r[j], r[i]
+				if (a[1] > v) != (b[1] > v) {
+					u := a[0] + (v-a[1])*(b[0]-a[0])/(b[1]-a[1])
+					xs = append(xs, (u*k+ox)*float64(ss))
+				}
+			}
+		}
+		sort.Float64s(xs)
+		row := cov[(y/ss)*n:][:n]
+		for i := 0; i+1 < len(xs); i += 2 {
+			// sample centres x+0.5 that fall between the two crossings
+			lo := int(math.Max(0, math.Ceil(xs[i]-0.5)))
+			hi := int(math.Min(float64(n*ss), math.Ceil(xs[i+1]-0.5)))
+			for x := lo; x < hi; x++ {
+				row[x/ss] += per
+			}
+		}
 	}
-	if !inPoly(u, v, outline) {
-		return none
-	}
-	s, c := math.Sincos(bellyRot * math.Pi / 180)
-	lx := (u-bellyCX)*c + (v-bellyCY)*s
-	ly := -(u-bellyCX)*s + (v-bellyCY)*c
-	if lx*lx/(bellyRX*bellyRX)+ly*ly/(bellyRY*bellyRY) <= 1 {
-		return belly
-	}
-	if inPoly(u, v, tail) {
-		return sheen
-	}
-	return ink
+	return cov
 }
 
-// flatten turns an SVG path of absolute M, L, C and Z commands (as in
-// index.html) into a polygon, each curve cut into short segments.
-func flatten(d string) [][2]float64 {
-	var pts [][2]float64
+// parse reads the path out of one of the SVGs: absolute M, L, C and Z
+// commands, each curve cut into short segments, one polygon per subpath.
+func parse(svg string) [][][2]float64 {
+	d := svg[strings.Index(svg, ` d="`)+4:]
+	d = d[:strings.IndexByte(d, '"')]
 	f := strings.Fields(strings.NewReplacer("M", " M ", "L", " L ", "C", " C ", "Z", " Z ").Replace(d))
 	num := func(i int) float64 { x, _ := strconv.ParseFloat(f[i], 64); return x }
+	var rings [][][2]float64
+	var pts [][2]float64
+	cmd := ""
 	for i := 0; i < len(f); {
-		switch f[i] {
+		if c := f[i]; c == "M" || c == "L" || c == "C" || c == "Z" {
+			cmd = c
+			i++
+		}
+		switch cmd {
 		case "M", "L":
-			pts = append(pts, [2]float64{num(i + 1), num(i + 2)})
-			i += 3
+			if cmd == "M" && len(pts) > 0 {
+				rings, pts = append(rings, pts), nil
+			}
+			pts = append(pts, [2]float64{num(i), num(i + 1)})
+			i += 2
+			cmd = "L" // further pairs after M are lines
 		case "C":
 			p := pts[len(pts)-1]
-			c := [8]float64{p[0], p[1], num(i + 1), num(i + 2), num(i + 3), num(i + 4), num(i + 5), num(i + 6)}
-			for k := 1; k <= 24; k++ {
-				t := float64(k) / 24
+			c := [8]float64{p[0], p[1], num(i), num(i + 1), num(i + 2), num(i + 3), num(i + 4), num(i + 5)}
+			for s := 1; s <= 8; s++ {
+				t := float64(s) / 8
 				m := 1 - t
 				pts = append(pts, [2]float64{
 					m*m*m*c[0] + 3*m*m*t*c[2] + 3*m*t*t*c[4] + t*t*t*c[6],
 					m*m*m*c[1] + 3*m*m*t*c[3] + 3*m*t*t*c[5] + t*t*t*c[7],
 				})
 			}
-			i += 7
-		default: // Z
-			i++
+			i += 6
+		case "Z":
+			if len(pts) > 0 {
+				rings, pts = append(rings, pts), nil
+			}
 		}
 	}
-	return pts
-}
-
-// inPoly is even-odd point-in-polygon.
-func inPoly(px, py float64, poly [][2]float64) bool {
-	in := false
-	n := len(poly)
-	for i, j := 0, n-1; i < n; j, i = i, i+1 {
-		xi, yi := poly[i][0], poly[i][1]
-		xj, yj := poly[j][0], poly[j][1]
-		if (yi > py) != (yj > py) && px < (xj-xi)*(py-yi)/(yj-yi)+xi {
-			in = !in
-		}
+	if len(pts) > 0 {
+		rings = append(rings, pts)
 	}
-	return in
+	return rings
 }
 
 // roundRect is a rounded square: true inside it.
