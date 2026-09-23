@@ -305,7 +305,9 @@ $("#q").addEventListener("keydown", (e) => {
 });
 document.addEventListener("mousedown", (e) => { if (pick && !$("#pop").contains(e.target)) closePicker(); });
 document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape" && !pick && mode === "panel") api("window/hide", {});
+  if (e.key !== "Escape" || pick) return;
+  if (editing !== null) cancelEdit();
+  else if (mode === "panel") api("window/hide", {});
 });
 
 // ---------- profiles ----------
@@ -353,11 +355,12 @@ async function loadProviders() {
 }
 
 // One row per provider: logo, name, the agents pointed at it, key status.
-// Everything else lives in the editor that opens under the row.
+// Everything else lives in the editor, a dialog over the page.
 function renderProviders() {
   const list = $("#providers");
   list.replaceChildren();
   list.hidden = !providers.providers.length;
+  let dialog = null; // the editor, if one is open
   for (const p of providers.providers) {
     const open = editing === p.id;
     const row = el("div", "row provider" + (open ? " selected" : ""));
@@ -397,11 +400,11 @@ function renderProviders() {
     row.append(icon(p.icon || "generic"), who, uses, key, chev);
     row.onclick = () => { editing = open ? null : p.id; draft = null; adding = false; renderProviders(); };
     list.append(row);
-    if (open) list.append(renderEditor(p));
+    if (open) dialog = renderEditor(p);
   }
   renderExcluded();
-  renderAdd();
-  (list.querySelector(".editor") || $("#addSheet .editor"))?.scrollIntoView({ block: "nearest" });
+  dialog = renderAdd() || dialog;
+  if (dialog) openModal(dialog); else closeModal();
 }
 
 // Sign-ins dial found but leaves alone (Claude Code), so nobody wonders
@@ -579,11 +582,13 @@ function gatewayModels() {
 
 function segs(items, current, onPick) {
   const box = el("div", "segs");
+  const key = items.map(([id]) => id).join("|");
   for (const [id, name] of items) {
     const b = el("button", "opt" + (id === current ? " on" : ""), name);
-    b.onclick = () => onPick(id);
+    b.onclick = () => { for (const x of box.querySelectorAll(".opt")) x.classList.toggle("on", x === b); slide(box, key); onPick(id); };
     box.append(b);
   }
+  queueMicrotask(() => slide(box, key)); // once it is in the page
   return box;
 }
 
@@ -727,7 +732,7 @@ function renderAdd() {
   sheet.replaceChildren();
   sheet.hidden = !adding;
   $("#addProvider").hidden = adding;
-  if (!adding) return;
+  if (!adding) return null;
   const head = el("div", "row-head");
   head.append(el("span", "label", t(providers.providers.length ? "Add a provider" : "Add your first provider")), el("span", "grow"));
   const q = input(presetQuery, t("Find a vendor…"));
@@ -775,7 +780,7 @@ function renderAdd() {
     }
   };
   drawTiles();
-  if (editing && typeof editing === "object") sheet.append(renderEditor(null, editing.preset));
+  return editing && typeof editing === "object" ? renderEditor(null, editing.preset) : null;
 }
 
 function tile(pr) {
@@ -817,6 +822,49 @@ function input(value, placeholder, type = "text") {
 }
 function cancelEdit() { editing = null; draft = null; renderProviders(); }
 
+// ---------- modal ----------
+// The provider editor opens as a dialog over the page; Escape, the backdrop
+// or Cancel close it.
+let modalTimer = 0;
+function openModal(content) {
+  const m = $("#modal"), d = m.firstElementChild;
+  clearTimeout(modalTimer);
+  m.classList.remove("out");
+  d.classList.remove("swap");
+  if (!m.hidden) { void d.offsetWidth; d.classList.add("swap"); } // content changed: a soft refresh, not a re-entrance
+  d.replaceChildren(content);
+  m.hidden = false;
+}
+function closeModal() {
+  const m = $("#modal");
+  if (m.hidden || m.classList.contains("out")) return;
+  m.classList.add("out");
+  modalTimer = setTimeout(() => { m.hidden = true; m.classList.remove("out"); m.firstElementChild.replaceChildren(); }, 170);
+}
+$("#modal").onclick = (e) => { if (e.target === e.currentTarget) cancelEdit(); };
+
+// ---------- sliding thumb ----------
+// Pills (the nav, every segmented control) have one thumb that glides to the
+// selected option instead of each option lighting up on its own.
+const thumbs = new Map(); // pill key → where its thumb is, so a re-rendered pill takes over mid-slide
+function slide(box, key) {
+  let th = box.querySelector(":scope > .thumb");
+  if (!th) { th = el("span", "thumb"); box.prepend(th); }
+  const on = box.querySelector(":scope > .on");
+  if (!on) { th.style.opacity = "0"; return; }
+  th.style.opacity = "";
+  const to = { x: on.offsetLeft, w: on.offsetWidth };
+  const last = thumbs.get(key);
+  const from = last && performance.now() - last.at < 300 ? last.from : last; // re-rendered mid-slide: start where the old one started
+  const put = (p) => { th.style.transform = `translateX(${p.x}px)`; th.style.width = p.w + "px"; };
+  th.classList.add("still");
+  put(from || to);
+  void th.offsetWidth;
+  th.classList.remove("still");
+  put(to);
+  thumbs.set(key, { ...to, at: performance.now(), from: from || to });
+}
+
 const PROTOS = [["chat", "OpenAI", "Chat Completions — most agents"], ["responses", "Responses", "OpenAI Responses — what Codex speaks"], ["anthropic", "Anthropic", "Anthropic Messages — what Claude Code speaks"]];
 
 // renderEditor: an existing provider (p), a new preset (presetID), or custom.
@@ -831,12 +879,13 @@ function renderEditor(p, presetID) {
   const ed = el("div", "editor" + (isNew ? " new" : ""));
   ed.onclick = (e) => e.stopPropagation();
 
-  if (isNew) {
+  {
     const h = el("div", "ehead");
-    h.append(icon(pr?.icon || "generic"), el("b", "", pr ? pr.name : t("Custom provider")));
+    h.append(icon(p?.icon || pr?.icon || "generic"), el("b", "", p ? p.name : pr ? pr.name : t("Custom provider")));
     if (pr?.note) h.append(el("span", "note", pr.note));
     h.append(el("span", "grow"));
-    if (pr?.website) { const b = el("button", "link", hostOf(pr.website) + " ↗"); b.onclick = () => api("open", { url: pr.website }); h.append(b); }
+    const site = pr?.website || (p?.host ? "https://" + p.host : "");
+    if (site) { const b = el("button", "link", hostOf(site) + " ↗"); b.onclick = () => api("open", { url: site }); h.append(b); }
     ed.append(h);
   }
 
@@ -865,9 +914,10 @@ function renderEditor(p, presetID) {
     for (const [v, l, hint] of [["openai", "OpenAI compatible", "…/v1 — chat completions, and responses when the vendor has it"], ["anthropic", "Anthropic compatible", "the root URL, what ANTHROPIC_BASE_URL would take"]]) {
       const b = el("button", "opt" + (draft.api === v ? " on" : ""), t(l));
       b.title = t(hint);
-      b.onclick = () => { draft.api = v; const u = url.value; if (v === "anthropic") { draft.anthropic = u; draft.chat = ""; } else { draft.chat = u; draft.anthropic = ""; } for (const x of seg.children) x.classList.toggle("on", x === b); url.placeholder = v === "anthropic" ? "https://…" : "https://…/v1"; };
+      b.onclick = () => { draft.api = v; const u = url.value; if (v === "anthropic") { draft.anthropic = u; draft.chat = ""; } else { draft.chat = u; draft.anthropic = ""; } for (const x of seg.querySelectorAll(".opt")) x.classList.toggle("on", x === b); slide(seg, "api"); url.placeholder = v === "anthropic" ? "https://…" : "https://…/v1"; };
       seg.append(b);
     }
+    queueMicrotask(() => slide(seg, "api"));
     url = input(draft.api === "anthropic" ? draft.anthropic : draft.chat, draft.api === "anthropic" ? "https://…" : "https://…/v1", "url");
     url.oninput = () => { if (draft.api === "anthropic") draft.anthropic = url.value; else draft.chat = url.value; };
     const urlWrap = el("div", "stack");
@@ -1123,9 +1173,10 @@ function renderUsage() {
   seg.replaceChildren();
   for (const [id, name] of PERIODS) {
     const b = el("button", "opt" + (id === period ? " on" : ""), t(name));
-    b.onclick = () => { period = id; loadUsage().catch((e) => status(e.message, "err")); };
+    b.onclick = () => { for (const x of seg.querySelectorAll(".opt")) x.classList.toggle("on", x === b); slide(seg, "period"); period = id; loadUsage().catch((e) => status(e.message, "err")); };
     seg.append(b);
   }
+  slide(seg, "period");
   const cost = $("#usageCost");
   cost.replaceChildren();
   const c = fmtCost(u);
@@ -1228,12 +1279,22 @@ const LOCALES = [["system", "System"], ["en", "English"], ["zh", "中文"]];
 // ?locale= in the URL wins, so a forced look stays forced.
 function applyPrefs(s) {
   s = s || {};
+  const root = document.documentElement;
   if (!params.get("theme")) {
-    if (!s.theme || s.theme === "system") delete document.documentElement.dataset.theme;
-    else document.documentElement.dataset.theme = s.theme;
+    const want = !s.theme || s.theme === "system" ? undefined : s.theme;
+    if (root.dataset.theme !== want) {
+      if (applyPrefs.ready) { // not on the first paint
+        root.classList.add("theming");
+        clearTimeout(applyPrefs.t);
+        applyPrefs.t = setTimeout(() => root.classList.remove("theming"), 450);
+      }
+      if (want) root.dataset.theme = want; else delete root.dataset.theme;
+    }
   }
+  applyPrefs.ready = true;
   const was = locale;
   setLocale(s.lang);
+  if (was !== locale && mode === "window") queueMicrotask(() => slide($("#nav"), "nav"));
   return was !== locale;
 }
 
@@ -1283,15 +1344,16 @@ async function savePrefs(body) {
 
 function show(v) {
   view = v;
-  if (mode === "window") for (const b of $("#nav").children) b.classList.toggle("on", b.dataset.view === v);
+  if (mode === "window") { for (const b of $("#nav").querySelectorAll("button")) b.classList.toggle("on", b.dataset.view === v); slide($("#nav"), "nav"); }
   $("#prefs").classList.toggle("on", v === "settings");
   for (const id of ["agents", "providers", "gateway", "usage", "settings"]) $("#view-" + id).hidden = v !== id;
   closePicker();
+  if (v !== "providers" && editing !== null) cancelEdit();
   if (v === "providers" || v === "gateway") loadProviders().catch((e) => status(e.message, "err"));
   if (v === "usage") loadUsage().catch((e) => status(e.message, "err"));
   if (v === "settings") loadSettings().catch((e) => status(e.message, "err"));
 }
-if (mode === "window") for (const b of $("#nav").children) b.onclick = () => { show(b.dataset.view); b.blur(); };
+if (mode === "window") for (const b of $("#nav").querySelectorAll("button")) b.onclick = () => { show(b.dataset.view); b.blur(); };
 $("#prefs").onclick = () => { if (mode === "window") show("settings"); else api("window/main?view=settings", {}); $("#prefs").blur(); };
 
 $("#sync").onclick = async () => {
@@ -1319,4 +1381,5 @@ else { $("#nav").remove(); }
 document.addEventListener("visibilitychange", () => { if (!document.hidden) load(); });
 window.addEventListener("focus", load);
 if (mode === "window" && ["providers", "gateway", "usage", "settings"].includes(params.get("view"))) show(params.get("view"));
+else if (mode === "window") slide($("#nav"), "nav");
 load();

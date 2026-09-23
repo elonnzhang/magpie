@@ -118,8 +118,9 @@ body.window .top { padding-left: 88px; height: 50px; padding-top: 2px; } /* the 
   background: var(--pill);
 }
 body.panel .seg { display: none; }
-.seg button { height: 24px; padding: 0 12px; border-radius: 6px; font-size: 12.5px; color: var(--muted); transition: background .15s, color .15s, box-shadow .15s; }
-.seg button.on { background: var(--card); color: var(--fg); box-shadow: 0 1px 2px rgba(0, 0, 0, .12), 0 0 0 .5px rgba(0, 0, 0, .06); }
+.seg button { position: relative; z-index: 1; height: 24px; padding: 0 12px; border-radius: 6px; font-size: 12.5px; color: var(--muted); transition: color .18s var(--ease), transform .14s var(--ease); }
+.seg button.on { color: var(--fg); }
+.seg button:hover:not(.on) { color: var(--fg-2); }
 .actions { margin-left: auto; display: flex; gap: 2px; }
 .icon {
   width: 26px; height: 26px; border-radius: 7px;
@@ -132,7 +133,8 @@ body.panel .seg { display: none; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
 /* ---- lists ---------------------------------------------------------------- */
-.view { flex: 1; min-height: 0; overflow-y: auto; padding: 0 12px 4px; display: flex; flex-direction: column; }
+.view { flex: 1; min-height: 0; overflow-y: auto; padding: 0 12px 4px; display: flex; flex-direction: column; animation: view-in .24s var(--ease); }
+@keyframes view-in { from { opacity: 0; transform: translateY(5px); } }
 body.window .view { padding: 2px 16px 8px; }
 .view::-webkit-scrollbar { width: 0; }
 .list { background: var(--card); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; flex: none; }
@@ -405,13 +407,9 @@ body.window .foot { padding-left: 18px; }
 .tile.added:hover { opacity: .8; }
 .tile .check { margin-left: auto; color: var(--green); display: inline-flex; flex: none; }
 .tile.custom { border-style: dashed; }
-.sheet .editor { margin-top: 10px; border-radius: 12px; border: 1px solid var(--line); }
-
-/* the inline editor under a provider row */
-.editor { background: var(--card-2); padding: 12px 14px 12px 48px; display: grid; grid-template-columns: 72px 1fr; gap: 10px 14px; align-items: start; }
-.editor.new { padding-left: 14px; }
-body.panel .editor { padding-left: 14px; }
-.editor .ehead { grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; padding-bottom: 2px; }
+/* the provider editor, in a dialog */
+.editor { padding: 16px 18px 14px; display: grid; grid-template-columns: 72px 1fr; gap: 10px 14px; align-items: start; }
+.editor .ehead { grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; padding-bottom: 8px; margin-bottom: 2px; border-bottom: 1px solid var(--line-2); }
 .editor .ehead .ic { width: 20px; height: 20px; }
 .editor .ehead b { font-weight: 600; }
 .editor .ehead .note { font-size: 12px; color: var(--muted); }
@@ -430,9 +428,18 @@ body.panel .editor { padding-left: 14px; }
 .editor .side { display: flex; gap: 4px; align-items: center; flex: none; }
 .editor .side .text { padding: 3px 6px; }
 .editor .stack { display: flex; flex-direction: column; gap: 6px; }
-.segs { display: inline-flex; padding: 2px; border-radius: 7px; background: var(--pill); align-self: flex-start; }
-.opt { height: 22px; padding: 0 10px; border-radius: 5px; font-size: 12px; color: var(--muted); transition: background .12s, color .12s; }
-.opt.on { background: var(--card); color: var(--fg); box-shadow: 0 1px 2px rgba(0, 0, 0, .12), 0 0 0 .5px rgba(0, 0, 0, .06); }
+.segs { position: relative; display: inline-flex; padding: 2px; border-radius: 7px; background: var(--pill); align-self: flex-start; }
+.opt { position: relative; z-index: 1; height: 22px; padding: 0 10px; border-radius: 5px; font-size: 12px; color: var(--muted); transition: color .18s var(--ease), transform .14s var(--ease); }
+.opt.on { color: var(--fg); }
+.opt:hover:not(.on) { color: var(--fg-2); }
+.thumb {
+  position: absolute; top: 2px; bottom: 2px; left: 0; width: 0; border-radius: 6px;
+  background: var(--card); box-shadow: 0 1px 2px rgba(0, 0, 0, .12), 0 0 0 .5px rgba(0, 0, 0, .06);
+  transition: transform .28s var(--ease), width .28s var(--ease), opacity .15s;
+  pointer-events: none;
+}
+.segs .thumb { border-radius: 5px; }
+.thumb.still { transition: none; }
 .link { font-size: 12px; color: var(--accent); padding: 3px 4px; white-space: nowrap; }
 .link:hover { text-decoration: underline; text-underline-offset: 2px; }
 .editor .more { grid-column: 1 / -1; }
@@ -503,3 +510,54 @@ body.panel .editor { padding-left: 14px; }
 .prefs .val code { font-size: 12px; color: var(--fg-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; user-select: text; -webkit-user-select: text; padding: 0 6px; }
 .prefs .val .text { padding: 3px 6px; }
 
+
+/* ---------- motion ----------
+   One easing everywhere (iOS-ish: quick start, soft landing), short
+   durations, small distances. Pressing gives a little, pages settle in,
+   dialogs lift. */
+:root { --ease: cubic-bezier(.2, .8, .2, 1); }
+.text, .icon, .tile, .achip, .mchip, .use, .link {
+  transition-property: background, background-color, color, border-color, box-shadow, filter, opacity, transform;
+  transition-duration: .16s; transition-timing-function: var(--ease);
+}
+.text:active, .tile:active, .achip:active, .mchip:active, .use:active, .opt:active, .seg button:active { transform: scale(.96); }
+.icon:active { transform: scale(.9); }
+.row.provider { transition: background .16s var(--ease); }
+.row.provider:active { background: var(--card-2); }
+.chips .chip { transition: background .16s var(--ease), color .16s var(--ease), transform .14s var(--ease); }
+.chips .chip:active { transform: scale(.96); }
+.status { transition: opacity .2s var(--ease); }
+
+/* the theme crossfades instead of snapping */
+html.theming, html.theming *, html.theming *::before, html.theming *::after {
+  transition: background-color .35s var(--ease), background .35s var(--ease), color .35s var(--ease), border-color .35s var(--ease), box-shadow .35s var(--ease) !important;
+}
+
+/* ---------- modal ---------- */
+.modal {
+  position: fixed; inset: 0; z-index: 20;
+  display: flex; align-items: center; justify-content: center; padding: 28px 24px;
+  background: rgba(0, 0, 0, .28);
+  -webkit-backdrop-filter: blur(8px) saturate(1.1); backdrop-filter: blur(8px) saturate(1.1);
+  animation: fade-in .2s var(--ease);
+}
+.modal.out { animation: fade-out .16s var(--ease) forwards; pointer-events: none; }
+.modal .dialog {
+  width: min(600px, 100%); max-height: 100%; overflow-y: auto;
+  border-radius: 14px; background: var(--card);
+  box-shadow: 0 0 0 1px var(--line), 0 24px 60px rgba(0, 0, 0, .32), 0 2px 8px rgba(0, 0, 0, .12);
+  animation: dialog-in .26s var(--ease);
+}
+.modal .dialog.swap { animation: content-in .22s var(--ease); }
+.modal.out .dialog { animation: dialog-out .16s var(--ease) forwards; }
+.modal .dialog::-webkit-scrollbar { width: 0; }
+body.panel .modal { padding: 16px 12px; }
+@keyframes fade-in { from { opacity: 0; } }
+@keyframes fade-out { to { opacity: 0; } }
+@keyframes dialog-in { from { opacity: 0; transform: translateY(12px) scale(.97); } }
+@keyframes dialog-out { to { opacity: 0; transform: translateY(6px) scale(.98); } }
+@keyframes content-in { from { opacity: .5; transform: translateY(2px); } }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+}
