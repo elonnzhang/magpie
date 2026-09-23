@@ -61,8 +61,11 @@ func SaveLive(provider, base string, models []Model) error {
 
 // Fetch asks an endpoint for its models. base is an API base URL of any
 // flavour (…/v1, …/anthropic, …/api); the usual list paths are tried
-// around it. The result keeps the server's order.
-func Fetch(ctx context.Context, base, key string) ([]Model, error) {
+// around it. The result keeps the server's order. anthropic sends the
+// Anthropic version header, which the official API requires but which a
+// dual-protocol relay like OpenRouter reads as a request for its
+// Anthropic-flavoured catalog — namespaced, differently named ids.
+func Fetch(ctx context.Context, base, key string, anthropic bool) ([]Model, error) {
 	base = strings.TrimRight(strings.TrimSpace(base), "/")
 	if base == "" {
 		return nil, errors.New("no base URL")
@@ -89,7 +92,7 @@ func Fetch(ctx context.Context, base, key string) ([]Model, error) {
 
 	var lastErr error
 	for _, u := range urls {
-		ms, err := fetchOne(ctx, u, key)
+		ms, err := fetchOne(ctx, u, key, anthropic)
 		if err == nil && len(ms) > 0 {
 			return ms, nil
 		}
@@ -106,7 +109,7 @@ func Fetch(ctx context.Context, base, key string) ([]Model, error) {
 	return nil, lastErr
 }
 
-func fetchOne(ctx context.Context, url, key string) ([]Model, error) {
+func fetchOne(ctx context.Context, url, key string, anthropic bool) ([]Model, error) {
 	ctx, cancel := context.WithTimeout(ctx, 8*time.Second)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
@@ -118,6 +121,8 @@ func fetchOne(ctx context.Context, url, key string) ([]Model, error) {
 	if key != "" {
 		req.Header.Set("Authorization", "Bearer "+key)
 		req.Header.Set("x-api-key", key)
+	}
+	if anthropic {
 		req.Header.Set("anthropic-version", "2023-06-01")
 	}
 	res, err := http.DefaultClient.Do(req)
