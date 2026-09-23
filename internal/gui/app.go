@@ -111,7 +111,7 @@ func Run(version string, showMain bool) error {
 	h := &host{query: theme}
 	h.app = application.New(application.Options{
 		Name:        "magpie",
-		Description: "one place to pick every coding agent's model",
+		Description: "one place to pick every agent's model",
 		Icon:        appIcon,
 		Assets:      application.AssetOptions{Handler: Handler(h, gw)},
 		Mac:         application.MacOptions{ActivationPolicy: application.ActivationPolicyAccessory},

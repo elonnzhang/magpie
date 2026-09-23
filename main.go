@@ -1,4 +1,4 @@
-// magpie — one place to pick every coding agent's model.
+// magpie — one place to pick every agent's model.
 package main
 
 import (
@@ -21,7 +21,7 @@ import (
 
 var version = "dev"
 
-const usage = `magpie — one place to pick every coding agent's model
+const usage = `magpie — one place to pick every agent's model
 
   magpie                          open the app: a window plus a menu bar icon
   magpie tray                     start in the menu bar only

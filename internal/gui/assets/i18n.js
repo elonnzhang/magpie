@@ -17,7 +17,7 @@ const I18N = {
     "Filter…": "筛选…",
 
     // agents
-    "No coding agents found": "没有找到编码 Agent",
+    "No agents found": "没有找到 Agent",
     "Install Claude Code, Codex, Gemini CLI, OpenCode… and magpie will list them here.": "安装 Claude Code、Codex、Gemini CLI、OpenCode…… 之后，magpie 会在这里列出它们。",
     "model": "模型",
     "effort": "推理强度",

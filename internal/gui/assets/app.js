@@ -105,7 +105,7 @@ function renderAgents() {
   list.replaceChildren();
   if (!state.agents.length) {
     const e = el("div", "empty-state");
-    e.append(el("b", "", t("No coding agents found")), el("span", "", t("Install Claude Code, Codex, Gemini CLI, OpenCode… and magpie will list them here.")));
+    e.append(el("b", "", t("No agents found")), el("span", "", t("Install Claude Code, Codex, Gemini CLI, OpenCode… and magpie will list them here.")));
     list.append(e);
   }
   for (const a of state.agents) {
