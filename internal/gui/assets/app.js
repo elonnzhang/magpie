@@ -611,7 +611,19 @@ function renderEditor(p, presetID) {
   key.onkeydown = (e) => { e.stopPropagation(); if (e.key === "Enter" && isNew) save(); else if (e.key === "Escape") cancelEdit(); };
   const side = el("div", "side");
   const eye = el("button", "text", "Show");
-  eye.onclick = () => { key.type = key.type === "password" ? "text" : "password"; eye.textContent = key.type === "password" ? "Show" : "Hide"; };
+  let revealed = false; // the saved key is in the box, not a draft
+  eye.onclick = async () => {
+    if (key.type === "password") {
+      if (!key.value && p?.key.set) {
+        try { key.value = (await api("provider/key", { id: p.id })).key; revealed = true; } catch (e) { status(e.message, "err"); return; }
+      }
+      key.type = "text"; eye.textContent = "Hide";
+    } else {
+      if (revealed && !draft.key) key.value = "";
+      revealed = false;
+      key.type = "password"; eye.textContent = "Show";
+    }
+  };
   side.append(eye);
   const keysUrl = p?.keysUrl || pr?.keysUrl;
   if (keysUrl) { const b = el("button", "link", "Get a key ↗"); b.onclick = () => api("open", { url: keysUrl }); side.append(b); }
