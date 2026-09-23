@@ -12,6 +12,7 @@ import (
 
 	"github.com/yetone/magpie/internal/agent"
 	"github.com/yetone/magpie/internal/catalog"
+	"github.com/yetone/magpie/internal/claudebridge"
 	"github.com/yetone/magpie/internal/gateway"
 	"github.com/yetone/magpie/internal/profile"
 	"github.com/yetone/magpie/internal/settings"
@@ -115,6 +116,8 @@ func run(args []string) error {
 		return serve()
 	case "usage":
 		return usageCmd(args)
+	case "claude-mcp-helper": // internal: stdio MCP subprocess spawned by Claude Code
+		return claudebridge.RunMCP(args[1:])
 	}
 
 	a, err := agent.Find(args[0])

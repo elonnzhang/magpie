@@ -6,11 +6,14 @@ import (
 	"log"
 	"os"
 	"runtime"
+	"time"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/events"
 
+	"github.com/yetone/magpie/internal/catalog"
 	"github.com/yetone/magpie/internal/gateway"
+	"github.com/yetone/magpie/internal/provider"
 )
 
 //go:embed tray.png
@@ -72,6 +75,33 @@ func Run(version string, showMain bool) error {
 			}
 		}()
 	}
+	// Model lists are fetched, never compiled in: whatever the agents can see
+	// comes from the models.dev catalog plus each vendor's own /models answer.
+	// Keep both halves warm without making the user click anything.
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		if catalog.Stale() {
+			if err := catalog.Sync(ctx); err != nil {
+				log.Println("catalog:", err)
+			}
+		}
+		cancel()
+		// A signed-in agent's list exists only at the vendor; fill it in the
+		// first time so the picker never shows a stale snapshot.
+		for _, p := range provider.All() {
+			if p.Account == nil || !p.Ready() {
+				continue
+			}
+			if _, ok := p.Fetched(); ok {
+				continue
+			}
+			c, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+			if _, err := p.Fetch(c); err != nil {
+				log.Println(p.ID + ": " + err.Error())
+			}
+			cancel()
+		}
+	}()
 	// MAGPIE_THEME=light|dark forces the palette; handy for screenshots.
 	theme := ""
 	if t := os.Getenv("MAGPIE_THEME"); t != "" {

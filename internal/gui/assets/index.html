@@ -67,6 +67,7 @@
     <span class="grow"></span>
     <span class="usage-cost" id="usageCost"></span>
   </div>
+  <section class="subscription-usage" id="subscriptionUsage"></section>
   <section class="stats" id="stats"></section>
   <section class="chart" id="chart"></section>
   <div class="row-head"><span class="label" data-t>Agents</span></div>
@@ -106,7 +107,19 @@
     <svg viewBox="0 0 16 16" width="13" height="13"><circle cx="7" cy="7" r="4.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="m10.5 10.5 3 3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
     <input id="q" type="text" spellcheck="false" autocomplete="off" placeholder="Filter…" data-tp>
   </div>
-  <ul id="list"></ul>
+  <div class="picker-body">
+    <nav id="pickerRail" aria-label="Model providers"></nav>
+    <ul id="list"></ul>
+  </div>
+  <div class="effort-control" id="effortControl" hidden>
+    <div class="effort-head"><span id="effortTitle"></span><b id="effortValue"></b></div>
+    <div class="effort-track">
+      <span class="effort-sparkles" aria-hidden="true">
+        <i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+      </span>
+      <input id="effortRange" type="range" min="0" step="1" aria-labelledby="effortTitle">
+    </div>
+  </div>
 </div>
 
 <script src="i18n.js"></script>

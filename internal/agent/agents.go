@@ -340,11 +340,11 @@ func copilot(home string) *Agent {
 			Get: jsonGet(path, "model"),
 			Set: jsonSet(path, "model"),
 			Options: func(map[string]string) []Option {
-				out := options(catalog.Builtin("copilot"), "")
-				for i := range out {
-					if out[i].Value == "auto" {
-						out[i].Icon = "githubcopilot"
-					}
+				// "auto" is Copilot's own choice, not a model it lists; the rest
+				// come from the list magpie last fetched from Copilot.
+				out := []Option{{Value: "auto", Note: "let Copilot pick", Icon: "githubcopilot"}}
+				if live, _, ok := catalog.Live("copilot"); ok {
+					out = append(out, options(live, "")...)
 				}
 				return out
 			},

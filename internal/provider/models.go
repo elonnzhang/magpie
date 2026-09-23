@@ -15,15 +15,22 @@ func errorf(format string, a ...any) error { return fmt.Errorf(format, a...) }
 // manyModels is where "expose everything" stops being helpful.
 const manyModels = 24
 
-// Available lists every model the vendor is known to serve: its own list
-// when fetched (see Fetch), else the models.dev catalog for the vendor.
+// Available lists every model the vendor is known to serve: the list fetched
+// from the vendor itself when there is one, over the models.dev catalog (or,
+// for an account, whatever the agent's own sign-in can see).
 func (p Provider) Available() []catalog.Model {
-	if p.Account != nil && p.Account.models != nil {
-		return p.Account.models()
+	signedIn := p.Account != nil && p.Account.models != nil
+	var known []catalog.Model
+	if signedIn {
+		known = p.Account.models()
+	} else {
+		known = catalog.Provider(p.Catalog)
 	}
-	known := catalog.Provider(p.Catalog)
 	if live, _, ok := catalog.Live(p.ID); ok {
 		return catalog.Decorate(live, known)
+	}
+	if signedIn {
+		return known
 	}
 	var out []catalog.Model
 	for _, m := range known {
@@ -81,24 +88,26 @@ func (p Provider) Exposed() []catalog.Model {
 	if len(p.Models) > 0 {
 		return pick(p.Models)
 	}
-	if pr := Preset(p.Preset); pr != nil && len(pr.Defaults) > 0 {
-		if _, fetched := p.Fetched(); !fetched {
-			return pick(pr.Defaults)
-		}
-		var have []string
-		for _, id := range pr.Defaults {
-			if _, ok := byID[id]; ok {
-				have = append(have, id)
-			}
-		}
-		if len(have) > 0 {
-			return pick(have)
-		}
-	}
 	if len(avail) <= manyModels {
 		return avail
 	}
-	return nil
+	// More than an agent's picker wants. Show the first slice of the
+	// vendor's own list — theirs run newest first — and let the user pick
+	// from the rest; nothing here is compiled in.
+	return avail[:manyModels]
+}
+
+// RejectsTemperature reports whether the model is known to refuse
+// temperature and top_p. The answer comes from the catalog — models.dev
+// plus the vendor's own list — so a model released after this binary was
+// built is handled without a code change.
+func (p Provider) RejectsTemperature(model string) bool {
+	for _, m := range p.Available() {
+		if m.ID == model && m.Temperature != nil {
+			return !*m.Temperature
+		}
+	}
+	return false
 }
 
 // Chosen reports whether a model is exposed.

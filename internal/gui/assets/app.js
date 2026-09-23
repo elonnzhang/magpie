@@ -20,6 +20,10 @@ let adding = false; // the preset sheet is open
 let flavor = params.get("flavor") || localStorage.getItem("magpie.flavor") || "openai"; // which API the snippets speak
 let lang = params.get("lang") || localStorage.getItem("magpie.lang") || "shell";        // which snippet
 let exampleModel = localStorage.getItem("magpie.model") || "";  // the model in the snippets
+const expandedCalls = new Set(); // recent-call ids whose wire bodies are open
+let savedModelFavorites = [];
+try { savedModelFavorites = JSON.parse(localStorage.getItem("magpie.modelFavorites") || "[]"); } catch {}
+const modelFavorites = new Set(Array.isArray(savedModelFavorites) ? savedModelFavorites : []);
 
 async function api(path, body) {
   const res = await fetch("/api/" + path, {
@@ -120,7 +124,8 @@ function renderAgents() {
       b.title = t("{label}: {value}", { label: t(f.label), value: f.value || t("agent default") }) + (opt?.note ? ` · ${opt.note}` : "");
       if (opt?.icon) b.append(icon(opt.icon));
       else if (!wide(f) || !f.value) b.append(el("span", "k", t(f.label)));
-      b.append(el("span", "v" + (f.value ? "" : " empty"), opt?.label || f.value || t("default")));
+      const shown = (f.key === "effort" || f.label === "effort" || f.label === "thinking") ? effortName(opt || { value: f.value }) : (opt?.label || f.value || t("default"));
+      b.append(el("span", "v" + (f.value ? "" : " empty"), shown));
       const c = el("span", "chev");
       c.append(svg(CHEV, 11, 1.7));
       b.append(c);
@@ -203,37 +208,175 @@ function openPicker(agent, field, anchor, ev, only) {
   closePicker();
   const cur = field.value;
   let options = field.options.filter((o) => !only || only(o));
-  // current value first, then the rest in catalog order
+  const effortPicker = !only && (field.key === "effort" || field.label === "effort" || field.label === "thinking");
+  // Current model first, then the rest in catalog order. Effort levels keep
+  // their natural low → high order because their position is meaningful.
   const i = options.findIndex((o) => o.value === cur);
-  if (i > 0) { const [c] = options.splice(i, 1); options.unshift({ ...c, group: "" }); }
+  if (!effortPicker && i > 0) { const [c] = options.splice(i, 1); options.unshift({ ...c, group: "" }); }
   else if (i < 0 && cur && !only) options.unshift({ value: cur, note: t("current value") });
   // the agent's own default: magpie's wiring comes out and the key is removed
   if (!only) options.unshift({ value: "", label: t("Default"), note: t("what {agent} ships with", { agent: agent.name }), icon: agent.icon, reset: true });
-  pick = { agent, field, options, anchor, cursor: 0, free: !only };
+  const modelPicker = ["model", "small", "large"].includes(field.label) && !only;
+  pick = { agent, field, options, anchor, cursor: 0, free: !only, modelPicker, effortPicker, groupFilter: "all" };
   anchor.classList.add("open");
   const pop = $("#pop");
+  pop.classList.toggle("model-picker", modelPicker);
+  pop.classList.toggle("effort-picker", effortPicker);
   pop.hidden = false;
-  placePop(anchor, options.some((o) => o.note && o.note !== o.value) ? 372 : 300, 340);
+  $("#effortControl").hidden = !effortPicker;
+  pop.querySelector(".search").hidden = effortPicker;
+  pop.querySelector(".picker-body").hidden = effortPicker;
+  placePop(anchor, effortPicker ? 218 : modelPicker ? Math.min(490, innerWidth - 16) : (options.some((o) => o.note && o.note !== o.value) ? 372 : 300), effortPicker ? 90 : modelPicker ? Math.min(420, innerHeight - 16) : 340);
+  if (effortPicker) {
+    renderEffortPicker();
+    $("#effortRange").focus();
+    return;
+  }
   const q = $("#q");
   q.value = "";
-  q.placeholder = field.label === "model" ? (only ? t("Filter models…") : t("Filter, or type any model id…")) : t("Filter {field}…", { field: t(field.label) });
+  q.placeholder = modelPicker ? t("Filter, or type any model id…") : t("Filter {field}…", { field: t(field.label) });
   filter();
   q.focus();
+}
+
+function effortName(option) {
+  if (!option?.value) return t("default");
+  return t(option.label || option.value);
+}
+
+function renderEffortPicker() {
+  const range = $("#effortRange");
+  const options = pick.options;
+  const selected = Math.max(0, options.findIndex((o) => o.value === pick.field.value));
+  range.max = String(Math.max(0, options.length - 1));
+  range.value = String(selected);
+  $("#effortTitle").textContent = t(pick.field.label);
+  const update = () => {
+    const i = Number(range.value);
+    $("#effortValue").textContent = effortName(options[i]);
+    const fill = `${options.length > 1 ? 100 * i / (options.length - 1) : 0}%`;
+    range.style.setProperty("--fill", fill);
+    range.closest(".effort-track").style.setProperty("--fill", fill);
+    range.setAttribute("aria-valuetext", effortName(options[i]));
+  };
+  range.oninput = update;
+  range.onchange = () => {
+    const opened = pick;
+    const option = options[Number(range.value)];
+    if (!opened || !option || option.value === opened.field.value) return;
+    opened.field.value = option.value;
+    const value = opened.anchor.querySelector(".v");
+    if (value) {
+      value.textContent = effortName(option);
+      value.classList.toggle("empty", !option.value);
+    }
+    // Persist every settled slider value, but keep the compact control open so
+    // the user can compare adjacent levels. Queue writes to preserve ordering
+    // when keyboard input changes several stops quickly.
+    opened.effortSave = (opened.effortSave || Promise.resolve()).then(async () => {
+      const next = await api("set", { agent: opened.agent.id, field: opened.field.key, value: option.value });
+      state = next;
+      status(`${opened.agent.name} ${t(opened.field.label)} → ${effortName(option)}`, "ok");
+    }).catch((e) => status(e.message, "err"));
+  };
+  range.onkeydown = (ev) => {
+    if (ev.key === "Escape") { ev.preventDefault(); ev.stopPropagation(); closePicker(); }
+  };
+  update();
 }
 
 function filter() {
   if (!pick) return;
   const q = $("#q").value.trim().toLowerCase();
-  const scored = pick.options.map((o, i) => ({ o, i, s: score(q, o) })).filter((x) => x.s > 0);
+  let source = pick.options;
+  if (pick.modelPicker && pick.groupFilter === "favorites") source = source.filter((o) => modelFavorites.has(o.value));
+  else if (pick.modelPicker && pick.groupFilter !== "all") source = source.filter((o) => o.group === pick.groupFilter || o.reset);
+  const scored = source.map((o) => ({ o, i: pick.options.indexOf(o), s: score(q, o) })).filter((x) => x.s > 0);
   // with a query, best matches first; without, catalog order keeps the groups together
   if (q) scored.sort((a, b) => b.s - a.s || a.i - b.i);
   pick.items = scored.map((x) => x.o);
   const typed = $("#q").value.trim();
-  if (typed && pick.free && pick.field.label === "model" && !pick.items.some((o) => o.value === typed)) {
+  if (typed && pick.free && ["model", "small", "large"].includes(pick.field.label) && !pick.items.some((o) => o.value === typed)) {
     pick.items.push({ value: typed, note: t("use as typed"), custom: true });
   }
   pick.cursor = 0;
+  renderPickerRail();
   renderList();
+}
+
+function updatePickerRailSelection() {
+  const rail = $("#pickerRail");
+  const active = rail.querySelector(`.rail-item[data-group="${CSS.escape(pick?.groupFilter || "all")}"]`);
+  for (const b of rail.querySelectorAll(".rail-item")) b.classList.toggle("on", b === active);
+  const thumb = rail.querySelector(".rail-thumb");
+  if (active && thumb) {
+    thumb.style.opacity = "1";
+    thumb.style.transform = `translate3d(0, ${active.offsetTop}px, 0)`;
+  }
+}
+
+function switchPickerGroup(id) {
+  if (!pick?.modelPicker || id === pick.groupFilter) return;
+  const railItems = [...$("#pickerRail").querySelectorAll(".rail-item")];
+  const from = railItems.findIndex((b) => b.dataset.group === pick.groupFilter);
+  const to = railItems.findIndex((b) => b.dataset.group === id);
+  pick.groupFilter = id;
+  updatePickerRailSelection();
+  $("#q").focus();
+
+  const list = $("#list");
+  pick.groupAnimation?.cancel();
+  const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  if (reduced) { filter(); return; }
+  const direction = to >= from ? 1 : -1;
+  const token = (pick.groupTransition || 0) + 1;
+  pick.groupTransition = token;
+  const out = list.animate([
+    { opacity: 1, transform: "translate3d(0, 0, 0)" },
+    { opacity: 0, transform: `translate3d(${-direction * 5}px, 0, 0)` },
+  ], { duration: 75, easing: "cubic-bezier(.4, 0, 1, 1)", fill: "forwards" });
+  pick.groupAnimation = out;
+  out.finished.then(() => {
+    if (!pick || pick.groupTransition !== token) return;
+    out.cancel();
+    filter();
+    const incoming = list.animate([
+      { opacity: 0, transform: `translate3d(${direction * 7}px, 0, 0)` },
+      { opacity: 1, transform: "translate3d(0, 0, 0)" },
+    ], { duration: 190, easing: "cubic-bezier(.22, 1, .36, 1)" });
+    pick.groupAnimation = incoming;
+  }).catch(() => {});
+}
+
+function renderPickerRail() {
+  const rail = $("#pickerRail");
+  rail.hidden = !pick?.modelPicker;
+  if (!pick?.modelPicker) { rail.replaceChildren(); rail.dataset.signature = ""; return; }
+  const groups = [];
+  for (const o of pick.options) if (o.group && !groups.includes(o.group)) groups.push(o.group);
+  const signature = groups.join("\u001f");
+  if (rail.dataset.signature !== signature) {
+    rail.replaceChildren();
+    rail.dataset.signature = signature;
+    rail.append(el("span", "rail-thumb"));
+    const add = (id, title, child) => {
+      const b = el("button", "rail-item");
+      b.dataset.group = id;
+      b.title = title;
+      b.setAttribute("aria-label", title);
+      b.append(child);
+      b.onclick = () => switchPickerGroup(id);
+      rail.append(b);
+    };
+    add("all", t("All models"), svg("M3 3h4v4H3zM9 3h4v4H9zM3 9h4v4H3zM9 9h4v4H9z", 15, 1.4));
+    add("favorites", t("Favorites"), svg("m8 2 1.8 3.7 4.1.6-3 2.9.7 4.1L8 11.4l-3.6 1.9.7-4.1-3-2.9 4.1-.6z", 16, 1.4));
+    if (groups.length) rail.append(el("span", "rail-sep"));
+    for (const group of groups) {
+      const sample = pick.options.find((o) => o.group === group);
+      add(group, group, icon(sample?.icon || "generic"));
+    }
+  }
+  queueMicrotask(updatePickerRailSelection);
 }
 
 function renderList() {
@@ -249,10 +392,24 @@ function renderList() {
     const li = el("li", (idx === pick.cursor ? "sel" : "") + (o.value === pick.field.value ? " cur" : "") + (o.custom ? " custom" : "") + (o.reset ? " reset" : ""));
     li.dataset.i = idx;
     if (hasIcons) li.append(icon(o.icon));
-    li.append(el("span", "v", o.label || o.value));
+    const words = el("span", "option-words");
+    words.append(el("span", "v", o.label || o.value));
     let note = o.note && o.note !== (o.label || o.value) ? o.note : "";
     if (q && o.group && !note) note = o.group;
-    if (note) li.append(el("span", "n", note));
+    if (note) words.append(el("span", "n", note));
+    li.append(words);
+    if (pick.modelPicker && o.value && !o.custom) {
+      const star = el("button", "favorite" + (modelFavorites.has(o.value) ? " on" : ""));
+      star.title = modelFavorites.has(o.value) ? t("Remove from favorites") : t("Add to favorites");
+      star.append(svg("m8 2 1.8 3.7 4.1.6-3 2.9.7 4.1L8 11.4l-3.6 1.9.7-4.1-3-2.9 4.1-.6z", 14, 1.4));
+      star.onclick = (ev) => {
+        ev.stopPropagation();
+        if (modelFavorites.has(o.value)) modelFavorites.delete(o.value); else modelFavorites.add(o.value);
+        localStorage.setItem("magpie.modelFavorites", JSON.stringify([...modelFavorites]));
+        filter();
+      };
+      li.append(star);
+    }
     const ck = el("span", "check");
     ck.append(svg(CHECK, 12, 1.8));
     li.append(ck);
@@ -291,8 +448,13 @@ async function commit(value) {
 
 function closePicker() {
   if (!pick) return;
+  pick.groupAnimation?.cancel();
   pick.anchor.classList.remove("open");
   $("#pop").hidden = true;
+  $("#pop").classList.remove("model-picker", "effort-picker");
+  $("#pop .search").hidden = false;
+  $("#pop .picker-body").hidden = false;
+  $("#effortControl").hidden = true;
   pick = null;
 }
 
@@ -348,6 +510,7 @@ $("#save").onclick = () => {
 // the local gateway in whichever API the agent speaks.
 
 async function loadProviders() {
+  if (view === "gateway") renderGatewayLoading();
   providers = await api("providers");
   if (!providers.providers.length && editing === null) adding = true;
   if (view === "gateway") renderGatewayView();
@@ -407,8 +570,8 @@ function renderProviders() {
   if (dialog) openModal(dialog); else closeModal();
 }
 
-// Sign-ins magpie found but leaves alone (Claude Code), so nobody wonders
-// why an agent that is clearly logged in is not in the list.
+// Sign-ins magpie found but leaves alone, so nobody wonders why an agent that
+// is clearly logged in is not in the list. Empty today.
 function renderExcluded() {
   const box = $("#excluded");
   box.replaceChildren();
@@ -424,6 +587,7 @@ function renderExcluded() {
 function accountPlan(a) {
   if (a.agent === "codex") return "ChatGPT" + (a.plan ? " " + a.plan[0].toUpperCase() + a.plan.slice(1) : "");
   if (a.agent === "copilot") return "GitHub";
+  if (a.agent === "claude") return "Claude" + (a.plan ? " " + a.plan[0].toUpperCase() + a.plan.slice(1) : "");
   return t("signed in");
 }
 
@@ -444,7 +608,51 @@ function copyBtn(text, what) {
   return b;
 }
 
+function renderGatewayLoading() {
+  const page = $("#view-gateway");
+  page.classList.add("loading");
+  page.setAttribute("aria-busy", "true");
+  $("#connectNote").textContent = "";
+  $("#callsNote").textContent = "";
+  $("#copyModels").hidden = true;
+
+  const gateway = $("#gateway");
+  gateway.replaceChildren();
+  const mark = el("span", "skeleton gw-sk-dot");
+  const who = el("div", "who gw-sk-who");
+  who.append(el("span", "skeleton gw-sk-title"), el("span", "skeleton gw-sk-sub"));
+  gateway.append(mark, who, el("span", "skeleton gw-sk-url"));
+
+  const connect = $("#connect");
+  connect.replaceChildren();
+  for (let i = 0; i < 4; i++) {
+    connect.append(el("span", "skeleton gw-sk-label"));
+    const value = el("div", "gw-sk-field");
+    value.append(el("span", "skeleton"), el("span", "skeleton short"));
+    connect.append(value);
+  }
+
+  const models = $("#gwModels");
+  models.replaceChildren();
+  for (let i = 0; i < 4; i++) {
+    const row = el("div", "row model gw-sk-row");
+    row.append(el("span", "skeleton gw-sk-model"), el("span", "grow"), el("span", "skeleton gw-sk-provider"));
+    models.append(row);
+  }
+
+  const activity = $("#activity");
+  activity.replaceChildren();
+  for (let i = 0; i < 4; i++) {
+    const row = el("div", "call gw-sk-call");
+    row.append(el("span", "skeleton time"), el("span", "skeleton agent"), el("span", "skeleton model"), el("span", "grow"), el("span", "skeleton result"));
+    activity.append(row);
+  }
+}
+
 function renderGatewayView() {
+  const page = $("#view-gateway");
+  page.classList.remove("loading");
+  page.removeAttribute("aria-busy");
   renderGateway();
   renderConnect();
   renderGatewayModels();
@@ -682,6 +890,27 @@ function renderGatewayModels() {
   }
 }
 
+function formatWireBody(raw) {
+  if (!raw) return "";
+  try { return JSON.stringify(JSON.parse(raw), null, 2); } catch { return raw; }
+}
+
+function callBodyPanel(label, raw, truncated) {
+  const panel = el("section", "call-body");
+  const head = el("div", "call-body-head");
+  head.append(el("span", "call-body-label", t(label)));
+  if (truncated) head.append(el("span", "call-body-truncated", t("first 256 KB")));
+  const formatted = formatWireBody(raw);
+  if (formatted) head.append(el("span", "grow"), copyBtn(raw, t(label)));
+  panel.append(head);
+  const pre = el("pre");
+  const code = el("code", "", formatted || t("No body captured"));
+  if (!formatted) code.classList.add("empty");
+  pre.append(code);
+  panel.append(pre);
+  return panel;
+}
+
 function renderActivity() {
   const g = providers.gateway;
   const box = $("#activity");
@@ -690,15 +919,41 @@ function renderActivity() {
   const calls = g.calls.slice(0, 20);
   if (!calls.length) { box.append(el("div", "none", t("No requests yet. Point an agent at a model, or run the example above; every call shows up here as it happens."))); return; }
   for (const c of calls) {
-    const r = el("div", "call" + (c.status >= 400 ? " bad" : ""));
+    const id = `${c.time}|${c.agent}|${c.model}`;
+    const open = expandedCalls.has(id);
+    const item = el("div", "call-item" + (open ? " open" : "") + (c.status >= 400 ? " bad" : ""));
+    const r = el("div", "call");
+    r.setAttribute("role", "button");
+    r.setAttribute("tabindex", "0");
+    r.setAttribute("aria-expanded", String(open));
+    const chev = el("span", "call-chev");
+    chev.append(svg(CHEV_R, 11, 1.6));
+    r.append(chev);
     r.append(el("span", "when", new Date(c.time).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })));
     r.append(el("span", "a", c.agent || "—"));
     r.append(el("span", "m", c.model));
     r.append(el("span", "p", c.from === c.to ? c.from : `${c.from} → ${c.to}`));
     r.append(el("span", "grow"));
     r.append(el("span", "st", c.error ? `${c.status} ${c.error}` : `${c.status} · ${c.ms} ms`));
-    r.title = c.error || `${c.provider} · ${c.ms} ms`;
-    box.append(r);
+    r.title = open ? t("Hide request and response bodies") : t("Show request and response bodies");
+    const toggle = () => {
+      if (expandedCalls.has(id)) expandedCalls.delete(id); else expandedCalls.add(id);
+      renderActivity();
+    };
+    r.onclick = toggle;
+    r.onkeydown = (ev) => {
+      if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); toggle(); }
+    };
+    item.append(r);
+    if (open) {
+      const details = el("div", "call-details");
+      details.append(
+        callBodyPanel("Request Body", c.requestBody, c.requestTruncated),
+        callBodyPanel("Response Body", c.responseBody, c.responseTruncated),
+      );
+      item.append(details);
+    }
+    box.append(item);
   }
 }
 
@@ -938,7 +1193,7 @@ function renderEditor(p, presetID) {
     const cancel = el("button", "text", t("Cancel"));
     cancel.onclick = cancelEdit;
     const saveBtn = el("button", "text primary", t("Save"));
-    saveBtn.onclick = () => { saveBtn.classList.add("busy"); providerAction("save", { id: p.id, models: draft.chosen }, t("{name} saved", { name: p.name }), p.id); };
+    saveBtn.onclick = () => { saveBtn.classList.add("busy"); providerAction("save", { id: p.id, models: draft.chosen }, t("{name} saved", { name: p.name })); };
     bar.append(cancel, saveBtn);
     ed.append(bar);
     return ed;
@@ -1012,7 +1267,7 @@ function renderEditor(p, presetID) {
     if (isNew && custom && !body.name) { name.focus(); return status(t("Give it a name"), "warn"); }
     if (isNew && custom && !body.chat && !body.anthropic) { url.focus(); return status(t("A base URL is needed"), "warn"); }
     saveBtn.classList.add("busy");
-    providerAction("save", body, t(isNew ? "{name} added" : "{name} saved", { name: draft.name || draft.id }), body.id || slug(body.name));
+    providerAction("save", body, t(isNew ? "{name} added" : "{name} saved", { name: draft.name || draft.id }));
   };
   saveBtn.onclick = save;
   bar.append(cancel, saveBtn);
@@ -1037,7 +1292,7 @@ function renderEndpoints(p, pr) {
     eps.append(e);
   }
   if (p) {
-    const test = el("button", "text", t("Test"));
+    const test = el("button", "text action", t("Test"));
     test.title = t("Send a tiny request through each endpoint");
     test.onclick = async () => {
       test.classList.add("busy");
@@ -1098,7 +1353,7 @@ function renderModels(p) {
     if (e.key === "Enter" && add.value.trim()) { const id = add.value.trim(); if (!draft.chosen.includes(id)) draft.chosen.push(id); add.value = ""; draw(); }
     else if (e.key === "Escape") cancelEdit();
   };
-  const refresh = el("button", "text", t("Refresh"));
+  const refresh = el("button", "text action", t("Refresh"));
   refresh.title = t("Ask the vendor which models it serves");
   refresh.onclick = async () => {
     refresh.classList.add("busy");
@@ -1120,10 +1375,10 @@ function renderModels(p) {
   return box;
 }
 
-async function providerAction(action, body, okMsg, keep) {
+async function providerAction(action, body, okMsg) {
   try {
     providers = await api("provider/" + action, body);
-    editing = action === "save" && keep ? keep : null;
+    editing = null;
     draft = null;
     adding = false;
     presetQuery = "";
@@ -1147,8 +1402,44 @@ $("#addProvider").onclick = () => { adding = true; editing = null; draft = null;
 const PERIODS = [["today", "Today"], ["7d", "7 days"], ["30d", "30 days"], ["all", "All"]];
 
 async function loadUsage() {
+  renderUsageLoading();
   usage = await api("usage?period=" + period);
   renderUsage();
+}
+
+function renderUsageLoading() {
+  const view = $("#view-usage");
+  view.classList.add("loading");
+  view.setAttribute("aria-busy", "true");
+  const seg = $("#period");
+  seg.replaceChildren();
+  for (const [id, name] of PERIODS) {
+    const b = el("button", "opt" + (id === period ? " on" : ""), t(name));
+    b.disabled = true;
+    seg.append(b);
+  }
+  slide(seg, "period");
+  $("#usageCost").replaceChildren(el("span", "skeleton sk-cost"));
+  const subscriptions = $("#subscriptionUsage");
+  subscriptions.hidden = false;
+  subscriptions.replaceChildren();
+  for (let i = 0; i < 2; i++) {
+    const card = el("div", "subscription-card skeleton-card");
+    card.append(el("span", "skeleton sk-title"), el("span", "skeleton sk-line"), el("span", "skeleton sk-line short"));
+    subscriptions.append(card);
+  }
+  const stats = $("#stats");
+  stats.classList.remove("empty");
+  stats.replaceChildren();
+  for (let i = 0; i < 4; i++) {
+    const tile = el("div", "kpi loading-kpi");
+    tile.append(el("span", "skeleton sk-number"), el("span", "skeleton sk-label"));
+    stats.append(tile);
+  }
+  $("#chart").hidden = true;
+  for (const id of ["usageAgents", "usageModels"]) $("#" + id).hidden = true;
+  for (const h of $$("#view-usage .row-head")) h.hidden = true;
+  $("#usageNote").textContent = "";
 }
 
 function fmtN(n) {
@@ -1169,6 +1460,9 @@ const tokensOf = (t) => t.input + t.output;
 
 function renderUsage() {
   const u = usage;
+  const view = $("#view-usage");
+  view.classList.remove("loading");
+  view.removeAttribute("aria-busy");
   const seg = $("#period");
   seg.replaceChildren();
   for (const [id, name] of PERIODS) {
@@ -1185,6 +1479,37 @@ function renderUsage() {
     cost.title = u.unpriced ? t(u.unpriced === 1 ? "{n} call had no known price and is not counted" : "{n} calls had no known price and are not counted", { n: u.unpriced }) : t("At each model's list price on models.dev");
   } else if (u.calls) {
     cost.append(el("span", "", t("no price for these models")));
+  }
+
+  const subscriptions = $("#subscriptionUsage");
+  subscriptions.replaceChildren();
+  subscriptions.hidden = !u.subscriptions?.length;
+  for (const sub of u.subscriptions || []) {
+    const card = el("div", "subscription-card");
+    const head = el("div", "subscription-head");
+    head.append(icon(sub.icon), el("b", "", sub.name));
+    if (sub.plan) head.append(el("span", "plan", sub.plan));
+    card.append(head);
+    if (sub.error) {
+      card.append(el("div", "subscription-error", t("Usage unavailable")));
+      card.title = sub.error;
+    } else {
+      const windows = el("div", "quota-windows");
+      for (const w of sub.windows) {
+        const quota = el("div", "quota");
+        const labels = el("div", "quota-labels");
+        labels.append(el("span", "", t(w.name)), el("b", "", w.display || `${Math.round(w.used)}%`));
+        const track = el("div", "quota-track");
+        const fill = el("i");
+        fill.style.width = `${Math.max(0, Math.min(100, w.used))}%`;
+        track.append(fill);
+        quota.append(labels, track);
+        if (w.resetsAt) quota.title = t("Resets {when}", { when: new Date(w.resetsAt).toLocaleString() });
+        windows.append(quota);
+      }
+      card.append(windows);
+    }
+    subscriptions.append(card);
   }
 
   const stats = $("#stats");

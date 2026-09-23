@@ -97,6 +97,107 @@ func events(body string) []map[string]any {
 	return out
 }
 
+type fallbackFake struct {
+	chatBody      []byte
+	responsesBody []byte
+	chatCalls     int
+	responseCalls int
+}
+
+func (f *fallbackFake) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	body, _ := io.ReadAll(r.Body)
+	switch r.URL.Path {
+	case "/v1/chat/completions":
+		f.chatCalls++
+		f.chatBody = body
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		io.WriteString(w, `{"error":{"message":"This model is not supported in the v1/chat/completions endpoint. Use v1/responses."}}`)
+	case "/v1/responses":
+		f.responseCalls++
+		f.responsesBody = body
+		w.Header().Set("Content-Type", "text/event-stream")
+		io.WriteString(w, sse(
+			`event: response.created`+"\n"+`data: {"type":"response.created","response":{"id":"r1","model":"m1","usage":{"input_tokens":0,"output_tokens":0}}}`,
+			`event: response.output_text.delta`+"\n"+`data: {"type":"response.output_text.delta","delta":"fallback ok"}`,
+			`event: response.completed`+"\n"+`data: {"type":"response.completed","response":{"id":"r1","model":"m1","status":"completed","usage":{"input_tokens":4,"output_tokens":2}}}`,
+		))
+	default:
+		http.NotFound(w, r)
+	}
+}
+
+func TestAnthropicClientFallsBackFromChatToResponses(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	f := &fallbackFake{}
+	up := httptest.NewServer(f)
+	t.Cleanup(up.Close)
+	if err := provider.Save(provider.Provider{ID: "fake", Name: "Fake", Key: "k", Models: []string{"m1"},
+		Chat: up.URL + "/v1", Responses: up.URL + "/v1"}); err != nil {
+		t.Fatal(err)
+	}
+
+	handler := New().Handler()
+	call := func(body string) (int, string) {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(body))
+		handler.ServeHTTP(rec, req)
+		return rec.Code, rec.Body.String()
+	}
+	code, body := call(`{"model":"m1","max_tokens":100,"messages":[{"role":"user","content":"hello"}]}`)
+	if code != 200 {
+		t.Fatalf("status %d: %s", code, body)
+	}
+	if f.chatCalls != 1 || f.responseCalls != 1 {
+		t.Fatalf("calls: chat=%d responses=%d", f.chatCalls, f.responseCalls)
+	}
+	var chat, responses map[string]any
+	if json.Unmarshal(f.chatBody, &chat) != nil || json.Unmarshal(f.responsesBody, &responses) != nil {
+		t.Fatalf("bad translated requests: chat=%s responses=%s", f.chatBody, f.responsesBody)
+	}
+	if chat["stream"] != true || responses["stream"] != true || responses["model"] != "m1" {
+		t.Errorf("requests: chat=%v responses=%v", chat, responses)
+	}
+	var out struct {
+		Content []struct {
+			Type string `json:"type"`
+			Text string `json:"text"`
+		} `json:"content"`
+		Usage aUsage `json:"usage"`
+	}
+	if err := json.Unmarshal([]byte(body), &out); err != nil {
+		t.Fatal(err)
+	}
+	if len(out.Content) != 1 || out.Content[0].Text != "fallback ok" || out.Usage.InputTokens != 4 || out.Usage.OutputTokens != 2 {
+		t.Errorf("reply: %s", body)
+	}
+	code, body = call(`{"model":"m1","max_tokens":100,"messages":[{"role":"user","content":"again"}]}`)
+	if code != 200 {
+		t.Fatalf("second status %d: %s", code, body)
+	}
+	if f.chatCalls != 1 || f.responseCalls != 2 {
+		t.Fatalf("cached calls: chat=%d responses=%d", f.chatCalls, f.responseCalls)
+	}
+}
+
+func TestNotChatModel(t *testing.T) {
+	for _, tc := range []struct {
+		status int
+		body   string
+		want   bool
+	}{
+		{400, `{"error":{"message":"not a chat model; use /v1/responses"}}`, true},
+		{404, `use v1/completions`, true},
+		{429, `rate limit`, false},
+		{200, `use v1/responses`, false},
+	} {
+		if got := notChatModel(tc.status, []byte(tc.body)); got != tc.want {
+			t.Errorf("notChatModel(%d, %q) = %v, want %v", tc.status, tc.body, got, tc.want)
+		}
+	}
+}
+
 func TestAnthropicClientChatUpstream(t *testing.T) {
 	f := &fake{t: t, reply: sse(
 		`data: {"id":"c1","model":"m1","choices":[{"delta":{"role":"assistant","reasoning_content":"hmm"}}]}`,

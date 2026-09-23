@@ -13,37 +13,33 @@ const (
 
 // PresetDef describes one preset.
 type PresetDef struct {
-	ID        string   `json:"id"`
-	Name      string   `json:"name"`
-	Icon      string   `json:"icon"`
-	Kind      Kind     `json:"kind"`
-	Chat      string   `json:"chat,omitempty"`
-	Responses string   `json:"responses,omitempty"`
-	Anthropic string   `json:"anthropic,omitempty"`
-	Catalog   string   `json:"catalog,omitempty"`
-	Defaults  []string `json:"defaults,omitempty"` // models to expose until the user picks
-	Website   string   `json:"website,omitempty"`
-	KeysURL   string   `json:"keysUrl,omitempty"`
-	NoKey     bool     `json:"noKey,omitempty"`     // local servers: a key is optional
-	Sponsored bool     `json:"sponsored,omitempty"` // shown first, with a tag
-	Note      string   `json:"note,omitempty"`      // one line under the name
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	Icon      string `json:"icon"`
+	Kind      Kind   `json:"kind"`
+	Chat      string `json:"chat,omitempty"`
+	Responses string `json:"responses,omitempty"`
+	Anthropic string `json:"anthropic,omitempty"`
+	Catalog   string `json:"catalog,omitempty"`
+	Website   string `json:"website,omitempty"`
+	KeysURL   string `json:"keysUrl,omitempty"`
+	NoKey     bool   `json:"noKey,omitempty"`     // local servers: a key is optional
+	Sponsored bool   `json:"sponsored,omitempty"` // shown first, with a tag
+	Note      string `json:"note,omitempty"`      // one line under the name
 }
 
 // presets are ordered as they appear in the picker.
 var presets = []PresetDef{
 	{ID: "anthropic", Name: "Anthropic", Icon: "claude-color", Kind: KindVendor, Catalog: "anthropic",
 		Anthropic: "https://api.anthropic.com",
-		Defaults:  []string{"claude-fable-5-1", "claude-opus-5", "claude-sonnet-5", "claude-haiku-4-5-20251001"},
 		Website:   "https://console.anthropic.com", KeysURL: "https://console.anthropic.com/settings/keys"},
 	{ID: "openai", Name: "OpenAI", Icon: "openai", Kind: KindVendor, Catalog: "openai",
 		Chat: "https://api.openai.com/v1", Responses: "https://api.openai.com/v1",
-		Defaults: []string{"gpt-5.6-sol", "gpt-5.5", "gpt-5.3-codex"},
-		Website:  "https://platform.openai.com", KeysURL: "https://platform.openai.com/api-keys"},
+		Website: "https://platform.openai.com", KeysURL: "https://platform.openai.com/api-keys"},
 	{ID: "google", Name: "Google Gemini", Icon: "gemini-color", Kind: KindVendor, Catalog: "google",
-		Chat:     "https://generativelanguage.googleapis.com/v1beta/openai",
-		Note:     "Gemini Developer API",
-		Defaults: []string{"gemini-3.1-pro", "gemini-3.5-flash", "gemini-2.5-pro", "gemini-2.5-flash"},
-		Website:  "https://aistudio.google.com", KeysURL: "https://aistudio.google.com/apikey"},
+		Chat:    "https://generativelanguage.googleapis.com/v1beta/openai",
+		Note:    "Gemini Developer API",
+		Website: "https://aistudio.google.com", KeysURL: "https://aistudio.google.com/apikey"},
 	{ID: "deepseek", Name: "DeepSeek", Icon: "deepseek-color", Kind: KindVendor, Catalog: "deepseek",
 		Chat: "https://api.deepseek.com/v1", Responses: "https://api.deepseek.com/v1", Anthropic: "https://api.deepseek.com/anthropic",
 		Website: "https://platform.deepseek.com", KeysURL: "https://platform.deepseek.com/api_keys"},

@@ -36,18 +36,22 @@ and there is a terminal version (`magpie tui`) and a plain CLI.
   OpenCode and the rest all point at `http://127.0.0.1:3425/v1` and pick
   from one catalog; the translation between APIs happens in magpie, streaming
   and tool calls included.
-- **Your subscriptions, shared.** Sign in to Codex (ChatGPT) or Copilot
-  and that login shows up as a provider: every other agent can use its
-  models through the gateway, with nothing copied and no key to paste.
+- **Your subscriptions, shared.** Sign in to Claude Code, Codex (ChatGPT)
+  or Copilot and that login shows up as a provider: every other agent can
+  use its models through the gateway, with nothing copied and no key to
+  paste.
 - **Providers with one field.** Pick a preset (Anthropic, OpenAI, Gemini,
   DeepSeek, Kimi, GLM, MiniMax, Qwen, Mistral, Groq, xAI, OpenRouter,
   Together, Fireworks, SiliconFlow, AiHubMix, 302.AI, Ollama, LM Studio…),
   paste a key, done. Custom vendors need a name and a base URL. magpie never
   reads keys from your shell environment.
-- **Real model lists.** With a key in hand magpie asks the vendor which models
-  it serves and offers exactly those; the [models.dev](https://models.dev)
-  catalog fills in names, reasoning efforts and the list for vendors that
-  have none. Choose which models each provider exposes, or expose them all.
+- **Real model lists, nothing compiled in.** With a key in hand magpie asks
+  the vendor which models it serves and offers exactly those; the
+  [models.dev](https://models.dev) catalog fills in names, reasoning efforts
+  and the list for vendors that have none, and refreshes itself in the
+  background once it goes stale. Choose which models each provider exposes,
+  or expose them all — a model released this morning is in the picker on
+  the next refresh.
 - **Profiles.** Snapshot every agent's settings under a name and switch all of
   them back in one move.
 - **Real logos, no framework.** Plain HTML over the system webview; brand
@@ -100,21 +104,29 @@ be overridden the same way.
 ### Signed-in agents as providers
 
 An agent you have signed in to is a subscription with models behind it, so
-magpie offers it as a provider too. Codex (a ChatGPT login in
+magpie offers it as a provider too. Claude Code (an OAuth login in the macOS
+Keychain or `~/.claude/.credentials.json`), Codex (a ChatGPT login in
 `~/.codex/auth.json`) and Copilot (a GitHub login in
 `~/.config/github-copilot/apps.json`) appear in `magpie providers` and in the
-Providers tab as *signed in as …*, with their models spelled `codex/gpt-5.5`
-or `copilot/claude-sonnet-4.5` in every other agent's picker. magpie reads the
-agent's own credential file each time, refreshes tokens the way the agent
-does, and stores nothing but your model picks; sign out of the agent and
-the provider is gone. The ChatGPT backend only streams and rejects a few
-parameters, so magpie translates non-streaming requests and drops what it
-would refuse.
-
-Claude Code is signed in too, but is deliberately not offered: Anthropic's
-terms keep a Claude subscription for Claude Code itself. magpie says so under
-the provider list rather than leaving you to wonder; use an Anthropic API
-key as a provider instead. A Gemini CLI Google login is planned.
+Providers tab as *signed in as …*, with their models spelled
+`claude/claude-sonnet-5`, `codex/gpt-5.5` or `copilot/claude-sonnet-4.5` in
+every other agent's picker. magpie reads the agent's own credentials each
+time, refreshes tokens the way the agent does — writing a rotated token
+back where the agent will find it — and stores nothing but your model
+picks; sign out of the agent and the provider is gone. The model list is
+the vendor's own too: magpie asks Anthropic's, Copilot's or Codex's API with
+that same sign-in, so a model added upstream appears on the next refresh.
+The ChatGPT backend only streams and rejects a few parameters, so magpie
+translates non-streaming requests and drops what it would refuse.
+Claude subscriptions are different: Anthropic classifies another agent's
+system prompt as third-party traffic even when the OAuth request otherwise
+looks like Claude Code. magpie therefore drives the genuine local `claude`
+binary for every Claude subscription generation. The caller's tools are
+bridged into that live turn over MCP, and tool results resume the same Claude
+Code process; Pi, OpenCode and every other agent use this path automatically.
+The generated harness stays out of Anthropic's system-prompt classifier while
+its instructions remain part of the user context. This requires Claude Code
+to be installed and signed in. A Gemini CLI Google login is planned.
 
 ### Connecting anything else
 
