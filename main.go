@@ -68,6 +68,7 @@ func main() {
 
 func run(args []string) error {
 	settings.Migrate()
+	agent.RenameLegacy()
 	if len(args) == 0 {
 		if hasGUI {
 			return runGUI(true)
