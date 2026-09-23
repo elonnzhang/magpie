@@ -42,42 +42,71 @@ export default {
 };
 
 // latest is the newest release, condensed, with each file's SHA-256 taken
-// from the release's SHA256SUMS.
+// from the release's SHA256SUMS. GitHub's API gives the notes and sizes but
+// limits anonymous callers by IP, and a worker shares its IP with many
+// others; when the API says no, the release page's redirect gives the
+// version and SHA256SUMS the files, which is all an update needs.
 async function latest(ctx) {
   const cache = caches.default;
   const key = new Request("https://usemagpie.ai/__latest");
   const hit = await cache.match(key);
   if (hit) return hit.json();
 
+  const rel = (await fromAPI()) || (await fromPages());
+  if (!rel) return null;
+  ctx.waitUntil(cache.put(key, json(rel, 200, { "Cache-Control": `max-age=${TTL}` })));
+  return rel;
+}
+
+const UA = { "User-Agent": "usemagpie.ai" };
+
+async function fromAPI() {
   const res = await fetch(`https://api.github.com/repos/${REPO}/releases/latest`, {
-    headers: { "User-Agent": "usemagpie.ai", Accept: "application/vnd.github+json" },
+    headers: { ...UA, Accept: "application/vnd.github+json" },
   });
-  if (!res.ok) return null;
-  const gh = await res.json();
-  const sums = {};
-  const sumsAsset = gh.assets.find((a) => a.name === "SHA256SUMS");
-  if (sumsAsset) {
-    const r = await fetch(sumsAsset.browser_download_url, { headers: { "User-Agent": "usemagpie.ai" } });
-    if (r.ok) {
-      for (const line of (await r.text()).split("\n")) {
-        const [hash, name] = line.trim().split(/\s+\*?/);
-        if (hash && name) sums[name] = hash;
-      }
-    }
+  if (!res.ok) {
+    console.log("github api", res.status, await res.text());
+    return null;
   }
-  const rel = {
-    version: gh.tag_name.replace(/^v/, ""),
-    notes: gh.body || "",
-    url: gh.html_url,
-    published: gh.published_at,
-    assets: {},
-  };
+  const gh = await res.json();
+  const tag = gh.tag_name;
+  const sums = await checksums(tag);
+  if (!sums) return null;
+  const rel = { version: tag.replace(/^v/, ""), notes: gh.body || "", url: gh.html_url, published: gh.published_at, assets: {} };
   for (const a of gh.assets) {
     if (a.name === "SHA256SUMS") continue;
     rel.assets[a.name] = { url: a.browser_download_url, size: a.size, sha256: sums[a.name] || "" };
   }
-  ctx.waitUntil(cache.put(key, json(rel, 200, { "Cache-Control": `max-age=${TTL}` })));
   return rel;
+}
+
+async function fromPages() {
+  const res = await fetch(`https://github.com/${REPO}/releases/latest`, { headers: UA, redirect: "manual" });
+  const tag = (res.headers.get("Location") || "").split("/tag/")[1];
+  if (!tag) {
+    console.log("github latest redirect", res.status);
+    return null;
+  }
+  const sums = await checksums(tag);
+  if (!sums) return null;
+  const url = `https://github.com/${REPO}/releases/tag/${tag}`;
+  const rel = { version: tag.replace(/^v/, ""), notes: "", url, published: null, assets: {} };
+  for (const [name, sha256] of Object.entries(sums)) {
+    rel.assets[name] = { url: `https://github.com/${REPO}/releases/download/${tag}/${name}`, size: 0, sha256 };
+  }
+  return rel;
+}
+
+// checksums reads a release's SHA256SUMS: {file name: hash}.
+async function checksums(tag) {
+  const r = await fetch(`https://github.com/${REPO}/releases/download/${tag}/SHA256SUMS`, { headers: UA });
+  if (!r.ok) return null;
+  const sums = {};
+  for (const line of (await r.text()).split("\n")) {
+    const [hash, name] = line.trim().split(/\s+\*?/);
+    if (hash && name) sums[name] = hash;
+  }
+  return sums;
 }
 
 function json(v, status = 200, headers = {}) {
