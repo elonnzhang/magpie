@@ -14,12 +14,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/yetone/dial/internal/agent"
-	"github.com/yetone/dial/internal/catalog"
-	"github.com/yetone/dial/internal/gateway"
-	"github.com/yetone/dial/internal/profile"
-	"github.com/yetone/dial/internal/provider"
-	"github.com/yetone/dial/internal/settings"
+	"github.com/yetone/magpie/internal/agent"
+	"github.com/yetone/magpie/internal/catalog"
+	"github.com/yetone/magpie/internal/gateway"
+	"github.com/yetone/magpie/internal/profile"
+	"github.com/yetone/magpie/internal/provider"
+	"github.com/yetone/magpie/internal/settings"
 )
 
 // Version is the build's version string, shown in Settings.
@@ -72,7 +72,7 @@ type stateJSON struct {
 type settingsJSON struct {
 	settings.Settings
 	Version string `json:"version"`
-	Dir     string `json:"dir"`     // where dial keeps its files, as shown
+	Dir     string `json:"dir"`     // where magpie keeps its files, as shown
 	Path    string `json:"path"`    // the same, absolute, for opening it
 	Gateway string `json:"gateway"` // the local endpoint
 }
@@ -82,7 +82,7 @@ func settingsState() settingsJSON {
 }
 
 // Handler serves the embedded UI and the JSON API.
-// gw is the gateway this process serves, or nil when another dial has it.
+// gw is the gateway this process serves, or nil when another magpie has it.
 func Handler(w Windows, gw *gateway.Server) http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("/", devPage(http.FileServer(http.FS(staticFS()))))

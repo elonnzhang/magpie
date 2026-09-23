@@ -1,4 +1,4 @@
-// dial speaks English by default; this is every other language it knows.
+// magpie speaks English by default; this is every other language it knows.
 // Keys are the English strings as written in app.js and index.html; a
 // missing key falls back to English, so a half-translated language still
 // works. {name} slots are filled by t(str, vars).
@@ -12,13 +12,13 @@ const I18N = {
     "Settings": "设置",
     "Refresh model lists (models.dev and every vendor)": "刷新模型列表（models.dev 与各供应商）",
     "Open as a window": "在窗口中打开",
-    "Open dial": "打开 dial",
+    "Open magpie": "打开 magpie",
     "Quit": "退出",
     "Filter…": "筛选…",
 
     // agents
     "No coding agents found": "没有找到编码 Agent",
-    "Install Claude Code, Codex, Gemini CLI, OpenCode… and dial will list them here.": "安装 Claude Code、Codex、Gemini CLI、OpenCode…… 之后，dial 会在这里列出它们。",
+    "Install Claude Code, Codex, Gemini CLI, OpenCode… and magpie will list them here.": "安装 Claude Code、Codex、Gemini CLI、OpenCode…… 之后，magpie 会在这里列出它们。",
     "model": "模型",
     "effort": "推理强度",
     "thinking": "思考",
@@ -108,9 +108,9 @@ const I18N = {
     "Hide": "隐藏",
     "Get a key ↗": "获取密钥 ↗",
     "API key": "API 密钥",
-    "Kept in ~/.config/dial/providers.json, readable by you alone. Nothing is read from your shell.": "保存在 ~/.config/dial/providers.json，仅你本人可读。不会从你的 shell 读取任何内容。",
+    "Kept in ~/.config/magpie/providers.json, readable by you alone. Nothing is read from your shell.": "保存在 ~/.config/magpie/providers.json，仅你本人可读。不会从你的 shell 读取任何内容。",
     "model ids, comma separated · e.g. gpt-5.5, claude-sonnet-5": "模型 ID，逗号分隔 · 例如 gpt-5.5, claude-sonnet-5",
-    "Optional: dial asks the vendor for its list after saving.": "可选：保存后 dial 会向供应商获取模型列表。",
+    "Optional: magpie asks the vendor for its list after saving.": "可选：保存后 magpie 会向供应商获取模型列表。",
     "More endpoints": "更多端点",
     "OpenAI URL": "OpenAI 地址",
     "if the vendor also serves chat completions": "如果供应商也提供 chat completions",
@@ -143,13 +143,13 @@ const I18N = {
 
     // gateway
     "running": "运行中",
-    "running · served by another dial": "运行中 · 由另一个 dial 提供",
+    "running · served by another magpie": "运行中 · 由另一个 magpie 提供",
     "not running": "未运行",
     "{n} agent routed through it": "{n} 个 Agent 经由此路由",
     "{n} agents routed through it": "{n} 个 Agent 经由此路由",
     "no agent routed through it yet": "尚无 Agent 经由此路由",
     "four APIs, one URL": "四种 API，一个地址",
-    "start it with dial serve, or open dial at login": "用 dial serve 启动，或让 dial 开机自启",
+    "start it with magpie serve, or open magpie at login": "用 magpie serve 启动，或让 magpie 开机自启",
     "Copy the gateway URL": "复制网关地址",
     "Gateway URL": "网关地址",
     "Copy": "复制",
@@ -162,7 +162,7 @@ const I18N = {
     "Google's generateContent API, v1beta. Gemini CLI and the google-genai SDKs speak this.": "Google 的 generateContent API（v1beta）。Gemini CLI 和 google-genai SDK 使用它。",
     "What {env} takes.": "填入 {env}。",
     "Key": "密钥",
-    "{env}=dial. The gateway trusts everything on loopback, so any value works.": "{env}=dial。网关信任本机回环上的一切请求，随便填什么都行。",
+    "{env}=magpie. The gateway trusts everything on loopback, so any value works.": "{env}=magpie。网关信任本机回环上的一切请求，随便填什么都行。",
     "Model": "模型",
     "Model id": "模型 ID",
     "Model ids": "模型 ID",
@@ -170,13 +170,13 @@ const I18N = {
     "No models yet. Add a provider, or sign in to Codex or Copilot.": "还没有模型。添加一个供应商，或登录 Codex / Copilot。",
     "Example": "示例",
     "Snippet": "代码片段",
-    "Put these in the shell (or the tool's settings) and the tool talks to dial instead of the vendor.": "把这些放进 shell（或工具的设置）里，工具就会改为与 dial 通信，而不是直连供应商。",
+    "Put these in the shell (or the tool's settings) and the tool talks to magpie instead of the vendor.": "把这些放进 shell（或工具的设置）里，工具就会改为与 magpie 通信，而不是直连供应商。",
     "Copy all ids": "复制全部 ID",
     "No models exposed yet": "尚未暴露任何模型",
     "Add a provider, or sign in to Codex or Copilot; their models show up here for every agent.": "添加一个供应商，或登录 Codex / Copilot；它们的模型会出现在这里，供所有 Agent 使用。",
     "Use this model in the snippets": "在示例中使用此模型",
     "Recent calls": "最近调用",
-    "shown by the dial that serves the gateway": "由提供网关的那个 dial 显示",
+    "shown by the magpie that serves the gateway": "由提供网关的那个 magpie 显示",
     "No requests yet. Point an agent at a model, or run the example above; every call shows up here as it happens.": "还没有请求。让某个 Agent 使用一个模型，或运行上面的示例；每次调用都会实时显示在这里。",
 
     // usage

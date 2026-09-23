@@ -1,6 +1,6 @@
 package provider
 
-// A preset is a vendor dial already knows: adding one only asks for the key.
+// A preset is a vendor magpie already knows: adding one only asks for the key.
 
 // Kind groups presets in the picker.
 type Kind string
@@ -140,7 +140,7 @@ func Preset(id string) *PresetDef {
 func FromPreset(id string) (Provider, error) {
 	pr := Preset(id)
 	if pr == nil {
-		return Provider{}, errorf("no preset %q — dial presets lists them", id)
+		return Provider{}, errorf("no preset %q — magpie presets lists them", id)
 	}
 	return Provider{
 		ID: pr.ID, Name: pr.Name, Icon: pr.Icon, Preset: pr.ID,

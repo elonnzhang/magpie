@@ -1,8 +1,8 @@
 // Package settings keeps the few preferences the desktop app has: which
-// palette to paint with and which language to speak. Everything else dial
+// palette to paint with and which language to speak. Everything else magpie
 // knows is derived from the agents' own files.
 //
-// The file is ~/.config/dial/settings.json; a missing file means "follow
+// The file is ~/.config/magpie/settings.json; a missing file means "follow
 // the system" for both.
 package settings
 
@@ -29,13 +29,13 @@ var (
 // Path is the settings file.
 func Path() string {
 	if x := os.Getenv("XDG_CONFIG_HOME"); x != "" {
-		return filepath.Join(x, "dial", "settings.json")
+		return filepath.Join(x, "magpie", "settings.json")
 	}
 	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".config", "dial", "settings.json")
+	return filepath.Join(home, ".config", "magpie", "settings.json")
 }
 
-// Dir is the folder every dial file lives in.
+// Dir is the folder every magpie file lives in.
 func Dir() string { return filepath.Dir(Path()) }
 
 // Load reads the settings; anything missing or unreadable is the default.

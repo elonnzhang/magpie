@@ -8,10 +8,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/yetone/dial/internal/agent"
-	"github.com/yetone/dial/internal/catalog"
-	"github.com/yetone/dial/internal/gateway"
-	"github.com/yetone/dial/internal/provider"
+	"github.com/yetone/magpie/internal/agent"
+	"github.com/yetone/magpie/internal/catalog"
+	"github.com/yetone/magpie/internal/gateway"
+	"github.com/yetone/magpie/internal/provider"
 )
 
 // The providers page: the vendors the user added, the presets they can add
@@ -88,7 +88,7 @@ type excludedJSON struct {
 type providersJSON struct {
 	Providers []providerJSON `json:"providers"`
 	Presets   []presetJSON   `json:"presets"`
-	Excluded  []excludedJSON `json:"excluded"` // sign-ins dial found but will not share
+	Excluded  []excludedJSON `json:"excluded"` // sign-ins magpie found but will not share
 	Gateway   gatewayJSON    `json:"gateway"`
 }
 
@@ -97,7 +97,7 @@ func currentProvider(a *agent.Agent) (string, string) {
 	if len(a.Fields) == 0 {
 		return "", ""
 	}
-	v := strings.TrimPrefix(a.Fields[0].Get(), "dial/")
+	v := strings.TrimPrefix(a.Fields[0].Get(), "magpie/")
 	if pid, model, ok := strings.Cut(v, "/"); ok {
 		if _, err := provider.Find(pid); err == nil {
 			return pid, model

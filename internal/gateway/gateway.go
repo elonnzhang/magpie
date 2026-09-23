@@ -16,23 +16,23 @@ import (
 	"sync"
 	"time"
 
-	"github.com/yetone/dial/internal/provider"
-	"github.com/yetone/dial/internal/usage"
+	"github.com/yetone/magpie/internal/provider"
+	"github.com/yetone/magpie/internal/usage"
 )
 
-// DefaultAddr is where the gateway listens unless DIAL_ADDR says otherwise.
+// DefaultAddr is where the gateway listens unless MAGPIE_ADDR says otherwise.
 const DefaultAddr = "127.0.0.1:3425"
 
 // Token is the bearer token agents are told to use. The gateway only
 // listens on loopback and accepts anything, but agents insist on one.
-const Token = "dial"
+const Token = "magpie"
 
 // Version is set by main.
 var Version = "dev"
 
 // Addr is the listen address.
 func Addr() string {
-	if a := os.Getenv("DIAL_ADDR"); a != "" {
+	if a := os.Getenv("MAGPIE_ADDR"); a != "" {
 		return a
 	}
 	return DefaultAddr
@@ -50,7 +50,7 @@ func Running() bool {
 	}
 	defer res.Body.Close()
 	b, _ := io.ReadAll(io.LimitReader(res.Body, 4096))
-	return bytes.Contains(b, []byte(`"dial"`))
+	return bytes.Contains(b, []byte(`"magpie"`))
 }
 
 // Call is one request the gateway handled, for the status views.
@@ -85,7 +85,7 @@ func New() *Server {
 			IdleConnTimeout:       90 * time.Second,
 			ForceAttemptHTTP2:     true,
 		}},
-		debug: os.Getenv("DIAL_DEBUG") != "",
+		debug: os.Getenv("MAGPIE_DEBUG") != "",
 	}
 }
 
@@ -113,7 +113,7 @@ func (s *Server) record(c Call) {
 }
 
 // ListenAndServe runs the gateway until ctx ends. A bind error means
-// another dial is already serving, which is fine for the caller to ignore.
+// another magpie is already serving, which is fine for the caller to ignore.
 func (s *Server) ListenAndServe(ctx context.Context) error {
 	ln, err := net.Listen("tcp", Addr())
 	if err != nil {
@@ -149,13 +149,13 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1beta/models", s.geminiModels)
 	mux.HandleFunc("POST /v1beta/models/{call...}", s.gemini)
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		writeError(w, provider.Chat, http.StatusNotFound, "dial serves /v1/chat/completions, /v1/responses, /v1/messages and /v1beta/models/*")
+		writeError(w, provider.Chat, http.StatusNotFound, "magpie serves /v1/chat/completions, /v1/responses, /v1/messages and /v1beta/models/*")
 	})
 	return mux
 }
 
 func (s *Server) info(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, 200, map[string]any{"name": "dial", "version": Version, "models": len(provider.Catalog()),
+	writeJSON(w, 200, map[string]any{"name": "magpie", "version": Version, "models": len(provider.Catalog()),
 		"apis": []string{"/v1/chat/completions", "/v1/responses", "/v1/messages", "/v1beta/models/{model}:generateContent"}})
 }
 
@@ -305,11 +305,11 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request, from provider.Pro
 	if !ok {
 		call.Status, call.Error = 404, "unknown model"
 		s.record(call)
-		msg := fmt.Sprintf("dial knows no model %q", call.Model)
+		msg := fmt.Sprintf("magpie knows no model %q", call.Model)
 		if ids := provider.IDs(); len(ids) > 0 {
 			msg += "; it has " + strings.Join(ids, ", ")
 		} else {
-			msg += "; add a provider in dial first"
+			msg += "; add a provider in magpie first"
 		}
 		writeError(w, from, 404, msg)
 		return
@@ -345,7 +345,7 @@ func (s *Server) forward(ctx context.Context, p provider.Provider, to provider.P
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json, text/event-stream")
-	req.Header.Set("User-Agent", "dial/"+Version)
+	req.Header.Set("User-Agent", "magpie/"+Version)
 	if to == provider.Anthropic {
 		req.Header.Set("anthropic-version", "2023-06-01")
 		for _, h := range []string{"anthropic-version", "anthropic-beta"} {

@@ -14,7 +14,7 @@ import (
 )
 
 // A vendor's own /models endpoint is the truth about what it serves today;
-// models.dev lags and keeps legacy names around. dial asks the vendor when
+// models.dev lags and keeps legacy names around. magpie asks the vendor when
 // it has a key, remembers the answer next to the models.dev cache, and lets
 // the catalog fill in display names and reasoning levels.
 
@@ -114,7 +114,7 @@ func fetchOne(ctx context.Context, url, key string) ([]Model, error) {
 		return nil, err
 	}
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("User-Agent", "dial")
+	req.Header.Set("User-Agent", "magpie")
 	if key != "" {
 		req.Header.Set("Authorization", "Bearer "+key)
 		req.Header.Set("x-api-key", key)

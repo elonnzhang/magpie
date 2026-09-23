@@ -3,7 +3,7 @@ package provider
 // Accounts: agents the user has signed in to, offered as providers.
 //
 // A Codex CLI login (ChatGPT) or a Copilot login is a subscription with
-// models behind it. dial reads the credentials the agent itself keeps on
+// models behind it. magpie reads the credentials the agent itself keeps on
 // disk, so every other agent can use those models through the gateway.
 // Nothing is stored twice: sign out of the agent and the provider is gone.
 //
@@ -30,7 +30,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/yetone/dial/internal/catalog"
+	"github.com/yetone/magpie/internal/catalog"
 )
 
 // Account is the signed-in agent behind a provider.
@@ -39,7 +39,7 @@ type Account struct {
 	User  string `json:"user"`           // who is signed in: an email, a GitHub login
 	Plan  string `json:"plan,omitempty"` // the subscription, when the agent says
 
-	// Stream is set when the backend only streams; dial then translates
+	// Stream is set when the backend only streams; magpie then translates
 	// a non-streaming request instead of relaying it.
 	Stream bool `json:"-"`
 
@@ -69,7 +69,7 @@ func (p Provider) Prepare(body []byte) []byte {
 	return body
 }
 
-// Exclusion is a sign-in dial found but will not offer as a provider.
+// Exclusion is a sign-in magpie found but will not offer as a provider.
 type Exclusion struct {
 	Agent string `json:"agent"`
 	Why   string `json:"why"`
@@ -81,7 +81,7 @@ var (
 	excludedList []Exclusion
 )
 
-// Excluded lists the sign-ins dial leaves alone, and why. Claude Code's
+// Excluded lists the sign-ins magpie leaves alone, and why. Claude Code's
 // credentials live in the macOS Keychain or ~/.claude/.credentials.json;
 // only their presence is checked, never their contents.
 func Excluded() []Exclusion {
@@ -93,7 +93,7 @@ func Excluded() []Exclusion {
 	excludedAt, excludedList = time.Now(), nil
 	if claudeSignedIn() {
 		excludedList = append(excludedList, Exclusion{Agent: "claude",
-			Why: "Anthropic's terms keep a Claude subscription for Claude Code itself, so dial does not share it with other agents. Use an Anthropic API key as a provider instead."})
+			Why: "Anthropic's terms keep a Claude subscription for Claude Code itself, so magpie does not share it with other agents. Use an Anthropic API key as a provider instead."})
 	}
 	return excludedList
 }
@@ -215,7 +215,7 @@ func codexAccount(home string) (Provider, bool) {
 			req.Header.Set("chatgpt-account-id", accountID)
 		}
 		req.Header.Set("OpenAI-Beta", "responses=experimental")
-		req.Header.Set("originator", "dial")
+		req.Header.Set("originator", "magpie")
 		return nil
 	}
 	acct.body = codexBody

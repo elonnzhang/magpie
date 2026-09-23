@@ -1,4 +1,4 @@
-// dial — one state object per view, rendered into a list. No framework.
+// magpie — one state object per view, rendered into a list. No framework.
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => document.querySelectorAll(s);
 const params = new URLSearchParams(location.search);
@@ -17,9 +17,9 @@ let editing = null; // provider id being edited; { preset } or { custom: true } 
 let draft = null; // the editor's working copy
 let adding = false; // the preset sheet is open
 // the gateway tab's choices, kept per machine
-let flavor = params.get("flavor") || localStorage.getItem("dial.flavor") || "openai"; // which API the snippets speak
-let lang = params.get("lang") || localStorage.getItem("dial.lang") || "shell";        // which snippet
-let exampleModel = localStorage.getItem("dial.model") || "";  // the model in the snippets
+let flavor = params.get("flavor") || localStorage.getItem("magpie.flavor") || "openai"; // which API the snippets speak
+let lang = params.get("lang") || localStorage.getItem("magpie.lang") || "shell";        // which snippet
+let exampleModel = localStorage.getItem("magpie.model") || "";  // the model in the snippets
 
 async function api(path, body) {
   const res = await fetch("/api/" + path, {
@@ -100,7 +100,7 @@ function renderAgents() {
   list.replaceChildren();
   if (!state.agents.length) {
     const e = el("div", "empty-state");
-    e.append(el("b", "", t("No coding agents found")), el("span", "", t("Install Claude Code, Codex, Gemini CLI, OpenCode… and dial will list them here.")));
+    e.append(el("b", "", t("No coding agents found")), el("span", "", t("Install Claude Code, Codex, Gemini CLI, OpenCode… and magpie will list them here.")));
     list.append(e);
   }
   for (const a of state.agents) {
@@ -207,7 +207,7 @@ function openPicker(agent, field, anchor, ev, only) {
   const i = options.findIndex((o) => o.value === cur);
   if (i > 0) { const [c] = options.splice(i, 1); options.unshift({ ...c, group: "" }); }
   else if (i < 0 && cur && !only) options.unshift({ value: cur, note: t("current value") });
-  // the agent's own default: dial's wiring comes out and the key is removed
+  // the agent's own default: magpie's wiring comes out and the key is removed
   if (!only) options.unshift({ value: "", label: t("Default"), note: t("what {agent} ships with", { agent: agent.name }), icon: agent.icon, reset: true });
   pick = { agent, field, options, anchor, cursor: 0, free: !only };
   anchor.classList.add("open");
@@ -407,7 +407,7 @@ function renderProviders() {
   if (dialog) openModal(dialog); else closeModal();
 }
 
-// Sign-ins dial found but leaves alone (Claude Code), so nobody wonders
+// Sign-ins magpie found but leaves alone (Claude Code), so nobody wonders
 // why an agent that is clearly logged in is not in the list.
 function renderExcluded() {
   const box = $("#excluded");
@@ -459,13 +459,13 @@ function renderGateway() {
   const dot = el("span", "dot " + (g.running ? "on" : ""));
   const who = el("div", "who");
   const name = el("div", "name", t("Gateway"));
-  name.append(el("span", "state", t(g.running ? (g.mine ? "running" : "running · served by another dial") : "not running")));
+  name.append(el("span", "state", t(g.running ? (g.mine ? "running" : "running · served by another magpie") : "not running")));
   const routed = new Set();
   for (const p of providers.providers) for (const a of p.agents) if (a.current) routed.add(a.id);
   const n = routed.size;
   who.append(name, el("div", "sub", g.running
     ? [t(g.models === 1 ? "{n} model" : "{n} models", { n: g.models }), n ? t(n === 1 ? "{n} agent routed through it" : "{n} agents routed through it", { n }) : t("no agent routed through it yet"), t("four APIs, one URL")].join(" · ")
-    : t("start it with dial serve, or open dial at login")));
+    : t("start it with magpie serve, or open magpie at login")));
   const url = el("button", "url");
   url.append(el("code", "", g.url));
   url.title = t("Copy the gateway URL");
@@ -480,13 +480,13 @@ const FLAVORS = {
     name: "OpenAI", base: (u) => u + "/v1", baseEnv: "OPENAI_BASE_URL", keyEnv: "OPENAI_API_KEY",
     note: "Chat Completions, the API most tools speak. Anything with an OpenAI base-URL setting works.",
     curl: (b, m) => `curl ${b}/chat/completions \\
-  -H "Authorization: Bearer dial" \\
+  -H "Authorization: Bearer magpie" \\
   -H "Content-Type: application/json" \\
   -d '{"model": "${m}",
        "messages": [{"role": "user", "content": "hi"}]}'`,
     python: (b, m) => `from openai import OpenAI
 
-client = OpenAI(base_url="${b}", api_key="dial")
+client = OpenAI(base_url="${b}", api_key="magpie")
 r = client.chat.completions.create(
     model="${m}",
     messages=[{"role": "user", "content": "hi"}],
@@ -494,7 +494,7 @@ r = client.chat.completions.create(
 print(r.choices[0].message.content)`,
     node: (b, m) => `import OpenAI from "openai";
 
-const client = new OpenAI({ baseURL: "${b}", apiKey: "dial" });
+const client = new OpenAI({ baseURL: "${b}", apiKey: "magpie" });
 const r = await client.chat.completions.create({
   model: "${m}",
   messages: [{ role: "user", content: "hi" }],
@@ -505,17 +505,17 @@ console.log(r.choices[0].message.content);`,
     name: "Responses", base: (u) => u + "/v1", baseEnv: "OPENAI_BASE_URL", keyEnv: "OPENAI_API_KEY",
     note: "OpenAI's newer API: reasoning, built-in tool items, encrypted reasoning. Codex speaks this.",
     curl: (b, m) => `curl ${b}/responses \\
-  -H "Authorization: Bearer dial" \\
+  -H "Authorization: Bearer magpie" \\
   -H "Content-Type: application/json" \\
   -d '{"model": "${m}", "input": "hi"}'`,
     python: (b, m) => `from openai import OpenAI
 
-client = OpenAI(base_url="${b}", api_key="dial")
+client = OpenAI(base_url="${b}", api_key="magpie")
 r = client.responses.create(model="${m}", input="hi")
 print(r.output_text)`,
     node: (b, m) => `import OpenAI from "openai";
 
-const client = new OpenAI({ baseURL: "${b}", apiKey: "dial" });
+const client = new OpenAI({ baseURL: "${b}", apiKey: "magpie" });
 const r = await client.responses.create({ model: "${m}", input: "hi" });
 console.log(r.output_text);`,
   },
@@ -523,7 +523,7 @@ console.log(r.output_text);`,
     name: "Anthropic", base: (u) => u, baseEnv: "ANTHROPIC_BASE_URL", keyEnv: "ANTHROPIC_API_KEY",
     note: "Messages API. Claude Code reads ANTHROPIC_AUTH_TOKEN instead of the key; the Agents tab sets that for you.",
     curl: (b, m) => `curl ${b}/v1/messages \\
-  -H "x-api-key: dial" \\
+  -H "x-api-key: magpie" \\
   -H "anthropic-version: 2023-06-01" \\
   -H "Content-Type: application/json" \\
   -d '{"model": "${m}", "max_tokens": 1024,
@@ -531,7 +531,7 @@ console.log(r.output_text);`,
     python: (b, m) => `import anthropic
 
 client = anthropic.Anthropic(
-    base_url="${b}", api_key="dial",
+    base_url="${b}", api_key="magpie",
 )
 m = client.messages.create(
     model="${m}",
@@ -541,7 +541,7 @@ m = client.messages.create(
 print(m.content[0].text)`,
     node: (b, m) => `import Anthropic from "@anthropic-ai/sdk";
 
-const client = new Anthropic({ baseURL: "${b}", apiKey: "dial" });
+const client = new Anthropic({ baseURL: "${b}", apiKey: "magpie" });
 const m = await client.messages.create({
   model: "${m}",
   max_tokens: 1024,
@@ -553,18 +553,18 @@ console.log(m.content[0].text);`,
     name: "Gemini", base: (u) => u, baseEnv: "GOOGLE_GEMINI_BASE_URL", keyEnv: "GEMINI_API_KEY",
     note: "Google's generateContent API, v1beta. Gemini CLI and the google-genai SDKs speak this.",
     curl: (b, m) => `curl ${b}/v1beta/models/${m}:generateContent \\
-  -H "x-goog-api-key: dial" \\
+  -H "x-goog-api-key: magpie" \\
   -H "Content-Type: application/json" \\
   -d '{"contents": [{"parts": [{"text": "hi"}]}]}'`,
     python: (b, m) => `from google import genai
 
-client = genai.Client(api_key="dial", http_options={"base_url": "${b}"})
+client = genai.Client(api_key="magpie", http_options={"base_url": "${b}"})
 r = client.models.generate_content(model="${m}", contents="hi")
 print(r.text)`,
     node: (b, m) => `import { GoogleGenAI } from "@google/genai";
 
 const ai = new GoogleGenAI({
-  apiKey: "dial",
+  apiKey: "magpie",
   httpOptions: { baseUrl: "${b}" },
 });
 const r = await ai.models.generateContent({ model: "${m}", contents: "hi" });
@@ -603,31 +603,31 @@ function renderConnect() {
   const base = f.base(g.url);
   $("#connectNote").textContent = t("Loopback only · the key can be anything");
 
-  box.append(...field("API", segs(Object.entries(FLAVORS).map(([k, v]) => [k, v.name]), flavor, (id) => { flavor = id; localStorage.setItem("dial.flavor", id); renderConnect(); }), t(f.note)));
+  box.append(...field("API", segs(Object.entries(FLAVORS).map(([k, v]) => [k, v.name]), flavor, (id) => { flavor = id; localStorage.setItem("magpie.flavor", id); renderConnect(); }), t(f.note)));
 
   const b = el("div", "val");
   b.append(el("code", "", base), copyBtn(base, "Base URL"));
   box.append(...field("Base URL", b, t("What {env} takes.", { env: f.baseEnv })));
 
   const k = el("div", "val");
-  k.append(el("code", "", "dial"), copyBtn("dial", t("Key")));
-  box.append(...field(t("API key"), k, t("{env}=dial. The gateway trusts everything on loopback, so any value works.", { env: f.keyEnv })));
+  k.append(el("code", "", "magpie"), copyBtn("magpie", t("Key")));
+  box.append(...field(t("API key"), k, t("{env}=magpie. The gateway trusts everything on loopback, so any value works.", { env: f.keyEnv })));
 
   const m = el("div", "val");
   m.append(el("code", "", model), copyBtn(model, t("Model id")));
   box.append(...field(t("Model"), m, t(models.length ? "provider/model, as listed below. Click a model there to put it in the snippets." : "No models yet. Add a provider, or sign in to Codex or Copilot.")));
 
   const ex = el("div", "stack");
-  ex.append(segs(LANGS, lang, (id) => { lang = id; localStorage.setItem("dial.lang", id); renderConnect(); }));
+  ex.append(segs(LANGS, lang, (id) => { lang = id; localStorage.setItem("magpie.lang", id); renderConnect(); }));
   const code = lang === "shell"
-    ? `export ${f.baseEnv}=${base}\nexport ${f.keyEnv}=dial`
+    ? `export ${f.baseEnv}=${base}\nexport ${f.keyEnv}=magpie`
     : f[lang](base, model);
   const pre = el("pre", "snip");
   const c = el("code");
   c.append(highlight(code, lang));
   pre.append(c, copyBtn(code, t("Snippet")));
   ex.append(pre);
-  box.append(...field(t("Example"), ex, lang === "shell" ? t("Put these in the shell (or the tool's settings) and the tool talks to dial instead of the vendor.") : ""));
+  box.append(...field(t("Example"), ex, lang === "shell" ? t("Put these in the shell (or the tool's settings) and the tool talks to magpie instead of the vendor.") : ""));
 }
 
 // A small highlighter for the four snippet dialects: strings, comments,
@@ -677,7 +677,7 @@ function renderGatewayModels() {
     who.append(el("div", "name", m.id), el("div", "sub", m.name && m.name !== m.id.split("/")[1] ? `${m.name} · ${m.provider.name}` : m.provider.name));
     row.append(icon(m.provider.icon || "generic"), who, copyBtn(m.id, t("Model id")));
     row.title = t("Use this model in the snippets");
-    row.onclick = () => { exampleModel = m.id; localStorage.setItem("dial.model", m.id); renderConnect(); renderGatewayModels(); };
+    row.onclick = () => { exampleModel = m.id; localStorage.setItem("magpie.model", m.id); renderConnect(); renderGatewayModels(); };
     list.append(row);
   }
 }
@@ -686,7 +686,7 @@ function renderActivity() {
   const g = providers.gateway;
   const box = $("#activity");
   box.replaceChildren();
-  $("#callsNote").textContent = g.running && !g.mine ? t("shown by the dial that serves the gateway") : "";
+  $("#callsNote").textContent = g.running && !g.mine ? t("shown by the magpie that serves the gateway") : "";
   const calls = g.calls.slice(0, 20);
   if (!calls.length) { box.append(el("div", "none", t("No requests yet. Point an agent at a model, or run the example above; every call shows up here as it happens."))); return; }
   for (const c of calls) {
@@ -707,7 +707,7 @@ function modelField(a) {
   const agent = state.agents.find((x) => x.id === a.id);
   return agent?.fields.find((f) => f.key === "model") || null;
 }
-function ofProvider(p) { return new RegExp(`^(dial/)?${p.id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/`); }
+function ofProvider(p) { return new RegExp(`^(magpie/)?${p.id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/`); }
 function canUse(a, p) { const f = modelField(a); return !!f && f.options.some((o) => ofProvider(p).test(o.value)); }
 
 // Pick one of this provider's models for an agent, straight from the row.
@@ -926,7 +926,7 @@ function renderEditor(p, presetID) {
   }
 
   if (p?.account) {
-    // the sign-in belongs to the agent; dial only borrows it
+    // the sign-in belongs to the agent; magpie only borrows it
     const a = p.account;
     const acct = el("div", "acct");
     acct.append(icon(a.agentIcon), el("span", "n", a.user), el("span", "plan", accountPlan(a)));
@@ -967,13 +967,13 @@ function renderEditor(p, presetID) {
   if (keysUrl) { const b = el("button", "link", t("Get a key ↗")); b.onclick = () => api("open", { url: keysUrl }); side.append(b); }
   const keyWrap = el("div", "pair");
   keyWrap.append(key, side);
-  ed.append(...field(t("API key"), keyWrap, isNew ? t("Kept in ~/.config/dial/providers.json, readable by you alone. Nothing is read from your shell.") : ""));
+  ed.append(...field(t("API key"), keyWrap, isNew ? t("Kept in ~/.config/magpie/providers.json, readable by you alone. Nothing is read from your shell.") : ""));
 
   if (p) ed.append(...field(t("Models"), renderModels(p), ""));
   else if (custom) {
     const ex = input("", t("model ids, comma separated · e.g. gpt-5.5, claude-sonnet-5"));
     ex.oninput = () => { draft.extra = ex.value.split(/[,\s]+/).filter(Boolean); };
-    ed.append(...field(t("Models"), ex, t("Optional: dial asks the vendor for its list after saving.")));
+    ed.append(...field(t("Models"), ex, t("Optional: magpie asks the vendor for its list after saving.")));
   }
 
   if (!custom) ed.append(...field(t("Endpoints"), renderEndpoints(p, pr)));
@@ -1270,7 +1270,7 @@ function renderUsage() {
 // ---------- settings ----------
 //
 // Two choices (palette, language) and the facts people come looking for:
-// the version, where dial keeps its files, the gateway's address.
+// the version, where magpie keeps its files, the gateway's address.
 
 const THEMES = [["system", "System"], ["light", "Light"], ["dark", "Dark"]];
 const LOCALES = [["system", "System"], ["en", "English"], ["zh", "中文"]];
@@ -1376,7 +1376,7 @@ $("#quit").onclick = () => api("window/quit", {});
 if (mode === "window") { $("#open").remove(); $("#openMain").remove(); $("#quit").remove(); }
 else { $("#nav").remove(); }
 
-// Config files may change underneath us (another dial, an editor); reload when
+// Config files may change underneath us (another magpie, an editor); reload when
 // the panel comes back into view.
 document.addEventListener("visibilitychange", () => { if (!document.hidden) load(); });
 window.addEventListener("focus", load);

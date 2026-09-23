@@ -10,7 +10,7 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/events"
 
-	"github.com/yetone/dial/internal/gateway"
+	"github.com/yetone/magpie/internal/gateway"
 )
 
 //go:embed tray.png
@@ -61,7 +61,7 @@ func (h *host) FitPanel(height int) {
 // panel, plus a regular window for when you want it to stay around.
 // showMain opens the window immediately; otherwise only the tray icon appears.
 func Run(version string, showMain bool) error {
-	// The gateway runs inside the app. If another dial already has the
+	// The gateway runs inside the app. If another magpie already has the
 	// port, that one serves and this one only shows its status.
 	var gw *gateway.Server
 	if !gateway.Running() {
@@ -72,16 +72,16 @@ func Run(version string, showMain bool) error {
 			}
 		}()
 	}
-	// DIAL_THEME=light|dark forces the palette; handy for screenshots.
+	// MAGPIE_THEME=light|dark forces the palette; handy for screenshots.
 	theme := ""
-	if t := os.Getenv("DIAL_THEME"); t != "" {
+	if t := os.Getenv("MAGPIE_THEME"); t != "" {
 		theme = "&theme=" + t
 	}
 	Version = version
 	h := &host{query: theme}
 	h.app = application.New(application.Options{
-		Name:        "dial",
-		Description: "one dial for every coding agent's model",
+		Name:        "magpie",
+		Description: "one place to pick every coding agent's model",
 		Icon:        appIcon,
 		Assets:      application.AssetOptions{Handler: Handler(h, gw)},
 		Mac:         application.MacOptions{ActivationPolicy: application.ActivationPolicyAccessory},
@@ -90,7 +90,7 @@ func Run(version string, showMain bool) error {
 
 	h.panel = h.app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Name:            "panel",
-		Title:           "dial",
+		Title:           "magpie",
 		URL:             "/?mode=panel" + theme,
 		Width:           panelWidth,
 		Height:          520,
@@ -110,7 +110,7 @@ func Run(version string, showMain bool) error {
 
 	h.main = h.app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Name:      "main",
-		Title:     "dial",
+		Title:     "magpie",
 		URL:       "/?" + theme,
 		Width:     660,
 		Height:    600,
@@ -129,13 +129,13 @@ func Run(version string, showMain bool) error {
 	})
 
 	menu := h.app.NewMenu()
-	menu.Add("Open dial").OnClick(func(*application.Context) { h.ShowMain("") })
+	menu.Add("Open magpie").OnClick(func(*application.Context) { h.ShowMain("") })
 	menu.AddSeparator()
 	menu.Add("Version " + version).SetEnabled(false)
-	menu.Add("Quit dial").OnClick(func(*application.Context) { h.app.Quit() })
+	menu.Add("Quit magpie").OnClick(func(*application.Context) { h.app.Quit() })
 
 	h.tray = h.app.SystemTray.New()
-	h.tray.SetTooltip("dial")
+	h.tray.SetTooltip("magpie")
 	if runtime.GOOS == "darwin" {
 		h.tray.SetTemplateIcon(trayIcon)
 	} else {

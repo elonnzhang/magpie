@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/yetone/dial/internal/catalog"
+	"github.com/yetone/magpie/internal/catalog"
 )
 
 func errorf(format string, a ...any) error { return fmt.Errorf(format, a...) }
@@ -59,7 +59,7 @@ func (p Provider) Fetch(ctx context.Context) ([]catalog.Model, error) {
 	return nil, lastErr
 }
 
-// Exposed lists the models dial offers to agents for this provider: the
+// Exposed lists the models magpie offers to agents for this provider: the
 // user's picks; else the preset's; else everything, when that is few.
 func (p Provider) Exposed() []catalog.Model {
 	avail := p.Available()
@@ -111,7 +111,7 @@ func (p Provider) Chosen(id string) bool {
 	return false
 }
 
-// ---- the dial catalog ------------------------------------------------------
+// ---- the magpie catalog ------------------------------------------------------
 //
 // Agents see one flat list of models across every provider, each spelled
 // "provider/model" so nothing ever clashes. The bare model id works too
@@ -119,8 +119,8 @@ func (p Provider) Chosen(id string) bool {
 
 // Entry is one model as the agents see it.
 type Entry struct {
-	ID       string   `json:"id"`    // what the agent sends dial
-	Model    string   `json:"model"` // what dial sends the vendor
+	ID       string   `json:"id"`    // what the agent sends magpie
+	Model    string   `json:"model"` // what magpie sends the vendor
 	Name     string   `json:"name"`
 	Efforts  []string `json:"efforts,omitempty"`
 	Provider Provider `json:"-"`

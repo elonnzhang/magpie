@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yetone/dial/internal/provider"
+	"github.com/yetone/magpie/internal/provider"
 )
 
 // fake is an upstream that records what it got and replies with a script.
@@ -54,7 +54,7 @@ func sse(lines ...string) string {
 	return b.String()
 }
 
-// setup points dial's provider file at a temp dir and adds one provider
+// setup points magpie's provider file at a temp dir and adds one provider
 // speaking only the given protocol, backed by the fake.
 func setup(t *testing.T, proto provider.Protocol, f *fake) *httptest.Server {
 	t.Helper()

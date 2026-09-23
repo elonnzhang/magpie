@@ -3,9 +3,9 @@ package gui
 import (
 	"net/http"
 
-	"github.com/yetone/dial/internal/agent"
-	"github.com/yetone/dial/internal/provider"
-	"github.com/yetone/dial/internal/usage"
+	"github.com/yetone/magpie/internal/agent"
+	"github.com/yetone/magpie/internal/provider"
+	"github.com/yetone/magpie/internal/usage"
 )
 
 // usageGroup is a usage.Group with what the UI needs to draw it.

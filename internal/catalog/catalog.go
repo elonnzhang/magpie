@@ -1,5 +1,5 @@
 // Package catalog knows which models exist. It reads the models.dev catalog
-// (from dial's own cache or OpenCode's), Codex's model cache, and falls back
+// (from magpie's own cache or OpenCode's), Codex's model cache, and falls back
 // to a small built-in list so the picker is never empty.
 package catalog
 
@@ -70,13 +70,13 @@ var (
 	mdev map[string]mdProvider
 )
 
-// CachePath is where `dial sync` stores the models.dev catalog.
+// CachePath is where `magpie sync` stores the models.dev catalog.
 func CachePath() string {
 	if x := os.Getenv("XDG_CACHE_HOME"); x != "" {
-		return filepath.Join(x, "dial", "models.json")
+		return filepath.Join(x, "magpie", "models.json")
 	}
 	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".cache", "dial", "models.json")
+	return filepath.Join(home, ".cache", "magpie", "models.json")
 }
 
 func opencodeCache() string {
@@ -123,7 +123,7 @@ func Sync(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	req.Header.Set("User-Agent", "dial")
+	req.Header.Set("User-Agent", "magpie")
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return err
