@@ -5,6 +5,8 @@
 //   /api/latest            {version, notes, url, published, assets: {name: {url, size, sha256}}}
 //   /download              the Apple Silicon dmg
 //   /download/mac-arm64    the same;  /download/mac-intel  the Intel dmg
+//   /download/windows      the Windows app (x64);  /download/windows-arm64
+//   /download/linux        the Linux app (x86-64); /download/linux-arm64
 //   /download/<file>       any file of the newest release, by name
 //
 // Everything else is the static site in public/.
@@ -16,6 +18,12 @@ const SHORT = {
   "mac-arm64": "magpie-darwin-arm64.dmg",
   "mac-intel": "magpie-darwin-amd64.dmg",
   "mac-amd64": "magpie-darwin-amd64.dmg",
+  windows: "magpie-windows-amd64.exe",
+  "windows-amd64": "magpie-windows-amd64.exe",
+  "windows-arm64": "magpie-windows-arm64.exe",
+  linux: "magpie-linux-amd64",
+  "linux-amd64": "magpie-linux-amd64",
+  "linux-arm64": "magpie-linux-arm64",
 };
 
 export default {

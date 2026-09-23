@@ -170,6 +170,15 @@ pre .c { color: var(--ink3); }
 .final { text-align: center; padding: 120px 0 100px; }
 .final img { width: 88px; height: 88px; margin-bottom: 18px; }
 .final .cta { justify-content: center; }
+.btn .os-windows, .btn .os-linux { display: none; }
+html[data-os="windows"] .btn .os-mac, html[data-os="linux"] .btn .os-mac { display: none; }
+html[data-os="windows"] .btn .os-windows, html[data-os="linux"] .btn .os-linux { display: block; }
+.plats { display: flex; justify-content: center; flex-wrap: wrap; gap: 12px; margin-top: 40px; scroll-margin-top: 90px; }
+.plats > div { display: grid; grid-template-columns: auto auto; gap: 4px 14px; align-items: baseline; text-align: left; padding: 14px 18px; flex: 0 1 280px; min-width: 250px; border: 1px solid var(--line); border-radius: 12px; background: var(--card); font-size: 13.5px; }
+.plats b { font-weight: 600; font-size: 14.5px; color: var(--ink); }
+.plats span { color: var(--ink3); font-size: 12.5px; justify-self: end; }
+.plats a { color: var(--ink2); text-decoration: none; }
+.plats a:hover { color: var(--ink); text-decoration: underline; }
 footer { border-top: 1px solid var(--line); padding: 28px 0 40px; font-size: 13.5px; color: var(--ink3); }
 footer .wrap { display: flex; flex-wrap: wrap; gap: 12px 24px; align-items: center; }
 footer .links { margin-left: auto; display: flex; gap: 20px; }
@@ -257,12 +266,14 @@ footer a:hover { color: var(--ink); }
       </div>
       <div class="cta">
         <a class="btn dl" href="/download">
-          <svg viewBox="0 0 16 16" fill="currentColor"><path d="M11.2 8.5c0-1.6 1.3-2.4 1.4-2.4-.8-1.1-2-1.3-2.4-1.3-1-.1-2 .6-2.5.6s-1.3-.6-2.2-.6C4.4 4.8 3.3 5.5 2.7 6.6c-1.2 2.1-.3 5.2.9 6.9.6.8 1.2 1.7 2.1 1.7.8 0 1.2-.5 2.2-.5s1.3.5 2.2.5 1.5-.9 2-1.7c.6-.9.9-1.8.9-1.9 0 0-1.8-.7-1.8-3.1ZM9.6 3.6c.5-.6.8-1.3.7-2.1-.7 0-1.5.5-2 1-.4.5-.8 1.3-.7 2.1.8.1 1.5-.4 2-1Z"/></svg>
+          <svg class="os-mac" viewBox="0 0 16 16" fill="currentColor"><path d="M11.2 8.5c0-1.6 1.3-2.4 1.4-2.4-.8-1.1-2-1.3-2.4-1.3-1-.1-2 .6-2.5.6s-1.3-.6-2.2-.6C4.4 4.8 3.3 5.5 2.7 6.6c-1.2 2.1-.3 5.2.9 6.9.6.8 1.2 1.7 2.1 1.7.8 0 1.2-.5 2.2-.5s1.3.5 2.2.5 1.5-.9 2-1.7c.6-.9.9-1.8.9-1.9 0 0-1.8-.7-1.8-3.1ZM9.6 3.6c.5-.6.8-1.3.7-2.1-.7 0-1.5.5-2 1-.4.5-.8 1.3-.7 2.1.8.1 1.5-.4 2-1Z"/></svg>
+          <svg class="os-windows" viewBox="0 0 16 16" fill="currentColor"><path d="M1 2.3 6.7 1.5v5.6H1V2.3Zm6.4-.9L15 .3v6.8H7.4V1.4ZM1 7.9h5.7v5.6L1 12.7V7.9Zm6.4 0H15v6.8l-7.6-1.1V7.9Z"/></svg>
+          <svg class="os-linux" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v8.5M4.5 7 8 10.5 11.5 7M2.5 13.5h11"/></svg>
           <span class="dl-label">Download for Mac</span>
         </a>
         <a class="btn ghost" href="#cli">Install from terminal</a>
       </div>
-      <div class="meta"><span class="ver">Free</span> · <a href="https://github.com/yetone/magpie">Open source</a> · macOS 11+ · <a class="alt" href="/download/mac-intel">Intel Mac</a> · <a href="#cli">Linux &amp; Windows CLI</a></div>
+      <div class="meta"><span class="ver">Free</span> · <a href="https://github.com/yetone/magpie">Open source</a> · <span class="os-note">macOS 11+ · <a class="alt" href="/download/mac-intel">Intel Mac</a></span> · <a href="#get">Windows &amp; Linux</a></div>
     </div>
     <div class="shot">
       <img loading="lazy" class="pick for-light" src="/img/picker-light.png" width="440" height="555" alt="Codex's model picker in magpie, listing DeepSeek, Kimi and GLM models">
@@ -304,7 +315,7 @@ footer a:hover { color: var(--ink); }
   <section id="how">
     <p class="eyebrow">How it works</p>
     <h2>One gateway speaks every API.</h2>
-    <p class="sub">Codex only speaks OpenAI Responses. Claude Code only speaks Anthropic Messages. magpie runs a gateway on your Mac that speaks all of them and translates in both directions — streaming, tool calls and reasoning included — so any agent can use any vendor’s model.</p>
+    <p class="sub">Codex only speaks OpenAI Responses. Claude Code only speaks Anthropic Messages. magpie runs a gateway on your machine that speaks all of them and translates in both directions — streaming, tool calls and reasoning included — so any agent can use any vendor’s model.</p>
     <div class="flow">
       <div class="col">
         <h4>Your agents</h4>
@@ -383,20 +394,20 @@ footer a:hover { color: var(--ink); }
     <h2>Small, careful, and out of the way.</h2>
     <div class="grid" style="margin-top:32px">
       <div><h3>Surgical config edits</h3><p>Comments, ordering and indentation in <code>settings.json</code>, <code>config.toml</code> or <code>config.yaml</code> survive. Writes are atomic.</p></div>
-      <div><h3>Tiny, native, open</h3><p>About 11 MB, on the system webview. No Electron, no runtime. MIT-licensed, <a href="https://github.com/yetone/magpie">on GitHub</a>.</p></div>
+      <div><h3>Tiny, native, open</h3><p>Under 15 MB, on the system webview. No Electron, no runtime. MIT-licensed, <a href="https://github.com/yetone/magpie">on GitHub</a>.</p></div>
       <div><h3>No keys from your shell</h3><p>magpie never reads API keys from environment variables. What you add is what it uses.</p></div>
       <div><h3>Any gateway client</h3><p>Anything with a base-URL setting can use it: <code>OPENAI_BASE_URL</code>, <code>ANTHROPIC_BASE_URL</code>, <code>GOOGLE_GEMINI_BASE_URL</code>.</p></div>
       <div><h3>Usage, per agent</h3><p>Tokens, cache hits and cost for each agent and model that went through the gateway.</p></div>
-      <div><h3>Updates itself</h3><p>Signed and notarised. New versions download quietly and install when you restart.</p></div>
+      <div><h3>Updates itself</h3><p>New versions download quietly and install when you restart. Signed and notarised on the Mac.</p></div>
     </div>
   </section>
 
   <section id="cli">
     <p class="eyebrow">Terminal</p>
     <h2>Also a TUI and a CLI.</h2>
-    <p class="sub">The same app, from a terminal. On Linux, the installer puts the <code>magpie</code> command in <code>~/.local/bin</code>; on a Mac it installs the app too.</p>
+    <p class="sub">The same app, from a terminal. The installer puts the <code>magpie</code> command in <code>~/.local/bin</code> and the app where it belongs: <code>/Applications</code> on a Mac, your app menu on Linux.</p>
     <div class="install"><code id="cmd">curl -fsSL https://usemagpie.ai/install.sh | sh</code><button class="copy" data-copy="cmd">Copy</button></div>
-    <p class="meta" style="margin:12px 0 28px">Windows: download <code>magpie-cli-windows-amd64.exe</code> from the <a href="https://github.com/yetone/magpie-releases/releases/latest">latest release</a>, or build it from <a href="https://github.com/yetone/magpie">source</a>.</p>
+    <p class="meta" style="margin:12px 0 28px">On Windows, <code>magpie.exe</code> takes the same commands; <code>magpie-cli-windows-amd64.exe</code> from the <a href="https://github.com/yetone/magpie-releases/releases/latest">latest release</a> is the terminal-only build.</p>
 <pre><span class="c"># add providers</span>
 magpie provider add deepseek sk-…      <span class="c"># a preset needs only the key</span>
 magpie provider add moonshot sk-…
@@ -416,8 +427,13 @@ magpie tui                             <span class="c"># the whole app, in the t
   <div class="final">
     <img class="bird" src="/img/magpie.svg" alt="">
     <h2>Every agent. Every model.</h2>
-    <p class="sub" style="margin:0 auto 32px">Free, open source, native, about 11 MB.</p>
+    <p class="sub" style="margin:0 auto 32px">Free, open source, native. For macOS, Windows and Linux.</p>
     <div class="cta"><a class="btn dl" href="/download"><span class="dl-label">Download for Mac</span></a><a class="btn ghost" href="https://github.com/yetone/magpie"><svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg> View on GitHub</a></div>
+    <div class="plats" id="get">
+      <div><b>macOS</b><span>11 or later</span><a href="/download/mac-arm64">Apple Silicon</a><a href="/download/mac-intel">Intel</a></div>
+      <div><b>Windows</b><span>10 or later</span><a href="/download/windows-amd64">x64</a><a href="/download/windows-arm64">ARM</a></div>
+      <div><b>Linux</b><span>GTK 3 + WebKitGTK 4.1</span><a href="/download/linux-amd64">x86-64</a><a href="/download/linux-arm64">ARM64</a></div>
+    </div>
     <div class="meta"><span class="ver"></span></div>
   </div>
 </main>
@@ -454,10 +470,28 @@ magpie tui                             <span class="c"># the whole app, in the t
     } catch {}
   }));
 
+  // Windows and Linux get their own app; arm64 is guessed from the user
+  // agent and corrected by the browser when it can tell.
+  const ua = navigator.userAgent;
+  const os = /Windows/.test(ua) ? "windows" : /Linux|X11|CrOS/.test(ua) && !/Android/.test(ua) ? "linux" : "mac";
+  if (os !== "mac") {
+    document.documentElement.dataset.os = os;
+    const name = os === "windows" ? "Windows" : "Linux";
+    const arm = /aarch64|arm64|armv8/i.test(ua);
+    const dl = (a64) => "/download/" + os + (a64 ? "-arm64" : "-amd64");
+    document.querySelectorAll("a.dl").forEach((a) => (a.href = dl(arm)));
+    document.querySelectorAll(".dl-label").forEach((e) => (e.textContent = "Download for " + name));
+    document.querySelectorAll(".os-note").forEach((e) => (e.innerHTML = os === "windows" ? "Windows 10+" : "Needs WebKitGTK 4.1"));
+    document.querySelectorAll('.meta a[href="#get"]').forEach((a) => (a.textContent = "macOS & other builds"));
+    try { navigator.userAgentData?.getHighEntropyValues(["architecture"]).then((v) => {
+      if (v.architecture === "arm") document.querySelectorAll("a.dl").forEach((a) => (a.href = dl(true)));
+    }).catch(() => {}); } catch {}
+  }
+
   // Intel Macs get the Intel build; browsers that can tell say so, the rest
   // get Apple Silicon with the Intel link beside it.
   const setArch = (arch) => {
-    if (arch !== "x86") return;
+    if (arch !== "x86" || os !== "mac") return;
     document.querySelectorAll("a.dl").forEach((a) => (a.href = "/download/mac-intel"));
     document.querySelectorAll("a.alt").forEach((a) => { a.href = "/download/mac-arm64"; a.textContent = "Apple Silicon"; });
   };
