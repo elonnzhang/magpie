@@ -159,7 +159,7 @@ func startCursorSignIn(s *signInFlow) error {
 	if path == "" {
 		return errorf("install Cursor's CLI first: curl https://cursor.com/install -fsS | bash")
 	}
-	return runCLISignIn(s, "cursor-agent login", append(os.Environ(), "NO_OPEN_BROWSER=1"), func() (string, string, bool) {
+	return runCLISignIn(s, "cursor-agent login", append(os.Environ(), "NO_OPEN_BROWSER=1"), true, nil, func() (string, string, bool) {
 		forgetCursorStatus()
 		return askCursorIdentity()
 	}, path, "login")

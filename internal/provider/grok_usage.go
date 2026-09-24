@@ -7,42 +7,11 @@ package provider
 import (
 	"context"
 	"strings"
-	"sync"
 	"time"
 )
 
 // grokBase is the CLI's backend; a var so tests can point it elsewhere.
 var grokBase = "https://cli-chat-proxy.grok.com/v1"
-
-var grokUsageCache struct {
-	sync.Mutex
-	at time.Time
-	q  SubscriptionQuota
-}
-
-// grokLoginUsage is the Grok account's allowance, by user, as LoginUsage
-// answers it; the CLI keeps one account.
-func grokLoginUsage(ctx context.Context) map[string]SubscriptionQuota {
-	c, ok := readGrokCredential(GrokHome())
-	if !ok {
-		return map[string]SubscriptionQuota{}
-	}
-	u := &grokUsageCache
-	u.Lock()
-	q, fresh := u.q, time.Since(u.at) < time.Minute
-	u.Unlock()
-	if !fresh {
-		prev := q
-		q = grokSubscriptionUsage(ctx)
-		if q.Error != "" && prev.Provider != "" {
-			q = prev // a hiccup keeps what was known
-		}
-		u.Lock()
-		u.at, u.q = time.Now(), q
-		u.Unlock()
-	}
-	return map[string]SubscriptionQuota{c.Email: q}
-}
 
 func grokSubscriptionUsage(ctx context.Context) SubscriptionQuota {
 	q := SubscriptionQuota{Provider: "grok", Name: "Grok", Icon: "xai", Windows: []QuotaWindow{}}

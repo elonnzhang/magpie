@@ -41,6 +41,10 @@ type Account struct {
 	// a non-streaming request instead of relaying it.
 	Stream bool `json:"-"`
 
+	// Home is where a Grok account keeps its sign-in: the CLI's own home,
+	// or one of magpie's for a further account (see grok_accounts.go).
+	Home string `json:"-"`
+
 	// token is set on a saved sign-in in use beside the agent's own (see
 	// logins_on.go): the access token to run the agent's binary with.
 	token func(ctx context.Context) (string, error)

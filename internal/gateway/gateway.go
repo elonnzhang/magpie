@@ -377,6 +377,9 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request, from provider.Pro
 		}
 		hw.release()
 		model = c.model
+		if call.Status < 400 {
+			served(c.rest, call.Usage.Input+call.Usage.Output+call.Usage.CacheRead+call.Usage.CacheWrite)
+		}
 		break
 	}
 	if len(skipped) > 0 {
@@ -414,7 +417,7 @@ func (s *Server) attempt(w http.ResponseWriter, r *http.Request, from provider.P
 	if p.Account != nil && p.Account.Agent == "grok" {
 		call.To = from
 		start := func(ctx context.Context, req *Request) (*subscriptionRun, <-chan Event, error) {
-			return s.subscription.startGrok(ctx, req, model)
+			return s.subscription.startGrok(ctx, req, model, p.Account.Home)
 		}
 		return s.serveSubscription(w, r, from, "Grok", model, body, &call.Usage, start)
 	}

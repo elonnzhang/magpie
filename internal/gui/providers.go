@@ -46,6 +46,7 @@ type providerJSON struct {
 	Ready     bool               `json:"ready"`
 	Chosen    []string           `json:"chosen"`   // the user's explicit picks, if any
 	Fallback  []string           `json:"fallback"` // where requests go when this one can't take them
+	Routing   string             `json:"routing"`  // how requests spread over its keys or accounts
 	Models    []modelJSON        `json:"models"`   // everything the vendor lists, exposed ones flagged
 	Exposed   int                `json:"exposed"`  // how many reach the agents
 	Fetched   string             `json:"fetched"`  // "3h ago" when the list came from the vendor
@@ -119,7 +120,7 @@ func providerInfo(p provider.Provider, agents []*agent.Agent) providerJSON {
 		Catalog: p.Catalog, Website: p.Website, KeysURL: p.KeysURL,
 		Headers: p.Headers,
 		Ready:   p.Ready(), Chosen: p.Models, Models: []modelJSON{}, Agents: []providerAgent{},
-		Fallback: p.Fallback,
+		Fallback: p.Fallback, Routing: p.Routing,
 	}
 	if out.Fallback == nil {
 		out.Fallback = []string{}
@@ -278,6 +279,7 @@ func providerRoutes(mux *http.ServeMux, w Windows, gw *gateway.Server) {
 			if old != nil {
 				// the other keys are kept apart, in the Accounts list
 				in.Keys = old.Keys
+				in.Routing = old.Routing // set on its own, with route
 				if in.Key == old.Key {
 					in.KeyName, in.KeyProtocol = old.KeyName, old.KeyProtocol
 				}
@@ -305,6 +307,11 @@ func providerRoutes(mux *http.ServeMux, w Windows, gw *gateway.Server) {
 			}
 			writeJSON(rw, map[string]string{"key": p.Key})
 			return
+		case "route":
+			if err := provider.SetRouting(in.ID, in.Routing); err != nil {
+				fail(rw, err)
+				return
+			}
 		case "delete":
 			if err := provider.Delete(in.ID); err != nil {
 				fail(rw, err)

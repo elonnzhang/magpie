@@ -45,6 +45,11 @@ type savedLogin struct {
 	// Profile is Claude Code's oauthAccount from .claude.json, which says
 	// whose credentials those are.
 	Profile json.RawMessage `json:"profile,omitempty"`
+	// Home is where a Grok account magpie signed in keeps its sign-in; the
+	// Grok CLI's own account has none (see grok_accounts.go). First puts a
+	// Grok account ahead of the CLI's own.
+	Home  string `json:"home,omitempty"`
+	First bool   `json:"first,omitempty"`
 }
 
 var (
@@ -227,6 +232,13 @@ func rememberLogins(force bool) {
 // Logins lists the remembered accounts of an agent ("" for every one),
 // the active one flagged.
 func Logins(agent string) []Login {
+	var grok []Login
+	switch agent {
+	case "grok":
+		return grokLoginList()
+	case "":
+		grok = grokLoginList()
+	}
 	rememberLogins(false)
 	loginsMu.Lock()
 	defer loginsMu.Unlock()
@@ -238,20 +250,23 @@ func Logins(agent string) []Login {
 	}
 	var out []Login
 	for _, l := range readLogins() {
-		if agent != "" && l.Agent != agent {
+		if (agent != "" && l.Agent != agent) || l.Agent == "grok" {
 			continue
 		}
 		using := strings.EqualFold(active[l.Agent], l.User)
 		out = append(out, Login{Agent: l.Agent, User: l.User, Plan: l.Plan, Seen: l.Seen,
 			Active: using, On: using || l.On})
 	}
-	return out
+	return append(out, grok...)
 }
 
 // SwitchLogin signs an agent in to a remembered account. Sessions of the
 // agent that are already running keep the account they started with until
 // they restart.
 func SwitchLogin(agent, user string) error {
+	if agent == "grok" {
+		return switchGrokLogin(user)
+	}
 	loginsMu.Lock()
 	defer loginsMu.Unlock()
 	ls := readLogins()
@@ -347,6 +362,9 @@ func putClaudeLogin(l savedLogin) error {
 // ForgetLogin drops a remembered account. The one an agent is signed in to
 // now can't be forgotten; it would only be remembered again.
 func ForgetLogin(agent, user string) error {
+	if agent == "grok" {
+		return forgetGrokLogin(user)
+	}
 	loginsMu.Lock()
 	defer loginsMu.Unlock()
 	if live, ok := liveLogin(agent); ok && strings.EqualFold(live.User, user) {

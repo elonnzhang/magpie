@@ -59,6 +59,12 @@ type Provider struct {
 	// tried in order.
 	Fallback []string `json:"fallback,omitempty"`
 
+	// Routing is how requests spread over the keys or accounts it has on:
+	// "" in order, the next one only when the one before can't take it;
+	// "rotate" each in turn; "usage" the least used first. A failing one
+	// is passed over the same way whichever it is.
+	Routing string `json:"routing,omitempty"`
+
 	// Headers are extra HTTP request headers sent to the vendor, exactly as
 	// the user typed them. They ride on every request magpie makes to a plain
 	// key+URL provider — forwarded calls, connectivity tests, and model-list
@@ -145,7 +151,7 @@ func All() []Provider {
 		if _, taken := find(out, a.ID); taken || picks[a.ID].Hidden {
 			continue
 		}
-		a.Models, a.Fallback = picks[a.ID].Models, picks[a.ID].Fallback
+		a.Models, a.Fallback, a.Routing = picks[a.ID].Models, picks[a.ID].Fallback, picks[a.ID].Routing
 		out = append(out, a)
 	}
 	return out
@@ -210,7 +216,7 @@ func Save(p Provider) error {
 	if a, ok := find(Accounts(), p.ID); ok {
 		// an account keeps only the user's model picks; the rest is the
 		// agent's own sign-in. Saving it again brings a removed one back.
-		p = Provider{ID: a.ID, Models: p.Models, Fallback: p.Fallback}
+		p = Provider{ID: a.ID, Models: p.Models, Fallback: p.Fallback, Routing: p.Routing}
 	} else {
 		if p.Chat == "" && p.Responses == "" && p.Anthropic == "" {
 			return errors.New("a provider needs a base URL")
@@ -282,6 +288,9 @@ func normalize(p Provider) Provider {
 	}
 	p.Models = cleanList(p.Models)
 	p.Fallback = cleanList(p.Fallback)
+	if p.Routing != Rotate && p.Routing != LeastUsed {
+		p.Routing = ""
+	}
 	p.Catalog = strings.Join(p.Catalogs(), ", ")
 	p.Headers = cleanHeaders(p.Headers)
 	if p.Preset != "" {

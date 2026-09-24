@@ -15,6 +15,8 @@ package gateway
 import (
 	"bufio"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -31,7 +33,9 @@ import (
 	"github.com/yetone/magpie/internal/provider"
 )
 
-func (b *subscriptionBridge) startGrok(ctx context.Context, req *Request, model string) (*subscriptionRun, <-chan Event, error) {
+// startGrok runs grok for the account signed in in userHome, the CLI's own
+// when it is "".
+func (b *subscriptionBridge) startGrok(ctx context.Context, req *Request, model, userHome string) (*subscriptionRun, <-chan Event, error) {
 	binary := provider.GrokExecutable()
 	if binary == "" {
 		return nil, nil, errors.New("the Grok CLI is not installed; install it with `curl -fsSL https://x.ai/cli/install.sh | bash` and run `grok login`")
@@ -40,8 +44,11 @@ func (b *subscriptionBridge) startGrok(ctx context.Context, req *Request, model 
 	if err != nil {
 		return nil, nil, err
 	}
-	auth := grokAuthCommand(exe, provider.GrokHome(), binary)
-	home, err := grokHome(exe, binary, auth)
+	if userHome == "" {
+		userHome = provider.GrokHome()
+	}
+	auth := grokAuthCommand(exe, userHome, binary)
+	home, err := grokHome(exe, binary, auth, userHome)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -127,8 +134,9 @@ func shellQuote(s string) string {
 var grokHomeMu sync.Mutex
 
 // grokHome is the home grok runs in: magpie's, kept between runs so its
-// caches are, with a config of magpie's and a sign-in through auth.
-func grokHome(exe, binary, auth string) (string, error) {
+// caches are, with a config of magpie's and a sign-in through auth. Each
+// account has its own, so none signs in again for another.
+func grokHome(exe, binary, auth, userHome string) (string, error) {
 	grokHomeMu.Lock()
 	defer grokHomeMu.Unlock()
 	base, err := os.UserCacheDir()
@@ -136,6 +144,10 @@ func grokHome(exe, binary, auth string) (string, error) {
 		base = os.TempDir()
 	}
 	home := filepath.Join(base, "magpie", "grok-home")
+	if userHome != provider.GrokHome() {
+		sum := sha256.Sum256([]byte(userHome))
+		home += "-" + hex.EncodeToString(sum[:6])
+	}
 	dir := filepath.Join(home, ".grok")
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", err
@@ -149,7 +161,7 @@ func grokHome(exe, binary, auth string) (string, error) {
 	}
 	// grok signs in to an external provider once; the account it keeps
 	// must be the one the user's grok is signed in to
-	user, ok := provider.GrokUser(provider.GrokHome())
+	user, ok := provider.GrokUser(userHome)
 	if !ok {
 		return "", errors.New("Grok is not signed in; run `grok login`")
 	}

@@ -1494,7 +1494,8 @@ function renderEditor(p, presetID) {
     // the sign-in belongs to the agent; magpie only borrows it
     const a = p.account;
     if (subOf(a.agent)) {
-      ed.append(...field(t("Accounts"), renderAccounts(a), subOf(a.agent).single ? t("{agent} keeps one account; the gateway runs it for every request. Signing in to another replaces it.", { agent: a.agentName }) : t("{agent} signs in to the first. Tick more and the gateway moves on to the next when the one before it is out of quota. Sessions already running keep theirs until restarted.", { agent: a.agentName })));
+      ed.append(...field(t("Accounts"), renderAccounts(a), p.routing ? t("Tick every account to use; Routing says how requests spread over them.") : subOf(a.agent).single ? t("{agent} keeps one account; the gateway runs it for every request. Signing in to another replaces it.", { agent: a.agentName }) : subOf(a.agent).own ? t("The gateway uses the first. Tick more and it moves on to the next when the one before it is out of quota. {agent} itself stays signed in as it is.", { agent: a.agentName }) : t("{agent} signs in to the first. Tick more and the gateway moves on to the next when the one before it is out of quota. Sessions already running keep theirs until restarted.", { agent: a.agentName })));
+      if ((a.logins || []).filter((l) => l.active || l.on).length > 1) ed.append(...renderRouting(p));
     } else {
       const acct = el("div", "acct");
       acct.append(icon(a.agentIcon), el("span", "n", a.user), el("span", "plan", accountPlan(a)));
@@ -1541,7 +1542,8 @@ function renderEditor(p, presetID) {
   if (keysUrl) { const b = el("button", "link", t("Get a key ↗")); b.onclick = () => api("open", { url: keysUrl }); side.append(b); }
   const keyWrap = el("div", "pair");
   keyWrap.append(key, side);
-  if (p?.keyList?.length) ed.append(...field(t("Accounts"), renderKeyAccounts(p), t("Tick every key to use. Requests go to the first; when it runs out of quota or hits a rate limit, the next ticked key takes over.")));
+  if (p?.keyList?.length) ed.append(...field(t("Accounts"), renderKeyAccounts(p), p.routing ? t("Tick every key to use; Routing says how requests spread over them.") : t("Tick every key to use. Requests go to the first; when it runs out of quota or hits a rate limit, the next ticked key takes over.")));
+  if (p?.keyList?.filter((k) => k.on).length > 1) ed.append(...renderRouting(p));
   else ed.append(...field(t("API key"), keyWrap, isNew ? t("Kept in ~/.config/magpie/providers.json, readable by you alone. Nothing is read from your shell.") : ""));
 
   // A user-defined provider can have its own picture; presets keep theirs.
@@ -1987,6 +1989,22 @@ function renderModels(p) {
   return box;
 }
 
+// renderRouting: how the gateway spreads requests over the keys or
+// accounts a provider has on. It takes effect at once, like ticking one.
+const ROUTINGS = [
+  ["", "In order", "Requests go to the first; the next takes over when the one before runs out of quota, hits a rate limit or fails."],
+  ["rotate", "In turn", "Each request goes to the next one, spreading the load evenly; one that fails is passed over for a minute."],
+  ["usage", "Least used first", "Each request goes to the one used least: a subscription by the share of its allowance used, a key by the tokens it served in the last hours."],
+];
+function renderRouting(p) {
+  const cur = ROUTINGS.find(([id]) => id === (p.routing || "")) || ROUTINGS[0];
+  const pick = segs(ROUTINGS.map(([id, name]) => [id, t(name)]), cur[0], (routing) => {
+    const r = ROUTINGS.find(([id]) => id === routing);
+    accountAction("provider/route", { id: p.id, routing }, t("{name}: {routing}", { name: p.name, routing: t(r[1]) }));
+  });
+  return field(t("Routing"), pick, t(cur[2]));
+}
+
 // renderFallback: where requests go when this provider can't take them —
 // out of quota, rate limited, overloaded or down — tried top to bottom.
 function renderFallback(p) {
@@ -2061,7 +2079,7 @@ const SUBS = [
   // cursor-agent keeps one account; signing in again replaces it
   { agent: "cursor", name: "Cursor", icon: "cursor", plans: "Pro · Ultra · Teams", single: true },
   // so does the Grok CLI
-  { agent: "grok", name: "Grok", icon: "xai", plans: "SuperGrok · X Premium+", single: true },
+  { agent: "grok", name: "Grok", icon: "xai", plans: "SuperGrok · X Premium+", own: true },
 ];
 const subOf = (agent) => SUBS.find((x) => x.agent === agent);
 let signing = null; // the sign-in under way: { id, agent, url, state, error }
@@ -2164,7 +2182,7 @@ function renderAccounts(a) {
     const dot = el("button", "dot tick");
     if (on) dot.append(svg(CHECK, 10, 2.2));
     if (l.active) {
-      dot.title = t("{agent} is signed in to this account", { agent: a.agentName });
+      dot.title = sub?.own ? t("The gateway uses this account first") : t("{agent} is signed in to this account", { agent: a.agentName });
       dot.classList.add("fixed");
     } else {
       dot.title = on ? t("Stop using this account") : t("Use this account too");
@@ -2178,8 +2196,8 @@ function renderAccounts(a) {
       forget.title = t("magpie forgets this account's sign-in; the account itself is untouched");
       forget.onclick = () => accountAction("login/forget", { agent: a.agent, user: l.user }, t("{user} removed", { user: l.user }));
       const use = el("button", "text", on ? t("Make first") : t("Use"));
-      use.title = t("Sign {agent} in to this account", { agent: a.agentName });
-      use.onclick = () => { use.classList.add("busy"); accountAction("login/switch", { agent: a.agent, user: l.user }, t("{agent} is now signed in as {user}", { agent: a.agentName, user: l.user })); };
+      use.title = sub?.own ? t("The gateway uses this account first") : t("Sign {agent} in to this account", { agent: a.agentName });
+      use.onclick = () => { use.classList.add("busy"); accountAction("login/switch", { agent: a.agent, user: l.user }, sub?.own ? t("The gateway now uses {user} first", { user: l.user }) : t("{agent} is now signed in as {user}", { agent: a.agentName, user: l.user })); };
       row.append(forget, use);
     }
     row.append(accountQuota(quota, l.user));

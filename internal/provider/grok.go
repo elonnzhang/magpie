@@ -92,14 +92,18 @@ func grokAccount() (Provider, bool) {
 	if GrokExecutable() == "" {
 		return Provider{}, false
 	}
-	c, ok := readGrokCredential(GrokHome())
-	if !ok {
+	ls := grokLogins()
+	if len(ls) == 0 {
 		return Provider{}, false
 	}
-	acct := &Account{Agent: "grok", User: c.Email}
+	home := ls[0].Home
+	acct := &Account{Agent: "grok", User: ls[0].User, Plan: ls[0].Plan, Home: home}
+	if home == GrokHome() {
+		acct.Home = "" // the CLI's own, wherever it is
+	}
 	acct.models = func() []catalog.Model { return []catalog.Model{{ID: "grok-4.7", Name: "grok-4.7"}} }
 	acct.fetch = func(ctx context.Context) ([]catalog.Model, error) {
-		ms, err := grokModels(ctx)
+		ms, err := grokModels(ctx, home)
 		if err != nil {
 			return nil, err
 		}
@@ -110,8 +114,9 @@ func grokAccount() (Provider, bool) {
 
 var grokModelL = regexp.MustCompile(`^[*-]\s+([A-Za-z0-9][\w.:-]*)`)
 
-// grokModels lists what the account can use, as `grok models` prints it.
-func grokModels(ctx context.Context) ([]catalog.Model, error) {
+// grokModels lists what the account signed in in home can use, as `grok
+// models` prints it.
+func grokModels(ctx context.Context, home string) ([]catalog.Model, error) {
 	path := GrokExecutable()
 	if path == "" {
 		return nil, errorf("the Grok CLI is not installed")
@@ -120,6 +125,7 @@ func grokModels(ctx context.Context) ([]catalog.Model, error) {
 	defer cancel()
 	cmd := exec.CommandContext(ctx, path, "models")
 	cmd.Dir, _ = os.UserHomeDir()
+	cmd.Env = grokOwnEnv(os.Environ(), home)
 	out, err := cmd.Output()
 	if err != nil {
 		return nil, errorf("grok models: %v", err)
@@ -199,22 +205,40 @@ func grokOwnEnv(env []string, home string) []string {
 }
 
 // startGrokSignIn runs `grok login` with its device code, hands its link to
-// the window, and finishes when the CLI says the account is in.
+// the window, and finishes when the CLI says the account is in. With the
+// CLI signed in already, a further account signs in in a home of magpie's,
+// so the CLI's own sign-in stays as it is.
 func startGrokSignIn(s *signInFlow) error {
 	path := GrokExecutable()
 	if path == "" {
 		return errorf("install the Grok CLI first: curl -fsSL https://x.ai/cli/install.sh | bash")
 	}
-	return runCLISignIn(s, "grok login", nil, func() (string, string, bool) {
-		c, ok := readGrokCredential(GrokHome())
-		return c.Email, "", ok
+	if _, ok := readGrokCredential(GrokHome()); !ok {
+		return runCLISignIn(s, "grok login", nil, true, nil, func() (string, string, bool) {
+			c, ok := readGrokCredential(GrokHome())
+			return c.Email, "", ok
+		}, path, "login", "--device-auth")
+	}
+	home, err := newGrokHome()
+	if err != nil {
+		return err
+	}
+	err = runCLISignIn(s, "grok login", grokOwnEnv(os.Environ(), home), false, func() { removeGrokHome(home) }, func() (string, string, bool) {
+		user, err := addGrokLogin(home)
+		return user, "", err == nil
 	}, path, "login", "--device-auth")
+	if err != nil {
+		removeGrokHome(home)
+	}
+	return err
 }
 
 // runCLISignIn runs an agent's own login command, hands the first link it
 // prints to the window, and finishes when the command does and identity
-// says who is signed in.
-func runCLISignIn(s *signInFlow, what string, env []string, identity func() (user, plan string, ok bool), path string, args ...string) error {
+// says who is signed in. using says whether the agent now uses that
+// account; failed, when there is one, undoes what a sign-in that did not
+// finish left behind.
+func runCLISignIn(s *signInFlow, what string, env []string, using bool, failed func(), identity func() (user, plan string, ok bool), path string, args ...string) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	cmd := exec.CommandContext(ctx, path, args...)
 	cmd.Dir, _ = os.UserHomeDir()
@@ -253,9 +277,12 @@ func runCLISignIn(s *signInFlow, what string, env []string, identity func() (use
 		forgetAccountCaches()
 		if err == nil {
 			if user, plan, ok := identity(); ok {
-				s.finish(SignInState{State: "done", User: user, Plan: plan, Using: true})
+				s.finish(SignInState{State: "done", User: user, Plan: plan, Using: using})
 				return
 			}
+		}
+		if failed != nil {
+			failed()
 		}
 		msg := what + " didn't finish"
 		if n := len(tail); n > 0 {

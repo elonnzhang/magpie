@@ -122,10 +122,11 @@ func modelFamily(model string) provider.Protocol {
 	return ""
 }
 
-// candidates is the primary and then its fallbacks, those resting after a
-// recent failure moved behind the rest.
+// candidates is the primary and then its fallbacks, each provider's keys
+// or accounts as its routing orders them, those resting after a recent
+// failure moved behind the rest.
 func (s *Server) candidates(p provider.Provider, model string, from provider.Protocol) []candidate {
-	out := perKey(p, model, from)
+	out := route(p, perKey(p, model, from), model, from)
 	seen := map[string]bool{p.ID + "/" + model: true}
 	for _, id := range p.Fallback {
 		fp, fm, ok := provider.Resolve(id)
@@ -133,7 +134,7 @@ func (s *Server) candidates(p provider.Provider, model string, from provider.Pro
 			continue
 		}
 		seen[fp.ID+"/"+fm] = true
-		out = append(out, perKey(fp, fm, from)...)
+		out = append(out, route(fp, perKey(fp, fm, from), fm, from)...)
 	}
 	if len(out) == 1 {
 		return out
