@@ -401,20 +401,47 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request, from provider.Pro
 	}
 	tr := s.trace.begin(Route{Time: start, Agent: call.Agent, Model: call.Model, Provider: p.ID, Group: group, Affinity: aff, Order: pl.order, Left: pl.left})
 	var skipped []string
-	for i, c := range cands {
-		last := i == len(cands)-1 || r.Context().Err() != nil
-		hw := newHoldWriter(w, !last)
+	again := 0 // times the last one left has been tried again
+	for i := 0; i < len(cands); i++ {
+		c := cands[i]
+		last := i == len(cands)-1
+		hw := newHoldWriter(w, !last || again < lastRetries)
 		call.Provider, call.To, call.Usage = c.p.ID, "", Usage{}
 		began := time.Now()
 		s.trace.update(tr, func(t *Route) { t.Tries = append(t.Tries, Try{ID: c.rest, Start: began}) })
 		call.Status, call.Error = s.attempt(hw, r, from, c.p, c.model, body, &call)
+		if hw.failure != 0 { // the stream failed before any of it was sent
+			call.Status, call.Error = hw.failure, c.p.Name+": "+hw.failMsg
+		}
 		try := Try{ID: c.rest, Start: began, Done: true, Status: call.Status, Millis: time.Since(began).Milliseconds(), Error: call.Error}
+		if r.Context().Err() != nil {
+			// the agent went away: nobody failed, and nobody else is asked
+			call.Status, call.Error = 499, "the agent canceled the request"
+			try.Status, try.Error, try.Fail = call.Status, call.Error, failCanceled
+			s.trace.update(tr, func(t *Route) { t.Tries[len(t.Tries)-1] = try })
+			break
+		}
 		if !last && hw.failed() {
-			rest := s.restAfter(c, hw.status, hw.header, hw.held.Bytes())
+			rest := s.restAfter(c, hw.code(), hw.header, hw.errBody())
 			try.Fail, try.Rest = rest.Why, &rest
 			s.trace.update(tr, func(t *Route) { t.Tries[len(t.Tries)-1] = try })
 			skipped = append(skipped, c.label()+": "+call.Error)
 			continue
+		}
+		if wait, ok := passing(hw.code(), hw.header, again); ok && again < lastRetries && hw.failed() {
+			// nobody else is left: the same one again, after a moment
+			try.Fail, try.Again = failure(hw.code(), hw.errBody()), wait.Milliseconds()
+			s.trace.update(tr, func(t *Route) { t.Tries[len(t.Tries)-1] = try })
+			skipped = append(skipped, c.label()+": "+call.Error)
+			again++
+			select {
+			case <-time.After(wait):
+				i--
+				continue
+			case <-r.Context().Done():
+				call.Status, call.Error = 499, "the agent canceled the request"
+			}
+			break
 		}
 		hw.release()
 		model = c.model

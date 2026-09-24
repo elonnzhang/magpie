@@ -87,7 +87,8 @@ type Try struct {
 	Millis int64     `json:"ms,omitempty"`
 	Fail   string    `json:"fail,omitempty"` // why it failed, as rest tells it
 	Error  string    `json:"error,omitempty"`
-	Rest   *Rest     `json:"rest,omitempty"` // how long it now sits out; none when it was the last to try
+	Rest   *Rest     `json:"rest,omitempty"`  // how long it now sits out; none when it was the last to try
+	Again  int64     `json:"again,omitempty"` // ms waited before it was tried again, the last one left
 }
 
 type planned struct {
