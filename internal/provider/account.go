@@ -640,7 +640,13 @@ func codexAccount(home string) (Provider, bool) {
 	acct.sign = codexSign(func(ctx context.Context) (string, string, error) { return codexToken(ctx, path) })
 	acct.body = codexBody
 	acct.models = catalog.Codex
-	acct.fetch = func(context.Context) ([]catalog.Model, error) { return catalog.Codex(), nil }
+	acct.fetch = func(ctx context.Context) ([]catalog.Model, error) {
+		ms, err := codexModels(ctx, acct.sign)
+		if err != nil {
+			return nil, err
+		}
+		return ms, catalog.SaveLive("codex", CodexBase, ms)
+	}
 	return Provider{ID: "codex", Name: "Codex", Icon: "codex-color", Responses: CodexBase, Website: "https://chatgpt.com/codex", Account: acct}, true
 }
 
