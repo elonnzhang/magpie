@@ -736,3 +736,35 @@ func TestOpenCodeGetsConversationSession(t *testing.T) {
 		t.Errorf("derived session: %q %q", a, b)
 	}
 }
+
+// A translation goes to Chat Completions first, but an OpenAI model on
+// OpenAI's or Copilot's API goes to Responses first; either falls back.
+func TestUsableOrder(t *testing.T) {
+	s := New()
+	openai := provider.Provider{ID: "openai", Chat: "https://api.openai.com/v1", Responses: "https://api.openai.com/v1"}
+	copilot := provider.Provider{ID: "copilot", Chat: "https://api.githubcopilot.com", Responses: "https://api.githubcopilot.com"}
+	other := provider.Provider{ID: "groq", Chat: "https://api.groq.com/openai/v1", Responses: "https://api.groq.com/openai/v1"}
+	for _, tc := range []struct {
+		p     provider.Provider
+		model string
+		want  string
+	}{
+		{openai, "gpt-6-sol", "responses chat"},
+		{openai, "o4-mini", "responses chat"},
+		{copilot, "gpt-6-sol", "responses chat"},
+		{copilot, "claude-opus-5.5", "chat responses"},
+		{other, "openai/gpt-oss-120b", "chat responses"},
+	} {
+		var got []string
+		for _, p := range s.usable(tc.p, tc.model) {
+			got = append(got, string(p))
+		}
+		if strings.Join(got, " ") != tc.want {
+			t.Errorf("usable(%s, %s) = %v, want %s", tc.p.ID, tc.model, got, tc.want)
+		}
+	}
+	s.markUnfit("copilot", "gpt-6-sol", provider.Responses)
+	if got := s.usable(copilot, "gpt-6-sol"); len(got) != 1 || got[0] != provider.Chat {
+		t.Errorf("after /responses turned it away: %v", got)
+	}
+}

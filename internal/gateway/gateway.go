@@ -14,6 +14,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -616,7 +617,9 @@ func (s *Server) markUnfit(providerID, model string, proto provider.Protocol) {
 }
 
 // usable lists the protocols p speaks that model hasn't been turned away
-// from, preferred first.
+// from, preferred first: Chat Completions, which every OpenAI-compatible
+// vendor serves alike, except for OpenAI's own models where their makers
+// serve them, whose newest are Responses-first (and some Responses-only).
 func (s *Server) usable(p provider.Provider, model string) []provider.Protocol {
 	var out []provider.Protocol
 	for _, proto := range p.Speaks() {
@@ -624,7 +627,20 @@ func (s *Server) usable(p provider.Provider, model string) []provider.Protocol {
 			out = append(out, proto)
 		}
 	}
+	if responsesFirst(p, model) {
+		sort.SliceStable(out, func(i, j int) bool { return out[i] == provider.Responses && out[j] != provider.Responses })
+	}
 	return out
+}
+
+// responsesFirst: an OpenAI model on OpenAI's API or Copilot's.
+func responsesFirst(p provider.Provider, model string) bool {
+	if p.Responses == "" || (p.ID != "copilot" && provider.HostOf(p.Responses) != "api.openai.com") {
+		return false
+	}
+	m := strings.ToLower(model[strings.LastIndex(model, "/")+1:])
+	return strings.HasPrefix(m, "gpt-") || strings.HasPrefix(m, "codex") ||
+		len(m) > 1 && m[0] == 'o' && m[1] >= '0' && m[1] <= '9'
 }
 
 // forwardTranslated sends one translated, streaming request upstream. A
