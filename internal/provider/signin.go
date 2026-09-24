@@ -125,6 +125,11 @@ func StartSignIn(agent string) (SignInState, error) {
 		if err := startCursorSignIn(s); err != nil {
 			return SignInState{}, err
 		}
+	case "grok":
+		// so is Grok: its CLI signs in with a device code
+		if err := startGrokSignIn(s); err != nil {
+			return SignInState{}, err
+		}
 	default:
 		return SignInState{}, fmt.Errorf("magpie can't sign in to %s accounts", agent)
 	}

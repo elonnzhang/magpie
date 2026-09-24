@@ -159,65 +159,8 @@ func startCursorSignIn(s *signInFlow) error {
 	if path == "" {
 		return errorf("install Cursor's CLI first: curl https://cursor.com/install -fsS | bash")
 	}
-	ctx, cancel := context.WithCancel(context.Background())
-	cmd := exec.CommandContext(ctx, path, "login")
-	cmd.Env = append(os.Environ(), "NO_OPEN_BROWSER=1")
-	out, err := cmd.StdoutPipe()
-	if err != nil {
-		cancel()
-		return err
-	}
-	cmd.Stderr = cmd.Stdout
-	if err := cmd.Start(); err != nil {
-		cancel()
-		return err
-	}
-	s.stop = cancel
-	got := make(chan string, 1)
-	go func() {
-		sc := bufio.NewScanner(out)
-		sent := false
-		var tail []string
-		for sc.Scan() {
-			line := ansi.ReplaceAllString(sc.Text(), "")
-			if u := cursorLoginURL.FindString(line); u != "" && !sent {
-				sent = true
-				got <- u
-			}
-			if strings.TrimSpace(line) != "" {
-				tail = append(tail, strings.TrimSpace(line))
-			}
-		}
-		if !sent {
-			close(got)
-		}
-		err := cmd.Wait()
-		cancel()
+	return runCLISignIn(s, "cursor-agent login", append(os.Environ(), "NO_OPEN_BROWSER=1"), func() (string, string, bool) {
 		forgetCursorStatus()
-		forgetAccountCaches()
-		if err == nil {
-			if user, plan, ok := askCursorIdentity(); ok {
-				s.finish(SignInState{State: "done", User: user, Plan: plan, Using: true})
-				return
-			}
-		}
-		msg := "cursor-agent login didn't finish"
-		if n := len(tail); n > 0 {
-			msg = tail[n-1]
-		}
-		s.finish(SignInState{State: "failed", Error: msg})
-	}()
-	select {
-	case u, ok := <-got:
-		if !ok {
-			return errorf("cursor-agent login gave no link to open")
-		}
-		s.mu.Lock()
-		s.st.URL = u
-		s.mu.Unlock()
-		return nil
-	case <-time.After(30 * time.Second):
-		cancel()
-		return errorf("cursor-agent login gave no link to open")
-	}
+		return askCursorIdentity()
+	}, path, "login")
 }

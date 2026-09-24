@@ -671,6 +671,7 @@ function accountPlan(a) {
   if (a.agent === "copilot") return "GitHub";
   if (a.agent === "claude") return "Claude" + (a.plan ? " " + a.plan[0].toUpperCase() + a.plan.slice(1) : "");
   if (a.agent === "cursor") return "Cursor" + (a.plan ? " " + a.plan[0].toUpperCase() + a.plan.slice(1) : "");
+  if (a.agent === "grok") return "Grok";
   return t("signed in");
 }
 
@@ -1890,6 +1891,8 @@ const SUBS = [
   { agent: "codex", name: "ChatGPT", icon: "openai", plans: "Plus · Pro · Business" },
   // cursor-agent keeps one account; signing in again replaces it
   { agent: "cursor", name: "Cursor", icon: "cursor", plans: "Pro · Ultra · Teams", single: true },
+  // so does the Grok CLI
+  { agent: "grok", name: "Grok", icon: "xai", plans: "SuperGrok · X Premium+", single: true },
 ];
 const subOf = (agent) => SUBS.find((x) => x.agent === agent);
 let signing = null; // the sign-in under way: { id, agent, url, state, error }
