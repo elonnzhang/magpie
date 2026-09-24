@@ -1,9 +1,11 @@
 package provider
 
 // A provider can hold several accounts, as a subscription can: several API
-// keys — a personal one and the team's, a paid plan and a free one — with
-// one in use and the rest one click away. Key stays the one in use, so
-// everything that talks to the vendor reads it as before.
+// keys — a personal one and the team's, a paid plan and a free one. Any
+// number of them can be on at once: requests go to the first, and when it
+// is out of quota or rate limited the gateway moves on to the next one
+// that's on (see gateway/fallback.go). Key stays the first, so everything
+// else that talks to the vendor reads it as before.
 
 import (
 	"crypto/sha256"
@@ -13,10 +15,11 @@ import (
 	"strings"
 )
 
-// KeyAccount is a saved key that isn't in use.
+// KeyAccount is a saved key after the first. Off keeps it without using it.
 type KeyAccount struct {
 	Name string `json:"name,omitempty"`
 	Key  string `json:"key"`
+	Off  bool   `json:"off,omitempty"`
 }
 
 // KeyInfo describes one of a provider's keys without giving it away.
@@ -24,7 +27,8 @@ type KeyInfo struct {
 	ID     string `json:"id"` // a fingerprint, to name it in a switch
 	Name   string `json:"name,omitempty"`
 	Masked string `json:"masked"`
-	Active bool   `json:"active"`
+	Active bool   `json:"active"` // the first, where requests go
+	On     bool   `json:"on"`     // in use: the first, or next in line
 }
 
 func keyID(key string) string {
@@ -32,20 +36,38 @@ func keyID(key string) string {
 	return hex.EncodeToString(sum[:5])
 }
 
-// KeyList is a provider's keys, the one in use first.
+// KeyID is the fingerprint a key is named by, in lists and in the gateway.
+func KeyID(key string) string { return keyID(key) }
+
+// KeyList is a provider's keys, in the order requests try them.
 func (p Provider) KeyList() []KeyInfo {
 	var out []KeyInfo
 	if p.Key != "" {
-		out = append(out, KeyInfo{ID: keyID(p.Key), Name: p.KeyName, Masked: Mask(p.Key), Active: true})
+		out = append(out, KeyInfo{ID: keyID(p.Key), Name: p.KeyName, Masked: Mask(p.Key), Active: true, On: true})
 	}
 	for _, k := range p.Keys {
-		out = append(out, KeyInfo{ID: keyID(k.Key), Name: k.Name, Masked: Mask(k.Key)})
+		out = append(out, KeyInfo{ID: keyID(k.Key), Name: k.Name, Masked: Mask(k.Key), On: !k.Off})
 	}
 	return out
 }
 
-// AddKey saves one more key for a provider. It is put in use when the
-// provider has none yet.
+// KeysOn is the keys in use, first to last: the first key, then every
+// saved one that's on.
+func (p Provider) KeysOn() []KeyAccount {
+	if p.Key == "" {
+		return nil
+	}
+	out := []KeyAccount{{Name: p.KeyName, Key: p.Key}}
+	for _, k := range p.Keys {
+		if !k.Off && k.Key != "" {
+			out = append(out, k)
+		}
+	}
+	return out
+}
+
+// AddKey saves one more key for a provider, on: it takes requests after
+// the ones before it. It becomes the first when the provider has none.
 func AddKey(id, name, key string) error {
 	name, key = strings.TrimSpace(name), strings.TrimSpace(key)
 	if key == "" {
@@ -71,45 +93,96 @@ func AddKey(id, name, key string) error {
 	return Save(*p)
 }
 
-// UseKey puts one of a provider's saved keys in use; the one it replaces
-// is kept with the others.
+// findKey is where a key is among p.Keys: -1 for the first key, and ok
+// false when p has no such key.
+func findKey(p *Provider, ref string) (int, bool) {
+	if p.Key != "" && keyID(p.Key) == ref {
+		return -1, true
+	}
+	for i, k := range p.Keys {
+		if keyID(k.Key) == ref {
+			return i, true
+		}
+	}
+	return 0, false
+}
+
+// UseKey makes one of a provider's keys the first, and turns it on; the
+// one it replaces stays on, next in line.
 func UseKey(id, keyRef string) error {
 	p, err := Find(id)
 	if err != nil {
 		return err
 	}
-	for i, k := range p.Keys {
-		if keyID(k.Key) == keyRef {
-			p.Keys[i] = KeyAccount{Name: p.KeyName, Key: p.Key}
-			p.Key, p.KeyName = k.Key, k.Name
-			if p.Key == "" || p.Keys[i].Key == "" {
-				p.Keys = append(p.Keys[:i], p.Keys[i+1:]...)
-			}
-			return Save(*p)
-		}
+	i, ok := findKey(p, keyRef)
+	if !ok {
+		return fmt.Errorf("%s has no such key", p.Name)
 	}
-	if p.Key != "" && keyID(p.Key) == keyRef {
+	if i < 0 {
 		return nil
 	}
-	return fmt.Errorf("%s has no such key", p.Name)
+	k := p.Keys[i]
+	rest := append([]KeyAccount{{Name: p.KeyName, Key: p.Key}}, append(p.Keys[:i:i], p.Keys[i+1:]...)...)
+	p.Key, p.KeyName, p.Keys = k.Key, k.Name, rest
+	return Save(*p)
 }
 
-// RemoveKey forgets a saved key. The one in use stays: switch first.
+// promote takes the first key out of use: the next key that's on takes
+// its place. ok is false when none is.
+func promote(p *Provider) (old KeyAccount, ok bool) {
+	for i, k := range p.Keys {
+		if !k.Off {
+			old = KeyAccount{Name: p.KeyName, Key: p.Key}
+			p.Key, p.KeyName = k.Key, k.Name
+			p.Keys = append(p.Keys[:i:i], p.Keys[i+1:]...)
+			return old, true
+		}
+	}
+	return KeyAccount{}, false
+}
+
+// SetKeyOn turns a key on or off. The last key that's on stays on.
+func SetKeyOn(id, keyRef string, on bool) error {
+	p, err := Find(id)
+	if err != nil {
+		return err
+	}
+	i, ok := findKey(p, keyRef)
+	if !ok {
+		return fmt.Errorf("%s has no such key", p.Name)
+	}
+	switch {
+	case i >= 0:
+		p.Keys[i].Off = !on
+	case !on:
+		old, ok := promote(p)
+		if !ok {
+			return errors.New("that's the only key in use; turn another on first")
+		}
+		old.Off = true
+		p.Keys = append([]KeyAccount{old}, p.Keys...)
+	default:
+		return nil
+	}
+	return Save(*p)
+}
+
+// RemoveKey forgets a key. The last key in use stays: turn another on first.
 func RemoveKey(id, keyRef string) error {
 	p, err := Find(id)
 	if err != nil {
 		return err
 	}
-	for i, k := range p.Keys {
-		if keyID(k.Key) == keyRef {
-			p.Keys = append(p.Keys[:i], p.Keys[i+1:]...)
-			return Save(*p)
-		}
+	i, ok := findKey(p, keyRef)
+	if !ok {
+		return fmt.Errorf("%s has no such key", p.Name)
 	}
-	if p.Key != "" && keyID(p.Key) == keyRef {
-		return errors.New("that key is in use; switch to another before removing it")
+	if i >= 0 {
+		p.Keys = append(p.Keys[:i], p.Keys[i+1:]...)
+	} else if _, ok := promote(p); !ok {
+		return errors.New("that's the only key in use; turn another on before removing it")
 	}
-	return fmt.Errorf("%s has no such key", p.Name)
+	return Save(*p)
 }
 
 // RenameKey names one of a provider's keys, "Personal", "Team".
@@ -118,16 +191,15 @@ func RenameKey(id, keyRef, name string) error {
 	if err != nil {
 		return err
 	}
+	i, ok := findKey(p, keyRef)
+	if !ok {
+		return fmt.Errorf("%s has no such key", p.Name)
+	}
 	name = strings.TrimSpace(name)
-	if p.Key != "" && keyID(p.Key) == keyRef {
+	if i < 0 {
 		p.KeyName = name
-		return Save(*p)
+	} else {
+		p.Keys[i].Name = name
 	}
-	for i, k := range p.Keys {
-		if keyID(k.Key) == keyRef {
-			p.Keys[i].Name = name
-			return Save(*p)
-		}
-	}
-	return fmt.Errorf("%s has no such key", p.Name)
+	return Save(*p)
 }

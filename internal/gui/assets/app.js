@@ -600,7 +600,7 @@ function renderProviders() {
       key = el("span", "key acct", accountPlan(p.account));
       key.title = t("{agent} is signed in; its models are here for every other agent", { agent: p.account.agentName });
     } else {
-      key = el("span", "key " + (p.key.set ? "on" : p.ready ? "free" : "none"), p.key.set ? (p.keyList?.find((k) => k.active)?.name || p.key.masked) : p.ready ? t("no key") : t("needs a key"));
+      key = el("span", "key " + (p.key.set ? (keyPill(p) === p.key.masked ? "on" : "on acct") : p.ready ? "free" : "none"), p.key.set ? keyPill(p) : p.ready ? t("no key") : t("needs a key"));
       key.title = p.key.set ? t("API key {masked}", { masked: p.key.masked }) : p.ready ? t("Local servers need no key") : t("Open the row and paste an API key");
     }
     const chev = el("span", "chev");
@@ -1480,7 +1480,7 @@ function renderEditor(p, presetID) {
   if (keysUrl) { const b = el("button", "link", t("Get a key ↗")); b.onclick = () => api("open", { url: keysUrl }); side.append(b); }
   const keyWrap = el("div", "pair");
   keyWrap.append(key, side);
-  if (p?.keyList?.length) ed.append(...field(t("Accounts"), renderKeyAccounts(p), t("Requests go out with the key in use. Keep several — personal and team, paid and free — and switch any time.")));
+  if (p?.keyList?.length) ed.append(...field(t("Accounts"), renderKeyAccounts(p), t("Tick every key to use. Requests go to the first; when it runs out of quota or hits a rate limit, the next ticked key takes over.")));
   else ed.append(...field(t("API key"), keyWrap, isNew ? t("Kept in ~/.config/magpie/providers.json, readable by you alone. Nothing is read from your shell.") : ""));
 
   // A user-defined provider can have its own picture; presets keep theirs.
@@ -1954,10 +1954,14 @@ async function accountAction(path, body, okMsg) {
 let addingKey = null;
 function renderKeyAccounts(p) {
   const list = el("div", "accts");
+  const several = p.keyList.filter((k) => k.on).length > 1;
   for (const k of p.keyList) {
-    const row = el("div", "acc" + (k.active ? " in-use" : "") + (k.id === justAdded ? " new" : ""));
-    const dot = el("span", "dot");
-    if (k.active) dot.append(svg(CHECK, 10, 2.2));
+    const row = el("div", "acc" + (k.on ? " in-use" : " off") + (k.id === justAdded ? " new" : ""));
+    // the dot is the switch: every key ticked is in use
+    const dot = el("button", "dot tick");
+    if (k.on) dot.append(svg(CHECK, 10, 2.2));
+    dot.title = k.on ? t("Stop using this key") : t("Use this key too");
+    dot.onclick = () => accountAction("keys/" + (k.on ? "off" : "on"), { id: p.id, ref: k.id });
     const name = el("button", "n rename" + (k.name ? "" : " mono"), k.name || k.masked);
     name.title = t("Rename");
     name.onclick = () => {
@@ -1975,13 +1979,16 @@ function renderKeyAccounts(p) {
     row.append(dot, name);
     if (k.name) row.append(el("span", "plan mono", k.masked));
     row.append(el("span", "grow"));
-    if (k.active) row.append(el("span", "using", t("In use")));
-    else {
+    if (!k.active || several) {
       const rm = el("button", "text quiet", t("Remove"));
       rm.onclick = () => accountAction("keys/remove", { id: p.id, ref: k.id }, t("Key removed"));
-      const use = el("button", "text", t("Use"));
-      use.onclick = () => { use.classList.add("busy"); accountAction("keys/use", { id: p.id, ref: k.id }, t("{name} now uses {key}", { name: p.name, key: k.name || k.masked })); };
-      row.append(rm, use);
+      row.append(rm);
+    }
+    if (k.active) row.append(el("span", "using", several ? t("First") : t("In use")));
+    else if (k.on) {
+      const first = el("button", "text", t("Make first"));
+      first.onclick = () => { first.classList.add("busy"); accountAction("keys/use", { id: p.id, ref: k.id }, t("{name} tries {key} first", { name: p.name, key: k.name || k.masked })); };
+      row.append(first);
     }
     list.append(row);
   }
@@ -1995,7 +2002,7 @@ function renderKeyAccounts(p) {
     const go = async () => {
       add.classList.add("busy");
       const id = await keyFingerprint(key.value.trim());
-      if (await accountAction("keys/add", { id: p.id, name: name.value, key: key.value }, t("Key added — switch to it any time"))) {
+      if (await accountAction("keys/add", { id: p.id, name: name.value, key: key.value }, t("Key added — it takes over when the ones before it run out"))) {
         addingKey = null; justAdded = id; renderProviders(); setTimeout(() => { justAdded = ""; }, 2000);
       }
     };
@@ -2020,6 +2027,13 @@ function renderKeyAccounts(p) {
     list.append(add);
   }
   return list;
+}
+
+// keyPill is a key provider's row badge: the key in use, or how many are.
+function keyPill(p) {
+  const on = (p.keyList || []).filter((k) => k.on);
+  if (on.length > 1) return t("{n} keys", { n: on.length });
+  return on[0]?.name || p.key.masked;
 }
 
 // keyFingerprint is the id the backend gives a key, to greet a new one.

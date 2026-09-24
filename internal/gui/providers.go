@@ -51,7 +51,7 @@ type providerJSON struct {
 	Fetched   string             `json:"fetched"`  // "3h ago" when the list came from the vendor
 	Agents    []providerAgent    `json:"agents"`   // detected agents, current ones flagged
 	Sponsored bool               `json:"sponsored"`
-	KeyList   []provider.KeyInfo `json:"keyList"`           // its keys, the one in use first
+	KeyList   []provider.KeyInfo `json:"keyList"`           // its keys, in the order requests try them
 	Account   *accountJSON       `json:"account,omitempty"` // a signed-in agent, see provider.Account
 }
 
@@ -382,6 +382,8 @@ func providerRoutes(mux *http.ServeMux, w Windows, gw *gateway.Server) {
 			err = provider.RemoveKey(in.ID, in.Ref)
 		case "rename":
 			err = provider.RenameKey(in.ID, in.Ref, in.Name)
+		case "on", "off":
+			err = provider.SetKeyOn(in.ID, in.Ref, r.PathValue("action") == "on")
 		default:
 			http.NotFound(rw, r)
 			return
