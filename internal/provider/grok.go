@@ -145,11 +145,24 @@ const grokRefreshMargin = 5 * time.Minute
 var grokRefresh sync.Mutex
 
 // GrokToken writes the CLI's access token for a Grok run in magpie's home,
-// as an external auth provider answers (GROK_AUTH_PROVIDER_COMMAND). A
-// token about to expire is first refreshed by the CLI in its own home: a
-// `grok models` there renews it the way any use of the CLI does; so is one
-// the run has found expired.
+// as an external auth provider answers (GROK_AUTH_PROVIDER_COMMAND).
 func GrokToken(w io.Writer, home, binary string, expired bool) error {
+	c, err := grokAccessToken(home, binary, expired)
+	if err != nil {
+		return err
+	}
+	left := int(time.Until(c.ExpiresAt).Seconds())
+	if c.ExpiresAt.IsZero() {
+		left = 3600
+	}
+	return json.NewEncoder(w).Encode(map[string]any{"access_token": c.Key, "expires_in": left, "issuer": c.Issuer})
+}
+
+// grokAccessToken is the CLI's sign-in, with a token still good. One about
+// to expire is first refreshed by the CLI in its own home: a `grok models`
+// there renews it the way any use of the CLI does; so is one a run has
+// found expired.
+func grokAccessToken(home, binary string, expired bool) (grokCredential, error) {
 	c, ok := readGrokCredential(home)
 	if ok && (expired || time.Until(c.ExpiresAt) < grokRefreshMargin) && binary != "" {
 		grokRefresh.Lock()
@@ -163,16 +176,12 @@ func GrokToken(w io.Writer, home, binary string, expired bool) error {
 		c, ok = readGrokCredential(home)
 	}
 	if !ok {
-		return errorf("Grok is not signed in; run `grok login`")
+		return c, errorf("Grok is not signed in; run `grok login`")
 	}
-	left := int(time.Until(c.ExpiresAt).Seconds())
-	if c.ExpiresAt.IsZero() {
-		left = 3600
+	if !c.ExpiresAt.IsZero() && time.Until(c.ExpiresAt) <= 0 {
+		return c, errorf("Grok's sign-in has expired; run `grok login`")
 	}
-	if left <= 0 {
-		return errorf("Grok's sign-in has expired; run `grok login`")
-	}
-	return json.NewEncoder(w).Encode(map[string]any{"access_token": c.Key, "expires_in": left, "issuer": c.Issuer})
+	return c, nil
 }
 
 // grokOwnEnv runs the CLI as the user runs it, in its own home.
