@@ -6,6 +6,10 @@ const mode = params.get("mode") || "window";
 document.body.classList.add(mode);
 // Only the Mac window draws its title bar inside the page (the traffic lights).
 if (/^Mac/.test(navigator.platform)) document.body.classList.add("mac");
+// The window is dragged by its header, and only where the header says so
+// (--wails-draggable), so the tabs and buttons in it stay plain clicks.
+// Outside the app — a browser on the gateway's page — there is no runtime.
+if (mode === "window") import("/wails/runtime.js").catch(() => {});
 if (params.get("theme")) document.documentElement.dataset.theme = params.get("theme");
 
 let state = { agents: [], profiles: [], catalog: "", settings: {} };
