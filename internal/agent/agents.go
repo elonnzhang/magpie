@@ -34,6 +34,7 @@ func All() []*Agent {
 		crush(home, cfg),
 		dsh(home),
 		commandCode(home),
+		omp(home),
 	}
 }
 
