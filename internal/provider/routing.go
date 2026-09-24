@@ -12,8 +12,9 @@ import (
 	"time"
 )
 
-// The routings besides the default, in order.
+// The routings besides the default, smart, in order.
 const (
+	Ordered   = "order"
 	Rotate    = "rotate"
 	LeastUsed = "usage"
 )

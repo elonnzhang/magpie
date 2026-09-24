@@ -60,9 +60,11 @@ type Provider struct {
 	Fallback []string `json:"fallback,omitempty"`
 
 	// Routing is how requests spread over the keys or accounts it has on:
-	// "" in order, the next one only when the one before can't take it;
-	// "rotate" each in turn; "usage" the least used first. A failing one
-	// is passed over the same way whichever it is.
+	// "" smart, the first while it has quota to spare, then whichever has
+	// the most; "order" in order, the next one only when the one before
+	// can't take it; "rotate" each in turn; "usage" the least used first.
+	// Whichever it is, one out of credit, out of quota, rate limited or
+	// failing is passed over for as long as that lasts.
 	Routing string `json:"routing,omitempty"`
 
 	// Headers are extra HTTP request headers sent to the vendor, exactly as
@@ -288,7 +290,7 @@ func normalize(p Provider) Provider {
 	}
 	p.Models = cleanList(p.Models)
 	p.Fallback = cleanList(p.Fallback)
-	if p.Routing != Rotate && p.Routing != LeastUsed {
+	if p.Routing != Ordered && p.Routing != Rotate && p.Routing != LeastUsed {
 		p.Routing = ""
 	}
 	p.Catalog = strings.Join(p.Catalogs(), ", ")

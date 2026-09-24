@@ -10,7 +10,6 @@ package provider
 import (
 	"context"
 	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -30,140 +29,48 @@ type grokLogin struct {
 // grokLogins lists the Grok accounts that are signed in, the first in use
 // first, then the rest as they were added.
 func grokLogins() []grokLogin {
-	loginsMu.Lock()
-	defer loginsMu.Unlock()
-	ls := readLogins()
-	// the CLI's own account, as it is now
-	if c, ok := readGrokCredential(GrokHome()); ok && c.Email != "" {
-		found := false
-		for i := range ls {
-			if ls[i].Agent == "grok" && ls[i].Home == "" {
-				found = true
-				if !strings.EqualFold(ls[i].User, c.Email) {
-					ls[i].User, ls[i].Seen = c.Email, time.Now().UTC().Truncate(time.Second)
-					_ = writeLogins(ls)
-				}
-			}
-		}
-		if !found {
-			ls = append(ls, savedLogin{Agent: "grok", User: c.Email, Seen: time.Now().UTC().Truncate(time.Second)})
-			_ = writeLogins(ls)
-		}
+	own := ""
+	if c, ok := readGrokCredential(GrokHome()); ok {
+		own = c.Email
 	}
 	var out []grokLogin
-	first := -1
-	for _, l := range ls {
-		if l.Agent != "grok" {
-			continue
-		}
-		home := l.Home
+	for _, l := range sideLogins("grok", own, func(l savedLogin) bool {
+		_, ok := readGrokCredential(l.Home)
+		return ok
+	}) {
+		home := l.saved.Home
 		if home == "" {
 			home = GrokHome()
 		}
-		if _, ok := readGrokCredential(home); !ok {
-			continue // signed out there
-		}
-		g := grokLogin{Login: Login{Agent: "grok", User: l.User, Plan: l.Plan, Seen: l.Seen, On: l.On}, Home: home}
-		if l.First || (first < 0 && l.Home == "") {
-			first = len(out)
-		}
-		out = append(out, g)
-	}
-	if len(out) == 0 {
-		return nil
-	}
-	if first < 0 {
-		first = 0
-	}
-	out[first].Active, out[first].On = true, true
-	return append([]grokLogin{out[first]}, append(out[:first:first], out[first+1:]...)...)
-}
-
-// grokLoginList is the Grok accounts as Logins lists them.
-func grokLoginList() []Login {
-	var out []Login
-	for _, g := range grokLogins() {
-		out = append(out, g.Login)
+		out = append(out, grokLogin{l.Login, home})
 	}
 	return out
 }
 
-// editGrokLogin changes the saved Grok account of user.
-func editGrokLogin(user string, f func(ls []savedLogin, i int) ([]savedLogin, error)) error {
-	loginsMu.Lock()
-	defer loginsMu.Unlock()
-	ls := readLogins()
-	for i := range ls {
-		if ls[i].Agent == "grok" && strings.EqualFold(ls[i].User, user) {
-			ls, err := f(ls, i)
-			if err != nil {
-				return err
-			}
-			return writeLogins(ls)
-		}
+func grokSide() []sideLogin {
+	var out []sideLogin
+	for _, g := range grokLogins() {
+		out = append(out, sideLogin{Login: g.Login})
 	}
-	return fmt.Errorf("no Grok account %q", user)
+	return out
 }
 
-func grokActive(user string) bool {
-	for _, g := range grokLogins() {
-		if g.Active {
-			return strings.EqualFold(g.User, user)
-		}
-	}
-	return false
-}
+// grokLoginList is the Grok accounts as Logins lists them.
+func grokLoginList() []Login { return loginsOf(grokSide()) }
 
 // switchGrokLogin puts a Grok account first. The CLI's own sign-in stays
 // as it is: magpie only changes which account its gateway uses first.
-func switchGrokLogin(user string) error {
-	var was string
-	for _, g := range grokLogins() {
-		if g.Active {
-			was = g.User
-		}
-	}
-	return editGrokLogin(user, func(ls []savedLogin, i int) ([]savedLogin, error) {
-		for j := range ls {
-			if ls[j].Agent == "grok" {
-				if j != i && strings.EqualFold(ls[j].User, was) {
-					ls[j].On = true // the one it replaces is next in line
-				}
-				ls[j].First = j == i
-			}
-		}
-		return ls, nil
-	})
-}
+func switchGrokLogin(user string) error { return switchSideLogin("grok", user, grokSide()) }
 
 func setGrokLoginOn(user string, on bool) error {
-	if !on && grokActive(user) {
-		return fmt.Errorf("magpie uses %s first; put another Grok account first to stop using it", user)
-	}
-	return editGrokLogin(user, func(ls []savedLogin, i int) ([]savedLogin, error) {
-		ls[i].On = on
-		return ls, nil
-	})
+	return setSideLoginOn("grok", user, on, grokSide())
 }
 
 // forgetGrokLogin drops an account magpie signed in, with its home. The
 // CLI's own is signed out in the CLI.
 func forgetGrokLogin(user string) error {
-	if grokActive(user) {
-		return fmt.Errorf("magpie uses %s first; put another Grok account first", user)
-	}
-	var home string
-	err := editGrokLogin(user, func(ls []savedLogin, i int) ([]savedLogin, error) {
-		if ls[i].Home == "" {
-			return nil, errors.New("that is the Grok CLI's own sign-in; run `grok logout` to sign it out")
-		}
-		home = ls[i].Home
-		return append(ls[:i], ls[i+1:]...), nil
-	})
-	if err == nil {
-		removeGrokHome(home)
-	}
-	return err
+	return forgetSideLogin("grok", user, "the Grok CLI's own sign-in; run `grok logout` to sign it out", grokSide(),
+		func(l savedLogin) { removeGrokHome(l.Home) })
 }
 
 // removeGrokHome deletes a home magpie made, and nothing else.
@@ -180,31 +87,15 @@ func newGrokHome() (string, error) {
 }
 
 // addGrokLogin keeps the account just signed in in home, in use beside
-// the others. Signed in again, an account keeps the home it had.
+// the others. Signed in again, an account keeps the newer home.
 func addGrokLogin(home string) (string, error) {
 	c, ok := readGrokCredential(home)
 	if !ok || c.Email == "" {
 		removeGrokHome(home)
 		return "", errors.New("grok login finished without an account")
 	}
-	loginsMu.Lock()
-	defer loginsMu.Unlock()
-	ls := readLogins()
-	for i := range ls {
-		if ls[i].Agent == "grok" && strings.EqualFold(ls[i].User, c.Email) {
-			if ls[i].Home != "" {
-				// the fresh sign-in replaces the old one
-				removeGrokHome(ls[i].Home)
-				ls[i].Home = home
-				ls[i].Seen = time.Now().UTC().Truncate(time.Second)
-				return c.Email, writeLogins(ls)
-			}
-			removeGrokHome(home) // the CLI's own already
-			return c.Email, nil
-		}
-	}
-	ls = append(ls, savedLogin{Agent: "grok", User: c.Email, Home: home, On: true, Seen: time.Now().UTC().Truncate(time.Second)})
-	return c.Email, writeLogins(ls)
+	return c.Email, addSideLogin(savedLogin{Agent: "grok", User: c.Email, Home: home},
+		func(l savedLogin) { removeGrokHome(l.Home) })
 }
 
 // grokAlsoOn is the Grok accounts in use behind the first.

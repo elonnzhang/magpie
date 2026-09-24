@@ -48,6 +48,7 @@ type SignInState struct {
 	ID    string `json:"id"`
 	Agent string `json:"agent"`
 	URL   string `json:"url"`             // the vendor's page, to open or copy
+	Code  string `json:"code,omitempty"`  // what to type there, for a device code
 	State string `json:"state"`           // waiting, done, failed or canceled
 	User  string `json:"user,omitempty"`  // the account, once done
 	Plan  string `json:"plan,omitempty"`  //
@@ -128,6 +129,11 @@ func StartSignIn(agent string) (SignInState, error) {
 	case "grok":
 		// so is Grok: its CLI signs in with a device code
 		if err := startGrokSignIn(s); err != nil {
+			return SignInState{}, err
+		}
+	case "copilot":
+		// GitHub's device code, as Copilot's editors sign in
+		if err := startCopilotSignIn(s); err != nil {
 			return SignInState{}, err
 		}
 	default:
@@ -231,7 +237,7 @@ func (s *signInFlow) finish(out SignInState) bool {
 		s.mu.Unlock()
 		return false
 	}
-	out.ID, out.Agent, out.URL = s.st.ID, s.st.Agent, s.st.URL
+	out.ID, out.Agent, out.URL, out.Code = s.st.ID, s.st.Agent, s.st.URL, s.st.Code
 	s.st = out
 	s.mu.Unlock()
 	close(s.done)

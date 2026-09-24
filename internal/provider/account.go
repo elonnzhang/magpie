@@ -836,12 +836,9 @@ func (a copilotApp) session(ctx context.Context) (copilotSession, error) {
 	return copilotToken(ctx, a.Token)
 }
 
-func copilotAccount(cfg string) (Provider, bool) {
-	app, ok := copilotLogin(cfg)
-	if !ok {
-		return Provider{}, false
-	}
-	acct := &Account{Agent: "copilot", User: app.User}
+// copilotProvider is Copilot as one GitHub account serves it.
+func copilotProvider(app copilotApp, plan string) Provider {
+	acct := &Account{Agent: "copilot", User: app.User, Plan: plan}
 	if acct.User == "" {
 		acct.User = "GitHub"
 	}
@@ -877,7 +874,7 @@ func copilotAccount(cfg string) (Provider, bool) {
 		}
 		return ms, catalog.SaveLive("copilot", copilotBase, ms)
 	}
-	return Provider{ID: "copilot", Name: "Copilot", Icon: "githubcopilot", Chat: copilotBase, Website: "https://github.com/features/copilot", Account: acct}, true
+	return Provider{ID: "copilot", Name: "Copilot", Icon: "githubcopilot", Chat: copilotBase, Website: "https://github.com/features/copilot", Account: acct}
 }
 
 // lastRole is the role of the last message in a chat request.

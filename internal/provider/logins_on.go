@@ -24,8 +24,11 @@ var savedTokenMu sync.Mutex
 // SetLoginOn puts a saved account in use beside the agent's own, or takes
 // it out. The account the agent is signed in to is always in use.
 func SetLoginOn(agent, user string, on bool) error {
-	if agent == "grok" {
+	switch agent {
+	case "grok":
 		return setGrokLoginOn(user, on)
+	case "copilot":
+		return setCopilotLoginOn(user, on)
 	}
 	loginsMu.Lock()
 	defer loginsMu.Unlock()
@@ -50,6 +53,9 @@ func SetLoginOn(agent, user string, on bool) error {
 func (p Provider) AlsoOn() []Provider {
 	if p.Account != nil && p.Account.Agent == "grok" && p.Account.token == nil {
 		return grokAlsoOn(p)
+	}
+	if p.Account != nil && p.Account.Agent == "copilot" {
+		return copilotAlsoOn()
 	}
 	if p.Account == nil || p.Account.token != nil || (p.Account.Agent != "claude" && p.Account.Agent != "codex") {
 		return nil

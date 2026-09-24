@@ -1712,9 +1712,39 @@ function renderImportApps(ia) {
     return ed;
   }
   ed.append(el("div", "appnote", t("magpie reads these apps' settings and changes nothing in them. Pick the providers to bring over.")));
+  // one tab per app magpie can import from, so which ones it can is plain
+  // at a glance; each shows how many providers it has to bring over
+  const tabs = el("div", "apptabs");
+  tabs.setAttribute("role", "tablist");
   const list = el("div", "applist");
+  const secs = {};
+  const pickable = (s) => s.items.some((it) => ia.picks[s.id + "\n" + it.ref]);
+  if (!ia.sources.some((s) => s.id === ia.tab)) {
+    ia.tab = (ia.sources.find(pickable) || ia.sources.find((s) => s.found) || ia.sources[0])?.id;
+  }
+  const showTab = (id) => {
+    ia.tab = id;
+    for (const [sid, [tab, sec]] of Object.entries(secs)) {
+      tab.classList.toggle("on", sid === id);
+      tab.setAttribute("aria-selected", String(sid === id));
+      sec.hidden = sid !== id;
+    }
+    list.scrollTop = 0;
+  };
   for (const s of ia.sources) {
     const sec = el("div", "appsrc");
+    const tab = el("button", "apptab" + (s.found && !s.error ? "" : " missing"));
+    tab.setAttribute("role", "tab");
+    const tlogo = el("img", "applogo");
+    tlogo.src = `icons/app-${s.id}.png`;
+    tlogo.alt = "";
+    tlogo.draggable = false;
+    const n = s.items.filter((it) => ia.picks[s.id + "\n" + it.ref]).length;
+    tab.append(tlogo, el("span", "", s.name), el("span", "count", s.found && !s.error ? String(n) : "–"));
+    tab.title = s.found ? (s.error || t(n === 1 ? "1 provider to bring over" : "{n} providers to bring over", { n })) : t("Not found on this computer");
+    tab.onclick = () => showTab(s.id);
+    tabs.append(tab);
+    secs[s.id] = [tab, sec];
     const sh = el("div", "apphead");
     const logo = el("img", "applogo");
     logo.src = `icons/app-${s.id}.png`;
@@ -1750,7 +1780,8 @@ function renderImportApps(ia) {
     }
     list.append(sec);
   }
-  ed.append(list);
+  ed.append(tabs, list);
+  showTab(ia.tab);
   go.onclick = async () => {
     const picks = [];
     for (const [k, v] of Object.entries(ia.picks)) {
@@ -1992,7 +2023,8 @@ function renderModels(p) {
 // renderRouting: how the gateway spreads requests over the keys or
 // accounts a provider has on. It takes effect at once, like ticking one.
 const ROUTINGS = [
-  ["", "In order", "Requests go to the first; the next takes over when the one before runs out of quota, hits a rate limit or fails."],
+  ["", "Smart", "The first takes requests while it has quota to spare; when it runs low, the one with the most left takes over. One out of credit sits out half an hour, one out of quota until it resets, one rate limited as long as the vendor asks, and one that fails a minute, longer each time it fails again."],
+  ["order", "In order", "Requests go to the first; the next takes over when the one before runs out of quota, hits a rate limit or fails."],
   ["rotate", "In turn", "Each request goes to the next one, spreading the load evenly; one that fails is passed over for a minute."],
   ["usage", "Least used first", "Each request goes to the one used least: a subscription by the share of its allowance used, a key by the tokens it served in the last hours."],
 ];
@@ -2080,6 +2112,8 @@ const SUBS = [
   { agent: "cursor", name: "Cursor", icon: "cursor", plans: "Pro · Ultra · Teams", single: true },
   // so does the Grok CLI
   { agent: "grok", name: "Grok", icon: "xai", plans: "SuperGrok · X Premium+", own: true },
+  // signed in with GitHub's device code; the editors' own sign-in stays theirs
+  { agent: "copilot", name: "Copilot", icon: "githubcopilot", plans: "Pro · Pro+ · Business", own: true },
 ];
 const subOf = (agent) => SUBS.find((x) => x.agent === agent);
 let signing = null; // the sign-in under way: { id, agent, url, state, error }
@@ -2147,7 +2181,12 @@ function renderSigning(sub) {
   }
   box.append(el("span", "spinner"));
   tt.append(el("span", "n", t("Finish signing in to {name} in your browser", { name: sub.name })),
-    el("span", "s", t("magpie opened the sign-in page. The account shows up here as soon as you're done.")));
+    el("span", "s", signing.code ? t("magpie opened GitHub's device page. Enter this code there; the account shows up here as soon as you're done.") : t("magpie opened the sign-in page. The account shows up here as soon as you're done.")));
+  if (signing.code) {
+    const code = el("span", "devcode");
+    code.append(el("code", "", signing.code), copyBtn(signing.code, t("Code")));
+    tt.append(code);
+  }
   box.append(tt);
   if (signing.url) {
     const acts = el("span", "acts");
