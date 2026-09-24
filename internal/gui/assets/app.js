@@ -1433,7 +1433,7 @@ function renderEditor(p, presetID) {
     // the sign-in belongs to the agent; magpie only borrows it
     const a = p.account;
     if (subOf(a.agent)) {
-      ed.append(...field(t("Accounts"), renderAccounts(a), t("{agent} and the gateway use the one in use. Sessions already running keep theirs until restarted.", { agent: a.agentName })));
+      ed.append(...field(t("Accounts"), renderAccounts(a), t("{agent} signs in to the first. Tick more and the gateway moves on to the next when the one before it is out of quota. Sessions already running keep theirs until restarted.", { agent: a.agentName })));
     } else {
       const acct = el("div", "acct");
       acct.append(icon(a.agentIcon), el("span", "n", a.user), el("span", "plan", accountPlan(a)));
@@ -1895,29 +1895,43 @@ function renderSigning(sub) {
   return box;
 }
 
-// renderAccounts: every account of an agent magpie has, the one in use
-// first, and a way to add another.
+// renderAccounts: every account of an agent magpie has, the one the agent
+// is signed in to first, and a way to add another. Like keys, any number
+// can be ticked: the gateway moves to the next ticked account when the
+// first is out of quota. Each shows how much of its allowance is used, so
+// which one to go to next is plain to see.
 function renderAccounts(a) {
   const sub = subOf(a.agent);
   const list = el("div", "accts");
-  let ls = a.logins?.length ? [...a.logins] : [{ user: a.user, plan: a.plan, active: true }];
+  let ls = a.logins?.length ? [...a.logins] : [{ user: a.user, plan: a.plan, active: true, on: true }];
   ls.sort((x, y) => (y.active ? 1 : 0) - (x.active ? 1 : 0));
+  const several = ls.filter((l) => l.active || l.on).length > 1;
+  const quota = loginUsageOf(a.agent);
   for (const l of ls) {
-    const row = el("div", "acc" + (l.active ? " in-use" : "") + (l.user === justAdded ? " new" : ""));
-    const dot = el("span", "dot");
-    if (l.active) dot.append(svg(CHECK, 10, 2.2));
+    const on = l.active || l.on;
+    const row = el("div", "acc" + (on ? " in-use" : " off") + (l.user === justAdded ? " new" : ""));
+    const dot = el("button", "dot tick");
+    if (on) dot.append(svg(CHECK, 10, 2.2));
+    if (l.active) {
+      dot.title = t("{agent} is signed in to this account", { agent: a.agentName });
+      dot.classList.add("fixed");
+    } else {
+      dot.title = on ? t("Stop using this account") : t("Use this account too");
+      dot.onclick = () => accountAction("login/" + (on ? "off" : "on"), { agent: a.agent, user: l.user });
+    }
     row.append(dot, el("span", "n", l.user), el("span", "plan", accountPlan({ agent: a.agent, plan: l.plan })), el("span", "grow"));
     if (l.active) {
-      row.append(el("span", "using", t("In use")));
+      row.append(el("span", "using", several ? t("First") : t("In use")));
     } else {
       const forget = el("button", "text quiet", t("Remove"));
       forget.title = t("magpie forgets this account's sign-in; the account itself is untouched");
       forget.onclick = () => accountAction("login/forget", { agent: a.agent, user: l.user }, t("{user} removed", { user: l.user }));
-      const use = el("button", "text", t("Use"));
+      const use = el("button", "text", on ? t("Make first") : t("Use"));
       use.title = t("Sign {agent} in to this account", { agent: a.agentName });
       use.onclick = () => { use.classList.add("busy"); accountAction("login/switch", { agent: a.agent, user: l.user }, t("{agent} is now signed in as {user}", { agent: a.agentName, user: l.user })); };
       row.append(forget, use);
     }
+    row.append(accountQuota(quota, l.user));
     list.append(row);
   }
   if (signing?.agent === a.agent) list.append(renderSigning(sub));
@@ -1930,6 +1944,64 @@ function renderAccounts(a) {
     list.append(add);
   }
   return list;
+}
+
+// Each account's allowance comes from the vendor and takes a moment, so it
+// loads on its own and fills the rows in when it's there.
+const loginUsage = {}; // agent → { at, data: { user: quota }, loading }
+function loginUsageOf(agent) {
+  const u = (loginUsage[agent] ||= {});
+  if (!u.loading && !(Date.now() - (u.at || 0) < 60000)) {
+    u.loading = api("login/usage?agent=" + agent)
+      .then((d) => { u.data = d || {}; }, () => { u.data = u.data || {}; })
+      .finally(() => {
+        u.at = Date.now(); u.loading = null;
+        if (providers?.providers.find((p) => p.id === editing)?.account?.agent === agent && !document.querySelector(".editor .rename-in, .editor input:focus")) renderProviders();
+      });
+  }
+  return u.data;
+}
+
+// accountQuota: an account's allowance as a line of small meters under its
+// name, the reset time on the ones nearly used up.
+function accountQuota(data, user) {
+  const line = el("div", "aq");
+  if (!data) {
+    line.append(el("span", "skeleton sk-aq"), el("span", "skeleton sk-aq"));
+    return line;
+  }
+  const q = data[user];
+  if (!q || q.error || !q.windows?.length) {
+    line.append(el("span", "aq-none", q?.error ? t("Usage unavailable") : t("No usage reported")));
+    if (q?.error) line.title = q.error;
+    return line;
+  }
+  // the two rolling windows fit a line; the per-model ones go in its tooltip
+  line.title = q.windows.slice(2).map((w) => t(w.name) + " " + (w.display || Math.round(w.used) + "%")).join(" · ");
+  for (const w of q.windows.slice(0, 2)) {
+    const used = Math.max(0, Math.min(100, w.used));
+    const m = el("span", "aq-w" + (used >= 90 ? " full" : ""));
+    const track = el("span", "aq-track");
+    const fill = el("i");
+    fill.style.width = used + "%";
+    track.append(fill);
+    m.append(el("span", "aq-n", t(w.name)), track, el("b", "", w.display || Math.round(w.used) + "%"));
+    if (w.resetsAt) {
+      const at = new Date(w.resetsAt);
+      m.title = t("Resets {when}", { when: at.toLocaleString() });
+      if (used >= 80) m.append(el("span", "aq-r", t("resets {in}", { in: untilText(at) })));
+    }
+    line.append(m);
+  }
+  return line;
+}
+
+function untilText(at) {
+  const mins = Math.max(1, Math.round((at - Date.now()) / 60000));
+  if (mins < 60) return t("in {n}m", { n: mins });
+  const h = Math.round(mins / 60);
+  if (h < 48) return t("in {n}h", { n: h });
+  return t("in {n}d", { n: Math.round(h / 24) });
 }
 
 // accountAction changes which account a provider uses, or which it has,

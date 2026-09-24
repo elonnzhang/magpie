@@ -341,6 +341,12 @@ func providerRoutes(mux *http.ServeMux, w Windows, gw *gateway.Server) {
 		}
 		writeJSON(rw, providersState(gw))
 	})
+	// How much of its allowance each of an agent's accounts has used.
+	mux.HandleFunc("GET /api/login/usage", func(rw http.ResponseWriter, r *http.Request) {
+		ctx, cancel := context.WithTimeout(r.Context(), 12*time.Second)
+		defer cancel()
+		writeJSON(rw, provider.LoginUsage(ctx, r.URL.Query().Get("agent")))
+	})
 	// Switching the account an agent is signed in to, among those magpie
 	// remembers, and forgetting one.
 	mux.HandleFunc("POST /api/login/{action}", func(rw http.ResponseWriter, r *http.Request) {
@@ -355,6 +361,8 @@ func providerRoutes(mux *http.ServeMux, w Windows, gw *gateway.Server) {
 			err = provider.SwitchLogin(in.Agent, in.User)
 		case "forget":
 			err = provider.ForgetLogin(in.Agent, in.User)
+		case "on", "off":
+			err = provider.SetLoginOn(in.Agent, in.User, r.PathValue("action") == "on")
 		default:
 			http.NotFound(rw, r)
 			return

@@ -548,6 +548,21 @@ body.window .foot { padding-left: 18px; }
 .acc.adding .kb .grow { flex: 1; }
 .acc + .acc.adding { border-top: 1px solid var(--line-2); }
 @media (max-width: 520px) { .acc.adding .kf { grid-template-columns: 1fr; } }
+/* a subscription's allowance, under its name */
+.accts .acc:has(.aq) { flex-wrap: wrap; row-gap: 3px; padding-top: 7px; padding-bottom: 8px; }
+.acc .aq { flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 16px; padding-left: 25px; font-size: 10.5px; color: var(--muted); min-height: 14px; }
+.acc .aq-w { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.acc .aq-track { width: 54px; height: 4px; border-radius: 2px; background: var(--pill); overflow: hidden; }
+.acc .aq-track i { display: block; height: 100%; border-radius: inherit; background: var(--fg-2); }
+.acc .aq-w b { color: var(--fg-2); font-weight: 600; font-variant-numeric: tabular-nums; }
+.acc .aq-w.full b, .acc .aq-w.full .aq-r { color: var(--fg); }
+.acc .aq-w.full .aq-track i { background: var(--fg); }
+.acc .aq-r { color: var(--muted); }
+.acc .aq-none { color: var(--faint); }
+.acc .skeleton.sk-aq { width: 110px; height: 8px; border-radius: 4px; }
+.acc .dot.tick.fixed { cursor: default; }
+.acc .dot.tick.fixed:hover { box-shadow: none; }
+.acc.off .aq { opacity: .7; }
 
 /* a sign-in under way, waiting on the browser */
 .signing { display: flex; align-items: flex-start; gap: 11px; padding: 11px 10px 11px 12px; font-size: 12.5px; background: var(--card-2); animation: fade-in .2s; }

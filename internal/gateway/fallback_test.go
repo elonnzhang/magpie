@@ -2,9 +2,13 @@ package gateway
 
 import (
 	"bytes"
+	"encoding/base64"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -156,5 +160,66 @@ func TestSeveralKeysOnTakeOverFromEachOther(t *testing.T) {
 	up.seen = nil
 	if body := send(); !strings.Contains(body, "from-k-team") || strings.Join(up.seen, ",") != "k-team" {
 		t.Fatalf("body %s, tried %v", body, up.seen)
+	}
+}
+
+// Two ChatGPT accounts ticked: the one Codex is signed in to is out of
+// quota, so the request goes to the saved one, signed with its own tokens.
+func TestSubscriptionAccountsTakeOver(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	t.Setenv("XDG_CACHE_HOME", filepath.Join(home, ".cache"))
+	restingUntil.Lock()
+	restingUntil.m = map[string]time.Time{}
+	restingUntil.Unlock()
+	claims := func(m map[string]any) string {
+		b, _ := json.Marshal(m)
+		return "h." + base64.RawURLEncoding.EncodeToString(b) + ".s"
+	}
+	auth := func(email, acct string) map[string]any {
+		return map[string]any{"auth_mode": "chatgpt", "tokens": map[string]any{
+			"id_token":      claims(map[string]any{"email": email}),
+			"access_token":  claims(map[string]any{"exp": time.Now().Add(time.Hour).Unix(), "who": acct}),
+			"refresh_token": "r-" + acct, "account_id": acct}}
+	}
+	os.MkdirAll(filepath.Join(home, ".codex"), 0o755)
+	os.WriteFile(filepath.Join(home, ".codex", "auth.json"), mustJSON(auth("me@example.com", "acct-1")), 0o600)
+	os.MkdirAll(filepath.Dir(provider.Path()), 0o755)
+	os.WriteFile(filepath.Join(filepath.Dir(provider.Path()), "logins.json"), mustJSON([]map[string]any{
+		{"agent": "codex", "user": "spare@example.com", "on": true, "seen": time.Now(), "auth": auth("spare@example.com", "acct-2")},
+	}), 0o600)
+
+	var tried []string
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		io.ReadAll(r.Body)
+		tried = append(tried, r.Header.Get("chatgpt-account-id"))
+		if r.Header.Get("chatgpt-account-id") == "acct-1" {
+			w.WriteHeader(429)
+			io.WriteString(w, `{"error":{"message":"You've hit your usage limit"}}`)
+			return
+		}
+		io.WriteString(w, sse(
+			`data: {"type":"response.created","response":{"id":"r1","model":"gpt-5.5"}}`,
+			`data: {"type":"response.output_text.delta","delta":"pong"}`,
+			`data: {"type":"response.completed","response":{"id":"r1","usage":{"input_tokens":7,"output_tokens":1}}}`))
+	}))
+	defer up.Close()
+	old := provider.CodexBase
+	provider.CodexBase = up.URL + "/backend-api/codex"
+	defer func() { provider.CodexBase = old }()
+
+	code, body := post(t, "/v1/responses", `{"model":"codex/gpt-5.5","input":"ping"}`)
+	if code != 200 || !strings.Contains(body, "pong") {
+		t.Fatalf("status %d: %s", code, body)
+	}
+	if strings.Join(tried, ",") != "acct-1,acct-2" {
+		t.Fatalf("tried %v", tried)
+	}
+	// the first sits out a minute; the next request goes straight on
+	tried = nil
+	post(t, "/v1/responses", `{"model":"codex/gpt-5.5","input":"ping"}`)
+	if strings.Join(tried, ",") != "acct-2" {
+		t.Fatalf("second request tried %v", tried)
 	}
 }

@@ -8,8 +8,9 @@ package gateway
 // the line for a minute, rather than costing every request a doomed try.
 //
 // A provider with several keys on is several candidates, one per key, in
-// order: when one account runs out, the next account of the same provider
-// takes the request before any fallback model does.
+// order, and so is a subscription with several accounts on: when one
+// account runs out, the next account of the same provider takes the
+// request before any fallback model does.
 
 import (
 	"bytes"
@@ -35,14 +36,25 @@ func (c candidate) label() string {
 	if c.rest == c.p.ID {
 		return c.p.ID
 	}
+	if c.p.Account != nil {
+		return c.p.ID + " (" + c.p.Account.User + ")"
+	}
 	if c.p.KeyName != "" {
 		return c.p.ID + " (" + c.p.KeyName + ")"
 	}
 	return c.p.ID + " (" + provider.Mask(c.p.Key) + ")"
 }
 
-// perKey is a provider once per key it has on, in order.
+// perKey is a provider once per key it has on, in order — or, for a
+// signed-in agent, once per account it has on, its own first.
 func perKey(p provider.Provider, model string) []candidate {
+	if p.Account != nil {
+		out := []candidate{{p, model, p.ID}}
+		for _, q := range p.AlsoOn() {
+			out = append(out, candidate{q, model, p.ID + "@" + q.Account.User})
+		}
+		return out
+	}
 	keys := p.KeysOn()
 	if len(keys) < 2 {
 		return []candidate{{p, model, p.ID}}
