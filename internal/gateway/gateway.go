@@ -80,9 +80,9 @@ type Server struct {
 	client *http.Client
 	mu     sync.Mutex
 	recent []Call
-	// responseOnly remembers models rejected by Chat Completions, avoiding a
-	// known-failing probe on every Claude Code turn.
-	responseOnly map[string]bool
+	// unfit remembers the endpoints each provider's models were turned away
+	// from, so every later turn goes straight to one that takes them.
+	unfit        map[string]bool
 	subscription *subscriptionBridge
 	debug        bool
 	trace        trace // what routing did with each request, for the Gateway view
@@ -98,7 +98,7 @@ func New() *Server {
 			IdleConnTimeout:       90 * time.Second,
 			ForceAttemptHTTP2:     true,
 		}},
-		responseOnly: make(map[string]bool),
+		unfit:        make(map[string]bool),
 		subscription: newSubscriptionBridge(),
 		debug:        os.Getenv("MAGPIE_DEBUG") != "",
 	}
@@ -472,12 +472,18 @@ func (s *Server) attempt(w http.ResponseWriter, r *http.Request, from provider.P
 	}
 	// a backend that only streams gets a non-streaming request translated
 	// (the provider is always streamed on that path) rather than relayed
-	relay := p.Base(from) != "" && (p.Account == nil || !p.Account.Stream || streamOf(body))
+	relay := p.Base(from) != "" && s.fits(p.ID, model, from) && (p.Account == nil || !p.Account.Stream || streamOf(body))
 	if relay {
 		call.To = from
-		return s.passthrough(w, r, p, from, model, body, &call.Usage)
+		if status, msg, done := s.passthrough(w, r, p, from, model, body, &call.Usage); done {
+			return status, msg
+		}
+		// the model isn't served on the client's own API: speak another
 	}
-	to := p.Speaks()
+	to := s.usable(p, model)
+	if len(to) == 0 {
+		to = p.Speaks()
+	}
 	if len(to) == 0 {
 		msg := p.Name + " has no endpoint configured"
 		return writeError(w, from, 502, msg), msg
@@ -514,22 +520,30 @@ func (s *Server) forward(ctx context.Context, p provider.Provider, to provider.P
 
 // passthrough relays a request the provider understands as-is, with the
 // model name swapped for the provider's own. The token counts the reply
-// carries are read on the way past into u.
-func (s *Server) passthrough(w http.ResponseWriter, r *http.Request, p provider.Provider, proto provider.Protocol, model string, body []byte, u *Usage) (int, string) {
+// carries are read on the way past into u. done is false, with nothing
+// written, when the provider serves the model on another of its endpoints
+// but not this one.
+func (s *Server) passthrough(w http.ResponseWriter, r *http.Request, p provider.Provider, proto provider.Protocol, model string, body []byte, u *Usage) (status int, msg string, done bool) {
 	body = rewriteModel(body, model)
 	if proto == provider.Chat {
 		body = developerAsSystem(body)
 	}
 	res, err := s.forward(r.Context(), p, proto, pathOf(proto), p.Prepare(body), r.Header)
 	if err != nil {
-		return writeError(w, proto, 502, p.Name+": "+err.Error()), err.Error()
+		return writeError(w, proto, 502, p.Name+": "+err.Error()), err.Error(), true
 	}
 	defer res.Body.Close()
 	if res.StatusCode >= 400 {
 		b, _ := io.ReadAll(io.LimitReader(res.Body, 1<<20))
 		msg := p.Name + ": " + provider.APIError(b, res.Status)
+		if wrongEndpoint(res.StatusCode, b) {
+			s.markUnfit(p.ID, model, proto)
+			if len(s.usable(p, model)) > 0 {
+				return res.StatusCode, msg, false
+			}
+		}
 		keepRetry(w.Header(), res.Header)
-		return writeError(w, proto, res.StatusCode, msg), msg
+		return writeError(w, proto, res.StatusCode, msg), msg, true
 	}
 	rd, sse := eventStream(res)
 	h := w.Header()
@@ -552,7 +566,7 @@ func (s *Server) passthrough(w http.ResponseWriter, r *http.Request, p provider.
 		if n > 0 {
 			sniff.write(buf[:n])
 			if _, werr := w.Write(buf[:n]); werr != nil {
-				return res.StatusCode, ""
+				return res.StatusCode, "", true
 			}
 			if f != nil {
 				f.Flush()
@@ -562,7 +576,7 @@ func (s *Server) passthrough(w http.ResponseWriter, r *http.Request, p provider.
 			break
 		}
 	}
-	return res.StatusCode, ""
+	return res.StatusCode, "", true
 }
 
 // eventStream reports whether a reply is server-sent events. The header
@@ -588,52 +602,63 @@ func eventStream(res *http.Response) (io.Reader, bool) {
 	return br, false
 }
 
-func (s *Server) responseOnlyModel(providerID, model string) bool {
+// fits reports whether the provider hasn't turned model away from proto.
+func (s *Server) fits(providerID, model string, proto provider.Protocol) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.responseOnly[providerID+"\x00"+model]
+	return !s.unfit[providerID+"\x00"+model+"\x00"+string(proto)]
 }
 
-func (s *Server) markResponseOnly(providerID, model string) {
+func (s *Server) markUnfit(providerID, model string, proto provider.Protocol) {
 	s.mu.Lock()
-	s.responseOnly[providerID+"\x00"+model] = true
+	s.unfit[providerID+"\x00"+model+"\x00"+string(proto)] = true
 	s.mu.Unlock()
 }
 
-// forwardTranslated sends one translated, streaming request upstream. Chat is
-// preferred by most OpenAI-compatible providers, but some models are exposed
-// only by the Responses endpoint; retry that endpoint before failing, like
-// Alma's Claude Code provider proxy does.
-func (s *Server) forwardTranslated(ctx context.Context, p provider.Provider, to provider.Protocol, req *Request, model string, in http.Header) (*http.Response, provider.Protocol, error) {
-	send := func(proto provider.Protocol) (*http.Response, error) {
-		body := build(proto, req, model, p.Host(), p.RejectsTemperature(model))
-		return s.forward(ctx, p, proto, pathOf(proto), p.Prepare(body), in)
+// usable lists the protocols p speaks that model hasn't been turned away
+// from, preferred first.
+func (s *Server) usable(p provider.Provider, model string) []provider.Protocol {
+	var out []provider.Protocol
+	for _, proto := range p.Speaks() {
+		if s.fits(p.ID, model, proto) {
+			out = append(out, proto)
+		}
 	}
-	if to == provider.Chat && p.Responses != "" && s.responseOnlyModel(p.ID, model) {
-		to = provider.Responses
-	}
-	res, err := send(to)
-	if err != nil {
-		return nil, to, err
-	}
-	if to != provider.Chat || p.Responses == "" || res.StatusCode < 400 {
-		return res, to, nil
-	}
-	b, _ := io.ReadAll(io.LimitReader(res.Body, 1<<20))
-	res.Body.Close()
-	if !notChatModel(res.StatusCode, b) {
-		res.Body = io.NopCloser(bytes.NewReader(b))
-		return res, to, nil
-	}
-	s.markResponseOnly(p.ID, model)
-	res, err = send(provider.Responses)
-	return res, provider.Responses, err
+	return out
 }
 
-// notChatModel recognizes the errors used by OpenAI-compatible servers when a
-// model can only be called through /responses.
-func notChatModel(status int, body []byte) bool {
-	if status < 400 {
+// forwardTranslated sends one translated, streaming request upstream. A
+// provider can serve a model on some of its endpoints and not others —
+// OpenAI's and Copilot's newest models answer only /responses, Copilot's
+// Claude models only /chat/completions — so when it says the model isn't
+// served on this one, the request is built again for the next endpoint it
+// speaks, and the model is remembered there.
+func (s *Server) forwardTranslated(ctx context.Context, p provider.Provider, to provider.Protocol, req *Request, model string, in http.Header) (*http.Response, provider.Protocol, error) {
+	for {
+		body := build(to, req, model, p.Host(), p.RejectsTemperature(model))
+		res, err := s.forward(ctx, p, to, pathOf(to), p.Prepare(body), in)
+		if err != nil || res.StatusCode < 400 {
+			return res, to, err
+		}
+		b, _ := io.ReadAll(io.LimitReader(res.Body, 1<<20))
+		res.Body.Close()
+		res.Body = io.NopCloser(bytes.NewReader(b))
+		if !wrongEndpoint(res.StatusCode, b) {
+			return res, to, nil
+		}
+		s.markUnfit(p.ID, model, to)
+		next := s.usable(p, model)
+		if len(next) == 0 {
+			return res, to, nil
+		}
+		to = next[0]
+	}
+}
+
+// wrongEndpoint recognizes the errors OpenAI-compatible servers give when a
+// model exists but isn't served on the endpoint asked.
+func wrongEndpoint(status int, body []byte) bool {
+	if status < 400 || status >= 500 {
 		return false
 	}
 	msg := strings.ToLower(string(body))
@@ -641,10 +666,18 @@ func notChatModel(status int, body []byte) bool {
 		"not a chat model",
 		"not supported in the v1/chat/completions",
 		"not supported in /v1/chat/completions",
+		"not supported in the v1/responses",
+		"not supported in /v1/responses",
+		"only supported in v1/responses",
+		"only supported in /v1/responses",
 		"use v1/completions",
 		"use /v1/completions",
 		"use v1/responses",
 		"use /v1/responses",
+		"use v1/chat/completions",
+		"use /v1/chat/completions",
+		"not accessible via the", // Copilot
+		"unsupported_api_for_model",
 	} {
 		if strings.Contains(msg, phrase) {
 			return true

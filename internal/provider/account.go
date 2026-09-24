@@ -819,7 +819,7 @@ var (
 type copilotApp struct {
 	User  string `json:"user"`
 	Token string `json:"oauth_token"`
-	cli   bool // the standalone Copilot CLI's sign-in
+	cli   bool   // the standalone Copilot CLI's sign-in
 }
 
 // copilotLogin finds the GitHub token Copilot's editors and CLI keep.
@@ -889,20 +889,37 @@ func copilotProvider(app copilotApp, plan string) Provider {
 		}
 		return ms, catalog.SaveLive("copilot", copilotBase, ms)
 	}
-	return Provider{ID: "copilot", Name: "Copilot", Icon: "githubcopilot", Chat: copilotBase, Website: "https://github.com/features/copilot", Account: acct}
+	// the newest GPT models are served only on /responses and Claude's only
+	// on /chat/completions; the gateway learns which from Copilot's answer
+	return Provider{ID: "copilot", Name: "Copilot", Icon: "githubcopilot", Chat: copilotBase, Responses: copilotBase, Website: "https://github.com/features/copilot", Account: acct}
 }
 
-// lastRole is the role of the last message in a chat request.
+// lastRole is the role of the last message in a chat or Responses request;
+// a Responses tool result has none.
 func lastRole(body []byte) string {
 	var v struct {
 		Messages []struct {
 			Role string `json:"role"`
 		} `json:"messages"`
+		Input json.RawMessage `json:"input"`
 	}
-	if json.Unmarshal(body, &v) != nil || len(v.Messages) == 0 {
+	if json.Unmarshal(body, &v) != nil {
 		return ""
 	}
-	return v.Messages[len(v.Messages)-1].Role
+	if len(v.Messages) > 0 {
+		return v.Messages[len(v.Messages)-1].Role
+	}
+	var text string
+	if json.Unmarshal(v.Input, &text) == nil {
+		return "user"
+	}
+	var items []struct {
+		Role string `json:"role"`
+	}
+	if json.Unmarshal(v.Input, &items) != nil || len(items) == 0 {
+		return ""
+	}
+	return items[len(items)-1].Role
 }
 
 func copilotToken(ctx context.Context, github string) (copilotSession, error) {

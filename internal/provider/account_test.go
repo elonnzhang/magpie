@@ -495,3 +495,18 @@ func TestClaudeSignedOut(t *testing.T) {
 		t.Fatal("claude listed after sign-out")
 	}
 }
+
+func TestLastRole(t *testing.T) {
+	for body, want := range map[string]string{
+		`{"messages":[{"role":"system"},{"role":"user"}]}`: "user",
+		`{"messages":[{"role":"user"},{"role":"tool"}]}`:   "tool",
+		`{"input":"hi"}`: "user",
+		`{"input":[{"role":"user","content":"hi"}]}`:                                             "user",
+		`{"input":[{"role":"user"},{"type":"function_call_output","call_id":"c","output":"x"}]}`: "",
+		`not json`: "",
+	} {
+		if got := lastRole([]byte(body)); got != want {
+			t.Errorf("lastRole(%s) = %q, want %q", body, got, want)
+		}
+	}
+}
