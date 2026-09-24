@@ -606,12 +606,14 @@ body.window .foot { padding-left: 18px; }
 /* the add sheet: presets as tiles, one key away */
 .sheet { padding: 6px 0 8px; flex: none; }
 .sheet .row-head { padding: 0 2px; gap: 6px; }
-.sheet .find { height: 24px; width: 160px; padding: 0 9px; border-radius: 7px; border: 1px solid var(--line); background: var(--card); font-size: 12px; outline: none; transition: border-color .12s; }
-.sheet .find:focus { border-color: var(--accent); }
-.sheet .find::placeholder { color: var(--faint); }
+.sheet .find, #view-gateway .find { height: 24px; width: 160px; padding: 0 9px; border-radius: 7px; border: 1px solid var(--line); background: var(--card); font-size: 12px; outline: none; transition: border-color .12s; }
+.sheet .find:focus, #view-gateway .find:focus { border-color: var(--accent); }
+.sheet .find::placeholder, #view-gateway .find::placeholder { color: var(--faint); }
 .sheet .kind { font-size: 11.5px; color: var(--muted); padding: 10px 2px 5px; }
 .sheet .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 6px; }
 .sheet .none { padding: 14px 2px; color: var(--muted); font-size: 12px; }
+#gwModels .none { padding: 16px; color: var(--muted); font-size: 12px; text-align: center; }
+#view-gateway .row-head .find { margin-right: 8px; }
 .tile {
   position: relative; display: flex; align-items: center; gap: 10px;
   height: 46px; padding: 0 10px 0 11px; border-radius: 10px; text-align: left; min-width: 0;

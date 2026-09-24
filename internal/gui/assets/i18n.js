@@ -97,6 +97,8 @@ const I18N = {
     "Add a provider": "添加供应商",
     "Add your first provider": "添加第一个供应商",
     "Find a vendor…": "查找供应商…",
+    "Find a model…": "查找模型…",
+    "No models match “{q}”": "没有和“{q}”匹配的模型",
     "Close": "关闭",
     "Vendors": "供应商",
     "Relays · many vendors behind one key": "中转 · 一个密钥背后多家供应商",

@@ -947,14 +947,36 @@ function highlight(code, lang) {
   return out;
 }
 
+let modelQuery = "";
 function renderGatewayModels() {
   const list = $("#gwModels");
   list.replaceChildren();
-  const models = gatewayModels();
+  const all = gatewayModels();
+  // the search sits in the section head, beside Copy all ids; typing
+  // redraws only the list, so it keeps its focus
+  let q = $("#findModel");
+  if (!q) {
+    q = input(modelQuery, t("Find a model…"));
+    q.id = "findModel";
+    q.className = "find";
+    q.oninput = () => { modelQuery = q.value; renderGatewayModels(); };
+    q.onkeydown = (e) => { e.stopPropagation(); if (e.key === "Escape" && q.value) { q.value = modelQuery = ""; renderGatewayModels(); } };
+    $("#copyModels").before(q);
+  }
+  q.hidden = all.length < 8;
+  const words = modelQuery.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const models = q.hidden ? all : all.filter((m) => {
+    const hay = `${m.id} ${m.name || ""} ${m.provider.name}`.toLowerCase();
+    return words.every((w) => hay.includes(w));
+  });
   $("#copyModels").hidden = !models.length;
   $("#copyModels").onclick = () => copy(models.map((m) => m.id).join("\n"), t("Model ids"));
-  if (!models.length) {
+  if (!all.length) {
     list.append(el("div", "empty-state", "")).append(el("b", "", t("No models exposed yet")), t("Add a provider, or sign in to Codex or Copilot; their models show up here for every agent."));
+    return;
+  }
+  if (!models.length) {
+    list.append(el("div", "none", t("No models match “{q}”", { q: modelQuery.trim() })));
     return;
   }
   for (const m of models) {
