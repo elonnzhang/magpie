@@ -149,7 +149,7 @@ func retryAfter(h http.Header, now time.Time) time.Duration {
 	return min(d, longestWait)
 }
 
-var allowanceUsed = provider.AllowanceUsed
+var allowances = provider.Allowances
 
 // Shares of an allowance past which an account is kept for when the others
 // can't take a request: low, and all but used up.
@@ -163,21 +163,24 @@ func route(p provider.Provider, cs []candidate, model string, from provider.Prot
 	if len(cs) < 2 {
 		return cs
 	}
-	var share map[string]float64
+	var known map[string]provider.Allowance
 	if p.Account != nil {
-		share = allowanceUsed(p.Account.Agent)
+		known = allowances(p.Account.Agent)
 	}
-	shareOf := func(c candidate) float64 { // 0 when not known
+	allowanceOf := func(c candidate) provider.Allowance { // zero when not known
 		if c.p.Account == nil {
-			return 0
+			return provider.Allowance{}
 		}
-		return share[c.p.Account.User]
+		return known[c.p.Account.User]
 	}
+	shareOf := func(c candidate) float64 { return allowanceOf(c).Used }
 	switch p.Routing {
 	case "":
-		// the first while it has quota to spare, keeping the vendor's
-		// prompt cache warm; past that, whichever has the most left, and
-		// one all but used up only when nothing else can take it
+		// of those with quota to spare, the one whose allowance renews
+		// soonest, since what it has left is lost then, while one renewing
+		// later keeps; the first of them while that holds, keeping the
+		// vendor's prompt cache warm. Past that, whichever has the most
+		// left, and one all but used up only when nothing else can take it
 		var fine, low, spent []candidate
 		for _, c := range cs {
 			switch v := shareOf(c); {
@@ -189,6 +192,21 @@ func route(p provider.Provider, cs []candidate, model string, from provider.Prot
 				fine = append(fine, c)
 			}
 		}
+		now := time.Now()
+		renews := func(c candidate) time.Time { // to the hour, so a few minutes don't reorder
+			t := allowanceOf(c).Resets
+			if !t.After(now) {
+				return time.Time{}
+			}
+			return t.Truncate(time.Hour)
+		}
+		sort.SliceStable(fine, func(i, j int) bool {
+			ri, rj := renews(fine[i]), renews(fine[j])
+			if ri.IsZero() || rj.IsZero() { // not known: after those known
+				return !ri.IsZero() && rj.IsZero()
+			}
+			return ri.Before(rj)
+		})
 		for _, l := range [][]candidate{low, spent} {
 			sort.SliceStable(l, func(i, j int) bool {
 				return shareOf(l[i]) < shareOf(l[j])

@@ -487,7 +487,7 @@ footer a:hover { color: var(--ink); }
           <button role="tab" data-mode="turn" aria-selected="false">In turn</button>
           <button role="tab" data-mode="least" aria-selected="false">Least used first</button>
         </div>
-        <p class="rt-mode">Smart, the default: one account keeps the requests while it has quota to spare, and any that can't answer are passed over.</p>
+        <p class="rt-mode">Smart, the default: the account that resets soonest goes first, so no allowance is left to go to waste; any that can't answer are passed over.</p>
       </div>
       <div class="rt-stage">
         <svg class="rt-wires" aria-hidden="true"></svg>
@@ -495,10 +495,10 @@ footer a:hover { color: var(--ink); }
         <div class="rt-node rt-hub"><img class="bird" src="/img/magpie-small.svg" alt=""><b>magpie</b><small>localhost:3425</small><i>Smart</i></div>
         <ol class="rt-accts">
           <li class="on"><i class="dot"></i><b><img src="/icons/claude-color.svg" alt="">me@work.dev <span>Claude Max</span></b><em>serving</em><div class="bar"><i style="width:72%"></i></div><span class="tag"></span></li>
-          <li><i class="dot"></i><b><img src="/icons/claude-color.svg" alt="">me@home.dev <span>Claude Pro</span></b><em>38% used</em><div class="bar"><i style="width:38%"></i></div><span class="tag"></span></li>
-          <li><i class="dot"></i><b><img class="bird" src="/icons/openai.svg" alt="">me@home.dev <span>ChatGPT Pro</span></b><em>30% used</em><div class="bar"><i style="width:30%"></i></div><span class="tag"></span></li>
+          <li><i class="dot"></i><b><img src="/icons/claude-color.svg" alt="">me@home.dev <span>Claude Pro</span></b><em>38% used · resets in 2 d</em><div class="bar"><i style="width:38%"></i></div><span class="tag"></span></li>
+          <li><i class="dot"></i><b><img class="bird" src="/icons/openai.svg" alt="">me@home.dev <span>ChatGPT Pro</span></b><em>30% used · resets in 4 d</em><div class="bar"><i style="width:30%"></i></div><span class="tag"></span></li>
           <li class="nobar"><i class="dot"></i><b><img class="bird" src="/icons/openrouter.svg" alt="">sk-or-…4f2a <span>OpenRouter</span></b><em>pay as you go</em><div class="bar"><i></i></div><span class="tag"></span></li>
-          <li><i class="dot"></i><b><img class="bird" src="/icons/githubcopilot.svg" alt="">octo-dev <span>Copilot Business</span></b><em>24% used</em><div class="bar"><i style="width:24%"></i></div><span class="tag"></span></li>
+          <li><i class="dot"></i><b><img class="bird" src="/icons/githubcopilot.svg" alt="">octo-dev <span>Copilot Business</span></b><em>24% used · resets in 12 d</em><div class="bar"><i style="width:24%"></i></div><span class="tag"></span></li>
         </ol>
       </div>
       <div class="rt-foot">
@@ -507,7 +507,7 @@ footer a:hover { color: var(--ink); }
       </div>
     </div>
     <div class="grid rt-points">
-      <div><h3>Quota-aware</h3><p>The first account keeps the requests while it has quota to spare, so its prompt cache stays warm. Running low, the one with the most left takes over.</p></div>
+      <div><h3>Reset-aware</h3><p>The account that resets soonest goes first — what it has left would be lost at the reset. It keeps the requests while it has quota to spare, so its prompt cache stays warm.</p></div>
       <div><h3>Out of credit</h3><p>A key whose balance ran out sits out half an hour; requests go to one that can still pay.</p></div>
       <div><h3>Rate limits &amp; quotas</h3><p>An account the vendor has limited is passed over for as long as the vendor asks — its Retry-After and reset headers, no guessing, no hammering.</p></div>
       <div><h3>Failover</h3><p>A failing account steps back a minute, longer each time it fails again; the request is retried on the next before a byte of the reply reaches your agent.</p></div>
@@ -667,14 +667,14 @@ magpie tui                             <span class="c"># the whole app, in the t
   const MODES = {
     smart: {
       name: "Smart", n: 30,
-      desc: "Smart, the default: one account keeps the requests while it has quota to spare, and any that can't answer are passed over.",
-      first: (a) => `Every request goes to ${a.name.replace(/^The /, "the ")} while it has quota to spare — its prompt cache stays warm.`,
+      desc: "Smart, the default: the account that resets soonest goes first, so no allowance is left to go to waste; any that can't answer are passed over.",
+      first: (a) => `${a.name} resets in ${a.resets} — soonest, so it goes first: what it has left is used, not lost at the reset.`,
       accts: () => [
-        A("claude", 72, 2.4),
-        A("claude2", 38, 3, { fail: { at: 3, code: 429, rest: 7000 } }),
-        A("gpt", 30, 3),
+        A("claude", 72, 2.4, { resets: "9 h", r: 9 }),
+        A("claude2", 38, 3, { resets: "2 d", r: 48, fail: { at: 3, code: 429, rest: 7000 } }),
+        A("gpt", 30, 3, { resets: "4 d", r: 96 }),
         A("or", 0, 0, { key: 1, fail: { at: 0, code: 402 } }),
-        A("gh", 24, 2, { fail: { at: 4, code: 503, rest: 5000 } }),
+        A("gh", 24, 2, { resets: "12 d", r: 288, fail: { at: 4, code: 503, rest: 5000 } }),
       ],
     },
     order: {
@@ -757,7 +757,7 @@ magpie tui                             <span class="c"># the whole app, in the t
     const ok = accts.filter((a) => !resting(a));
     if (!ok.length) return null;
     switch (mode) {
-      case "smart": return ok.find((a) => a.used < 90) || ok.slice().sort((x, y) => x.used - y.used)[0];
+      case "smart": return ok.filter((a) => a.used < 90).sort((x, y) => (x.r ?? 1e9) - (y.r ?? 1e9))[0] || ok.slice().sort((x, y) => x.used - y.used)[0];
       case "order": return ok[0];
       case "least": return ok.slice().sort((x, y) => x.used - y.used)[0];
       default:
@@ -781,6 +781,7 @@ magpie tui                             <span class="c"># the whole app, in the t
     if (last !== a) {
       if (!began) began = 1, say(M.first(a));
       else if (mode === "smart" && a.used >= 90) say(`The others are resting, so ${a.name.replace(/^The /, "the ")} answers — running low beats no answer.`);
+      else if (mode === "smart" && a.resets) say(`${a.name} takes over — it resets next, in ${a.resets}.`, true);
       else if (mode === "smart" || mode === "order") say(`${a.name} takes over.`, true);
       last = a;
     }
@@ -836,7 +837,8 @@ magpie tui                             <span class="c"># the whole app, in the t
         ? { rate: `rate limited · back in ${s} s`, fail: `failing · back in ${s} s`, credit: "out of credit · back in 30 m", quota: "out of quota · resets 3 PM" }[a.why]
         : last === a ? (mode === "smart" && a.used >= 90 ? "serving · running low" : "serving")
         : a.key ? (a.bar ? `${n}% of tokens lately` : "pay as you go")
-        : mode === "smart" && a.used >= 90 ? `${n}% used · kept for last` : `${n}% used`;
+        : mode === "smart" && a.used >= 90 ? `${n}% used · kept for last`
+        : mode === "smart" && a.resets ? `${n}% used · resets in ${a.resets}` : `${n}% used`;
       if (a.st.textContent !== label) a.st.textContent = label;
       a.bi.style.width = a.used + "%";
       a.li.classList.toggle("on", last === a && !rest);
