@@ -81,7 +81,7 @@ func ImportSources() []AppSource {
 			if err != nil {
 				s.Error = err.Error()
 			}
-			s.Items = settle(items, have, used)
+			s.Items = append(s.Items, settle(items, have, used)...) // [] rather than null when there is nothing
 		}
 		out = append(out, s)
 	}

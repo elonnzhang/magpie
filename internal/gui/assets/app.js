@@ -1738,6 +1738,10 @@ async function openImportApps() {
   renderProviders();
 }
 
+// appIcon is an import source's logo; Claude Code has its mark among the
+// vendor icons rather than an app tile of its own.
+const appIcon = (id) => id === "claude-code" ? "icons/claudecode-color.svg" : `icons/app-${id}.png`;
+
 function renderImportApps(ia) {
   const ed = el("div", "editor new importapps");
   ed.onclick = (e) => e.stopPropagation();
@@ -1790,7 +1794,7 @@ function renderImportApps(ia) {
     const tab = el("button", "apptab" + (s.found && !s.error ? "" : " missing"));
     tab.setAttribute("role", "tab");
     const tlogo = el("img", "applogo");
-    tlogo.src = `icons/app-${s.id}.png`;
+    tlogo.src = appIcon(s.id);
     tlogo.alt = "";
     tlogo.draggable = false;
     const n = s.items.filter((it) => ia.picks[s.id + "\n" + it.ref]).length;
@@ -1801,7 +1805,7 @@ function renderImportApps(ia) {
     secs[s.id] = [tab, sec];
     const sh = el("div", "apphead");
     const logo = el("img", "applogo");
-    logo.src = `icons/app-${s.id}.png`;
+    logo.src = appIcon(s.id);
     logo.alt = "";
     logo.draggable = false;
     sh.append(logo, el("b", "", s.name), el("code", "", s.path.replace(/^\/Users\/[^/]+|^\/home\/[^/]+/, "~")));
