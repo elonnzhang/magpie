@@ -56,9 +56,20 @@ func (c candidate) label() string {
 // spoke, so nothing is translated that needn't be.
 func perKey(p provider.Provider, model string, from provider.Protocol) []candidate {
 	if p.Account != nil {
-		out := []candidate{{p, model, p.ID}}
+		all := []candidate{{p, model, p.ID}}
 		for _, q := range p.AlsoOn() {
-			out = append(out, candidate{q, model, p.ID + "@" + q.Account.User})
+			all = append(all, candidate{q, model, p.ID + "@" + q.Account.User})
+		}
+		// an account whose plan lacks the model (a Free one behind a Plus)
+		// would only answer 400; it is tried only when none lists it
+		var out []candidate
+		for _, c := range all {
+			if c.p.Account.Lists(model) {
+				out = append(out, c)
+			}
+		}
+		if len(out) == 0 {
+			return all
 		}
 		return out
 	}

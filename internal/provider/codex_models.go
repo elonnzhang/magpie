@@ -10,7 +10,9 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
+	"strings"
 
 	"github.com/yetone/magpie/internal/catalog"
 )
@@ -91,4 +93,39 @@ func parseCodexModels(b []byte) []catalog.Model {
 		out = append(out, mm)
 	}
 	return out
+}
+
+// accountModels names where one account's own model list is kept.
+func accountModels(agent, user string) string {
+	return agent + "@" + keyID(strings.ToLower(user))
+}
+
+// Lists reports whether the account's plan has the model, as far as magpie
+// knows: one whose list was never fetched is taken to have them all.
+func (a *Account) Lists(model string) bool {
+	if a == nil {
+		return true
+	}
+	live, _, ok := catalog.Live(accountModels(a.Agent, a.User))
+	if !ok {
+		return true
+	}
+	return slices.ContainsFunc(live, func(m catalog.Model) bool { return m.ID == model })
+}
+
+// codexFetchSaved asks for the models of each saved ChatGPT account that
+// stands behind the one Codex is signed in to, with that account's own
+// sign-in, so the gateway doesn't send one a model its plan lacks. One that
+// can't be asked now keeps what it listed last.
+func codexFetchSaved(ctx context.Context) {
+	for _, l := range Logins("codex") {
+		if l.Active || !l.On {
+			continue
+		}
+		user := l.User
+		sign := codexSign(func(ctx context.Context) (string, string, error) { return savedLoginToken(ctx, "codex", user) })
+		if ms, err := codexModels(ctx, sign); err == nil {
+			catalog.SaveLive(accountModels("codex", user), CodexBase, ms)
+		}
+	}
 }

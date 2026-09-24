@@ -645,6 +645,8 @@ func codexAccount(home string) (Provider, bool) {
 		if err != nil {
 			return nil, err
 		}
+		catalog.SaveLive(accountModels("codex", acct.User), CodexBase, ms)
+		codexFetchSaved(ctx)
 		return ms, catalog.SaveLive("codex", CodexBase, ms)
 	}
 	return Provider{ID: "codex", Name: "Codex", Icon: "codex-color", Responses: CodexBase, Website: "https://chatgpt.com/codex", Account: acct}, true
