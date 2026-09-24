@@ -119,6 +119,9 @@ var known = []struct{ prefix, id string }{
 	{"cursor", "cursor"},
 	{"copilot", "copilot"}, {"github-copilot", "copilot"},
 	{"crush", "crush"},
+	{"deepseek-harness", "dsh"}, {"dsh", "dsh"},
+	{"oh-my-pi", "omp"}, {"omp", "omp"},
+	{"command-code", "commandcode"}, {"commandcode", "commandcode"},
 }
 
 // ---- summaries --------------------------------------------------------------
@@ -291,10 +294,11 @@ func summarize(p Period, now time.Time, recs []Record) Summary {
 		if i >= 0 && i < len(s.Series) {
 			s.Series[i].add(r, pr)
 		}
-		a := agents[r.Agent]
+		id := AgentOf(r.Agent) // one kept before magpie knew the agent by name
+		a := agents[id]
 		if a == nil {
-			a = &Group{ID: r.Agent}
-			agents[r.Agent] = a
+			a = &Group{ID: id}
+			agents[id] = a
 		}
 		a.add(r, pr)
 		k := r.Provider + "/" + r.Model

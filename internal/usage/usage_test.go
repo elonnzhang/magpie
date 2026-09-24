@@ -12,6 +12,9 @@ func TestAgentOf(t *testing.T) {
 		"GeminiCLI/0.9.0 (darwin; arm64)":          "gemini",
 		"opencode/1.2.3":                           "opencode",
 		"curl/8.4.0":                               "curl",
+		"deepseek-harness/0.3.1":                   "dsh",
+		"dsh":                                      "dsh", // a record kept by an id already
+		"pi":                                       "pi",
 		"":                                         "other",
 	}
 	for ua, want := range cases {
