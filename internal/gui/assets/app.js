@@ -623,7 +623,7 @@ function renderPickerRail() {
     if (groups.length) rail.append(el("span", "rail-sep"));
     for (const group of groups) {
       const sample = pick.options.find((o) => o.group === group);
-      add(group, group, icon(sample?.icon || "generic"));
+      add(group, group, icon(sample?.groupIcon || sample?.icon || "generic"));
     }
   }
   queueMicrotask(updatePickerRailSelection);
