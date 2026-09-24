@@ -1517,9 +1517,9 @@ function renderEditor(p, presetID) {
     if (draft.api === "anthropic") add("OpenAI URL", "chat", "https://…/v1", "if the vendor also serves chat completions");
     else add("Anthropic URL", "anthropic", "https://…", "if the vendor also serves Anthropic messages");
     add("Responses URL", "responses", "https://…/v1", "if the vendor serves the OpenAI Responses API (Codex uses it natively)");
-    const cat = input(draft.catalog, t("models.dev id, e.g. openai"));
+    const cat = input(draft.catalog, t("models.dev ids, e.g. openai, deepseek"));
     cat.oninput = () => { draft.catalog = cat.value; };
-    inner.append(...field(t("Catalog"), cat, t("Display names and reasoning levels for the models")));
+    inner.append(...field(t("Catalog"), cat, t("Display names and reasoning levels for the models; for a gateway that serves several vendors, list them all, first match wins")));
     more.append(inner);
     ed.append(more);
   }
