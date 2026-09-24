@@ -218,6 +218,27 @@ async function load() {
   } catch (e) {
     status(e.message, "err");
   }
+  renderUpdateBadge();
+}
+
+// renderUpdateBadge shows the header's Update pill once a newer magpie is
+// downloaded (a click restarts into it) or, where magpie can't replace
+// itself, out (a click opens the release page).
+async function renderUpdateBadge() {
+  const b = $("#update");
+  const u = await api("update").catch(() => null);
+  const on = !!u && (u.state === "ready" || u.state === "available");
+  if (b.hidden !== !on) b.hidden = !on;
+  if (!on || b.classList.contains("busy")) return;
+  b.querySelector("span").textContent = t("Update");
+  b.title = u.state === "ready" ? t("Restart to update to {v}", { v: u.latest }) : t("{v} is out", { v: u.latest });
+  b.onclick = () => {
+    if (u.state === "ready") {
+      b.classList.add("busy");
+      b.querySelector("span").textContent = t("Restarting…");
+    }
+    api("update/install", {}).catch(() => b.classList.remove("busy"));
+  };
 }
 
 // ---------- picker ----------
@@ -2723,6 +2744,7 @@ else { $("#nav").remove(); }
 // the panel comes back into view.
 document.addEventListener("visibilitychange", () => { if (!document.hidden) load(); });
 window.addEventListener("focus", load);
+setInterval(renderUpdateBadge, 15 * 60 * 1000); // a window left open still hears of a new version
 // Opened on a magpie://import link: fetch what it describes (once — the
 // id is spent) and ask before adding it.
 if (mode === "window" && params.get("import")) {
