@@ -20,11 +20,25 @@ import (
 func init() {
 	usage.Agents = func() []usage.Known {
 		var out []usage.Known
-		for _, a := range All() {
+		for _, a := range Clients() {
 			out = append(out, usage.Known{ID: a.ID, Names: append([]string{a.ID}, a.Aliases...), UA: a.UA})
 		}
 		return out
 	}
+}
+
+// others are clients that reach the gateway without being agents magpie
+// sets up: known only by their requests, to be drawn with a logo.
+var others = []*Agent{
+	{ID: "magpie", Name: "magpie", Icon: "magpie", UA: []string{"magpie"}},
+	{ID: "curl", Name: "curl", Icon: "curl", UA: []string{"curl"}},
+}
+
+// Clients is everyone whose requests the gateway knows by name: every
+// agent, detected or not, and the others. It is what the Usage and
+// Routing views draw a request's client with.
+func Clients() []*Agent {
+	return append(All(), others...)
 }
 
 // All returns every agent magpie knows about, detected or not.

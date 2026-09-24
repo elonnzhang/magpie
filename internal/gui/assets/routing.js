@@ -118,7 +118,7 @@
   const GROUP_ORDER = "In order: member by member, the first model the group names until it can't answer, each over its own accounts or keys as its provider routes them.";
   const KEYS_SMART = "Smart: keys that suit the request go first — one made for the model's own API — then in their order. One resting after a failure goes last.";
 
-  const agentOf = (id) => state.agents.find((a) => a.id === id);
+  const agentOf = (id) => (state.clients || state.agents).find((a) => a.id === id);
   const agentName = (id) => agentOf(id)?.name || (id && id !== "other" ? id : t("your agent"));
   // who names an account or key in a sentence
   const who = (w) => w.kind === "provider" ? w.name : w.who;

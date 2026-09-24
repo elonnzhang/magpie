@@ -61,6 +61,14 @@ type agentJSON struct {
 	Fields []fieldJSON `json:"fields"`
 }
 
+// clientJSON is an agent, or another client the gateway knows, as a
+// request from it is drawn.
+type clientJSON struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	Icon string `json:"icon"`
+}
+
 type profileJSON struct {
 	Name    string `json:"name"`
 	Summary string `json:"summary"`
@@ -68,6 +76,7 @@ type profileJSON struct {
 
 type stateJSON struct {
 	Agents   []agentJSON       `json:"agents"`
+	Clients  []clientJSON      `json:"clients"` // who a request may come from, by id
 	Profiles []profileJSON     `json:"profiles"`
 	Catalog  string            `json:"catalog"`
 	Notice   string            `json:"notice,omitempty"` // advice after a change, e.g. "restart Codex"
@@ -223,6 +232,9 @@ func Handler(w Windows, gw *gateway.Server) http.Handler {
 
 func state() stateJSON {
 	s := stateJSON{Agents: []agentJSON{}, Profiles: []profileJSON{}, Catalog: catalog.Source(), Settings: settings.Load()}
+	for _, a := range agent.Clients() {
+		s.Clients = append(s.Clients, clientJSON{ID: a.ID, Name: a.Name, Icon: a.Icon})
+	}
 	for _, a := range agent.Detected() {
 		vals := a.Values()
 		aj := agentJSON{ID: a.ID, Name: a.Name, Icon: a.Icon, Path: tilde(a.Path)}

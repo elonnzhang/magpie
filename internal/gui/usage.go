@@ -29,7 +29,7 @@ func usageState(p usage.Period) usageJSON {
 	s := usage.Summarize(p)
 	out := usageJSON{Summary: s, Agents: []usageGroup{}, Models: []usageGroup{}, Path: tilde(usage.Path())}
 	agents := map[string]*agent.Agent{}
-	for _, a := range agent.All() {
+	for _, a := range agent.Clients() {
 		agents[a.ID] = a
 	}
 	for _, g := range s.Agents {
