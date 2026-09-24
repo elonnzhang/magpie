@@ -1559,10 +1559,24 @@ $("#addProvider").onclick = () => { adding = true; editing = null; draft = null;
 
 const PERIODS = [["today", "Today"], ["7d", "7 days"], ["30d", "30 days"], ["all", "All"]];
 
+// The subscriptions' quotas come from the vendors and can take a while (or
+// never come without a proxy), so they load on their own and the local log
+// never waits for them. They don't depend on the period either.
+let quotas = null;
 async function loadUsage() {
   renderUsageLoading();
+  loadQuotas();
   usage = await api("usage?period=" + period);
   renderUsage();
+}
+
+let quotasLoading = null;
+function loadQuotas() {
+  if (quotasLoading) return quotasLoading;
+  quotasLoading = api("usage/quotas")
+    .then((q) => { quotas = q || []; }, () => { quotas = quotas || []; })
+    .finally(() => { quotasLoading = null; renderQuotas(); });
+  return quotasLoading;
 }
 
 function renderUsageLoading() {
@@ -1578,14 +1592,7 @@ function renderUsageLoading() {
   }
   slide(seg, "period");
   $("#usageCost").replaceChildren(el("span", "skeleton sk-cost"));
-  const subscriptions = $("#subscriptionUsage");
-  subscriptions.hidden = false;
-  subscriptions.replaceChildren();
-  for (let i = 0; i < 2; i++) {
-    const card = el("div", "subscription-card skeleton-card");
-    card.append(el("span", "skeleton sk-title"), el("span", "skeleton sk-line"), el("span", "skeleton sk-line short"));
-    subscriptions.append(card);
-  }
+  renderQuotas();
   const stats = $("#stats");
   stats.classList.remove("empty");
   stats.replaceChildren();
@@ -1616,33 +1623,20 @@ function fmtCost(t) {
 }
 const tokensOf = (t) => t.input + t.output;
 
-function renderUsage() {
-  const u = usage;
-  const view = $("#view-usage");
-  view.classList.remove("loading");
-  view.removeAttribute("aria-busy");
-  const seg = $("#period");
-  seg.replaceChildren();
-  for (const [id, name] of PERIODS) {
-    const b = el("button", "opt" + (id === period ? " on" : ""), t(name));
-    b.onclick = () => { for (const x of seg.querySelectorAll(".opt")) x.classList.toggle("on", x === b); slide(seg, "period"); period = id; loadUsage().catch((e) => status(e.message, "err")); };
-    seg.append(b);
-  }
-  slide(seg, "period");
-  const cost = $("#usageCost");
-  cost.replaceChildren();
-  const c = fmtCost(u);
-  if (c) {
-    cost.append(el("b", "", "≈" + c), el("span", "", t("list price")));
-    cost.title = u.unpriced ? t(u.unpriced === 1 ? "{n} call had no known price and is not counted" : "{n} calls had no known price and are not counted", { n: u.unpriced }) : t("At each model's list price on models.dev");
-  } else if (u.calls) {
-    cost.append(el("span", "", t("no price for these models")));
-  }
-
+function renderQuotas() {
   const subscriptions = $("#subscriptionUsage");
   subscriptions.replaceChildren();
-  subscriptions.hidden = !u.subscriptions?.length;
-  for (const sub of u.subscriptions || []) {
+  if (!quotas) {
+    subscriptions.hidden = false;
+    for (let i = 0; i < 2; i++) {
+      const card = el("div", "subscription-card skeleton-card");
+      card.append(el("span", "skeleton sk-title"), el("span", "skeleton sk-line"), el("span", "skeleton sk-line short"));
+      subscriptions.append(card);
+    }
+    return;
+  }
+  subscriptions.hidden = !quotas.length;
+  for (const sub of quotas) {
     const card = el("div", "subscription-card");
     const head = el("div", "subscription-head");
     head.append(icon(sub.icon), el("b", "", sub.name));
@@ -1668,6 +1662,30 @@ function renderUsage() {
       card.append(windows);
     }
     subscriptions.append(card);
+  }
+}
+
+function renderUsage() {
+  const u = usage;
+  const view = $("#view-usage");
+  view.classList.remove("loading");
+  view.removeAttribute("aria-busy");
+  const seg = $("#period");
+  seg.replaceChildren();
+  for (const [id, name] of PERIODS) {
+    const b = el("button", "opt" + (id === period ? " on" : ""), t(name));
+    b.onclick = () => { for (const x of seg.querySelectorAll(".opt")) x.classList.toggle("on", x === b); slide(seg, "period"); period = id; loadUsage().catch((e) => status(e.message, "err")); };
+    seg.append(b);
+  }
+  slide(seg, "period");
+  const cost = $("#usageCost");
+  cost.replaceChildren();
+  const c = fmtCost(u);
+  if (c) {
+    cost.append(el("b", "", "≈" + c), el("span", "", t("list price")));
+    cost.title = u.unpriced ? t(u.unpriced === 1 ? "{n} call had no known price and is not counted" : "{n} calls had no known price and are not counted", { n: u.unpriced }) : t("At each model's list price on models.dev");
+  } else if (u.calls) {
+    cost.append(el("span", "", t("no price for these models")));
   }
 
   const stats = $("#stats");
