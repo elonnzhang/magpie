@@ -58,6 +58,8 @@ type accountJSON struct {
 	Agent string `json:"agent"`     // the agent's id
 	Name  string `json:"agentName"` // the agent's name, for "from Codex CLI's sign-in"
 	Icon  string `json:"agentIcon"`
+	// Logins are the agent's accounts magpie remembers, to switch between
+	Logins []provider.Login `json:"logins,omitempty"`
 }
 
 type providerAgent struct {
@@ -133,6 +135,7 @@ func providerInfo(p provider.Provider, agents []*agent.Agent) providerJSON {
 		if ag, err := agent.Find(a.Agent); err == nil {
 			out.Account.Name, out.Account.Icon = ag.Name, ag.Icon
 		}
+		out.Account.Logins = provider.Logins(a.Agent)
 	}
 	exposed := map[string]bool{}
 	for _, m := range p.Exposed() {
@@ -317,6 +320,30 @@ func providerRoutes(mux *http.ServeMux, w Windows, gw *gateway.Server) {
 			return
 		default:
 			http.NotFound(rw, r)
+			return
+		}
+		writeJSON(rw, providersState(gw))
+	})
+	// Switching the account an agent is signed in to, among those magpie
+	// remembers, and forgetting one.
+	mux.HandleFunc("POST /api/login/{action}", func(rw http.ResponseWriter, r *http.Request) {
+		var in struct{ Agent, User string }
+		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+			fail(rw, err)
+			return
+		}
+		var err error
+		switch r.PathValue("action") {
+		case "switch":
+			err = provider.SwitchLogin(in.Agent, in.User)
+		case "forget":
+			err = provider.ForgetLogin(in.Agent, in.User)
+		default:
+			http.NotFound(rw, r)
+			return
+		}
+		if err != nil {
+			fail(rw, err)
 			return
 		}
 		writeJSON(rw, providersState(gw))

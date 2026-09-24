@@ -1411,6 +1411,7 @@ function renderEditor(p, presetID) {
     const acct = el("div", "acct");
     acct.append(icon(a.agentIcon), el("span", "n", a.user), el("span", "plan", accountPlan(a)));
     ed.append(...field(t("Account"), acct, t("{agent}'s sign-in, read from its own files. Sign out there and this provider goes away.", { agent: a.agentName })));
+    if (a.logins) ed.append(...field(t("Other accounts"), renderLogins(a), t("To add one, sign in to it in {agent} ({how}); magpie remembers every account it sees there. Sessions already running keep their account until restarted.", { agent: a.agentName, how: a.agent === "codex" ? "codex login" : "claude → /login" })));
     ed.append(...field(t("Models"), renderModels(p), ""));
     ed.append(...field(t("Endpoints"), renderEndpoints(p, p)));
     const bar = el("div", "bar");
@@ -1708,9 +1709,30 @@ function renderModels(p) {
   return box;
 }
 
-async function providerAction(action, body, okMsg) {
+// renderLogins: the agent's other accounts magpie remembers, each one a
+// click away from being the one the agent is signed in to.
+function renderLogins(a) {
+  const list = el("div", "logins");
+  const others = a.logins.filter((l) => !l.active);
+  if (!others.length) list.append(el("div", "none", t("None yet")));
+  for (const l of others) {
+    const row = el("div", "acct");
+    row.append(el("span", "n", l.user), el("span", "plan", accountPlan({ agent: a.agent, plan: l.plan })), el("span", "grow"));
+    const forget = el("button", "text", t("Forget"));
+    forget.title = t("magpie forgets this account's sign-in; the account itself is untouched");
+    forget.onclick = () => providerAction("forget", { agent: a.agent, user: l.user }, t("{user} forgotten", { user: l.user }), "login/");
+    const use = el("button", "text", t("Switch"));
+    use.title = t("Sign {agent} in to this account", { agent: a.agentName });
+    use.onclick = () => { use.classList.add("busy"); providerAction("switch", { agent: a.agent, user: l.user }, t("{agent} is now signed in as {user}", { agent: a.agentName, user: l.user }), "login/"); };
+    row.append(forget, use);
+    list.append(row);
+  }
+  return list;
+}
+
+async function providerAction(action, body, okMsg, base = "provider/") {
   try {
-    providers = await api("provider/" + action, body);
+    providers = await api(base + action, body);
     editing = null;
     draft = null;
     importing = null;
