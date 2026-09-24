@@ -74,7 +74,7 @@ func perKey(p provider.Provider, model string, from provider.Protocol) []candida
 		return out
 	}
 	keys := p.KeysOn()
-	var out []candidate
+	var out, unlisted []candidate
 	for _, k := range keys {
 		q := p.WithKey(k)
 		if len(q.Speaks()) == 0 {
@@ -84,7 +84,15 @@ func perKey(p provider.Provider, model string, from provider.Protocol) []candida
 		if len(keys) > 1 {
 			rest += "#" + provider.KeyID(k.Key)
 		}
+		if !p.Serves(k, model) {
+			// the vendor lists the model to another key only
+			unlisted = append(unlisted, candidate{q, model, rest})
+			continue
+		}
 		out = append(out, candidate{q, model, rest})
+	}
+	if len(out) == 0 {
+		out = unlisted // no key lists it: try them all the same
 	}
 	if len(out) == 0 {
 		return []candidate{{p, model, p.ID}}
