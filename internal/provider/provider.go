@@ -304,6 +304,14 @@ func (p Provider) Host() string {
 	return ""
 }
 
+// IsOpenCode reports whether the provider is OpenCode's gateway (Zen or Go),
+// which routes and caches by conversation and turns away requests that do
+// not name one in x-opencode-session.
+func (p Provider) IsOpenCode() bool {
+	h := p.Host()
+	return h == "opencode.ai" || strings.HasSuffix(h, ".opencode.ai")
+}
+
 // HostOf pulls the host out of a URL, for display.
 func HostOf(u string) string {
 	u = strings.TrimSpace(u)

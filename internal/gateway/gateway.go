@@ -4,6 +4,8 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -404,6 +406,9 @@ func (s *Server) forward(ctx context.Context, p provider.Provider, to provider.P
 			}
 		}
 	}
+	if p.IsOpenCode() {
+		req.Header.Set("x-opencode-session", conversationID(in, body))
+	}
 	if err := p.Sign(ctx, req, to, body); err != nil {
 		return nil, err
 	}
@@ -740,6 +745,53 @@ func developerAsSystem(body []byte) []byte {
 		return body
 	}
 	return out
+}
+
+// sessionHeaders are where agents already name their conversation: OpenCode
+// (to its own gateway, and to everyone else), Pi, Codex and Claude Code.
+var sessionHeaders = []string{
+	"x-opencode-session", "x-session-affinity", "x-session-id",
+	"session_id", "session-id", "x-claude-code-session-id",
+}
+
+// conversationID is a stable id for the conversation a request belongs to.
+// It is the agent's own session id when it sends one; otherwise it is derived
+// from the conversation's first user message, which every later turn repeats.
+func conversationID(in http.Header, body []byte) string {
+	for _, h := range sessionHeaders {
+		if v := strings.TrimSpace(in.Get(h)); v != "" {
+			return v
+		}
+	}
+	var m struct {
+		Messages []json.RawMessage `json:"messages"`
+		Input    json.RawMessage   `json:"input"`
+	}
+	// An undecodable body still gets an id: the hash of the whole body.
+	_ = json.Unmarshal(body, &m)
+	items := m.Messages
+	if len(items) == 0 && len(m.Input) > 0 && m.Input[0] == '[' {
+		// A malformed input array leaves items empty, and the whole body is hashed.
+		_ = json.Unmarshal(m.Input, &items)
+	}
+	first := []byte(m.Input)
+	if len(items) > 0 {
+		first = items[0]
+	}
+	for _, it := range items {
+		var r struct {
+			Role string `json:"role"`
+		}
+		if json.Unmarshal(it, &r) == nil && r.Role == "user" {
+			first = it
+			break
+		}
+	}
+	if len(first) == 0 {
+		first = body
+	}
+	sum := sha256.Sum256(first)
+	return "magpie-" + hex.EncodeToString(sum[:12])
 }
 
 // withFields sets top-level fields, keeping every other field as it was.
