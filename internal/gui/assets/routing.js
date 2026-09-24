@@ -388,22 +388,23 @@
   // the order routing weighed them this time — the group's members in the
   // group's order, a provider's fallbacks after its own, then by name — so
   // the column holds still while the one put first moves.
+  // One whose vendor doesn't list the model to it is never asked, so it
+  // isn't drawn — only told of, among why it went where it did.
   function seated(r) {
     const members = r.group?.members || [];
-    const left = new Set((r.left || []).map((w) => w.id));
     const key = (w) => {
       const m = members.findIndex((x) => x.startsWith(w.provider + "/"));
-      return [left.has(w.id) ? 1 : 0, w.fallback ? 1 : 0, m < 0 ? members.length : m, w.name || w.provider, w.aside ? 1 : 0, w.who || "", w.id];
+      return [w.fallback ? 1 : 0, m < 0 ? members.length : m, w.name || w.provider, w.aside ? 1 : 0, w.who || "", w.id];
     };
     const cmp = (a, b) => {
       const x = key(a), y = key(b);
       for (let i = 0; i < x.length; i++) if (x[i] !== y[i]) return typeof x[i] === "number" ? x[i] - y[i] : String(x[i]).localeCompare(String(y[i]));
       return 0;
     };
-    return [...r.order, ...(r.left || [])].sort(cmp);
+    return [...r.order].sort(cmp);
   }
 
-  const setOf = (r) => [...r.order, ...(r.left || [])].map((w) => w.id).sort().join("\n");
+  const setOf = (r) => r.order.map((w) => w.id).sort().join("\n");
 
   // staged: the routes the stage shows — a picked one alone; else those
   // playing, and each agent's latest while it lingers, a few agents at most
@@ -551,7 +552,7 @@
     chip.textContent = t(m[0]);
     chip.hidden = false;
     hubText();
-    const on = r.order.filter((x) => !x.fallback).length + (r.left || []).length;
+    const on = r.order.filter((x) => !x.fallback).length;
     what.replaceChildren(el("b", "", g ? g.name : f?.name || r.provider),
       el("span", "", (g ? " · " + t("routing group") : "") + " · " + t(on === 1 ? "one on" : "{n} on", { n: on })
         + (many > 1 ? " · " + t("{n} agents at once", { n: many }) : "")));
@@ -697,8 +698,7 @@
   function renderActs(rs) {
     const by = new Map();
     for (const r of [...rs].reverse()) { // oldest first, so the latest wins
-      const all = [...r.order, ...(r.left || [])];
-      all.forEach((w, i) => {
+      r.order.forEach((w, i) => {
         const a = by.get(w.id) || { w, tried: 0, ok: 0, fails: {}, last: 0, rest: null, restAt: 0, seen: 0, pos: 0, models: new Set() };
         a.w = w; a.seen++; a.pos = i; a.at = r.time;
         // a later request found it resting, or not
