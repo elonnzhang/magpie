@@ -471,9 +471,12 @@ body.window .foot { padding-left: 18px; }
 .copy:hover { background: var(--pill-hover); color: var(--fg); }
 .copy.done { color: var(--green); background: var(--green-soft); animation: copy-pop .36s var(--ease); }
 @keyframes copy-pop { 0% { transform: scale(.55); } 55% { transform: scale(1.16); } 100% { transform: scale(1); } }
-.snip { position: relative; margin: 0; padding: 10px 40px 10px 12px; border-radius: 9px; background: var(--card); border: 1px solid var(--line); overflow-x: auto; line-height: 1.55; }
+.snip-wrap { position: relative; min-width: 0; }
+.snip { margin: 0; padding: 10px 40px 10px 12px; border-radius: 9px; background: var(--card); border: 1px solid var(--line); overflow-x: auto; line-height: 1.55; }
 .snip code { font-size: 11.5px; color: var(--fg); white-space: pre; user-select: text; -webkit-user-select: text; }
-.snip .copy { position: absolute; top: 6px; right: 6px; }
+.snip-wrap > .copy { position: absolute; top: 6px; right: 6px; background: var(--card); }
+.snip-wrap > .copy:hover { background: var(--pill-hover); }
+.snip-wrap > .copy.done { background: var(--green-soft); }
 .tk-s { color: var(--tk-s); } .tk-k { color: var(--tk-k); } .tk-f { color: var(--tk-f); } .tk-n { color: var(--tk-n); }
 .tk-v { color: var(--tk-v); } .tk-o { color: var(--tk-o); } .tk-c { color: var(--tk-c); font-style: italic; }
 .snip::-webkit-scrollbar { height: 0; }

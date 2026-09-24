@@ -831,11 +831,8 @@ const FLAVORS = {
   openai: {
     name: "OpenAI", base: (u) => u + "/v1", baseEnv: "OPENAI_BASE_URL", keyEnv: "OPENAI_API_KEY",
     note: "Chat Completions, the API most tools speak. Anything with an OpenAI base-URL setting works.",
-    curl: (b, m) => `curl ${b}/chat/completions \\
-  -H "Authorization: Bearer magpie" \\
-  -H "Content-Type: application/json" \\
-  -d '{"model": "${m}",
-       "messages": [{"role": "user", "content": "hi"}]}'`,
+    curl: (b, m) => ({ url: `${b}/chat/completions`, headers: ["Authorization: Bearer magpie"],
+      body: `{"model": "${m}",\n "messages": [{"role": "user", "content": "hi"}]}` }),
     python: (b, m) => `from openai import OpenAI
 
 client = OpenAI(base_url="${b}", api_key="magpie")
@@ -856,10 +853,8 @@ console.log(r.choices[0].message.content);`,
   responses: {
     name: "Responses", base: (u) => u + "/v1", baseEnv: "OPENAI_BASE_URL", keyEnv: "OPENAI_API_KEY",
     note: "OpenAI's newer API: reasoning, built-in tool items, encrypted reasoning. Codex speaks this.",
-    curl: (b, m) => `curl ${b}/responses \\
-  -H "Authorization: Bearer magpie" \\
-  -H "Content-Type: application/json" \\
-  -d '{"model": "${m}", "input": "hi"}'`,
+    curl: (b, m) => ({ url: `${b}/responses`, headers: ["Authorization: Bearer magpie"],
+      body: `{"model": "${m}", "input": "hi"}` }),
     python: (b, m) => `from openai import OpenAI
 
 client = OpenAI(base_url="${b}", api_key="magpie")
@@ -874,12 +869,8 @@ console.log(r.output_text);`,
   anthropic: {
     name: "Anthropic", base: (u) => u, baseEnv: "ANTHROPIC_BASE_URL", keyEnv: "ANTHROPIC_API_KEY",
     note: "Messages API. Claude Code reads ANTHROPIC_AUTH_TOKEN instead of the key; the Agents tab sets that for you.",
-    curl: (b, m) => `curl ${b}/v1/messages \\
-  -H "x-api-key: magpie" \\
-  -H "anthropic-version: 2023-06-01" \\
-  -H "Content-Type: application/json" \\
-  -d '{"model": "${m}", "max_tokens": 1024,
-       "messages": [{"role": "user", "content": "hi"}]}'`,
+    curl: (b, m) => ({ url: `${b}/v1/messages`, headers: ["x-api-key: magpie", "anthropic-version: 2023-06-01"],
+      body: `{"model": "${m}", "max_tokens": 1024,\n "messages": [{"role": "user", "content": "hi"}]}` }),
     python: (b, m) => `import anthropic
 
 client = anthropic.Anthropic(
@@ -904,10 +895,8 @@ console.log(m.content[0].text);`,
   gemini: {
     name: "Gemini", base: (u) => u, baseEnv: "GOOGLE_GEMINI_BASE_URL", keyEnv: "GEMINI_API_KEY",
     note: "Google's generateContent API, v1beta. Gemini CLI and the google-genai SDKs speak this.",
-    curl: (b, m) => `curl ${b}/v1beta/models/${m}:generateContent \\
-  -H "x-goog-api-key: magpie" \\
-  -H "Content-Type: application/json" \\
-  -d '{"contents": [{"parts": [{"text": "hi"}]}]}'`,
+    curl: (b, m) => ({ url: `${b}/v1beta/models/${m}:generateContent`, headers: ["x-goog-api-key: magpie"],
+      body: `{"contents": [{"parts": [{"text": "hi"}]}]}` }),
     python: (b, m) => `from google import genai
 
 client = genai.Client(api_key="magpie", http_options={"base_url": "${b}"})
@@ -923,7 +912,21 @@ const r = await ai.models.generateContent({ model: "${m}", contents: "hi" });
 console.log(r.text);`,
   },
 };
-const LANGS = [["shell", "Shell"], ["curl", "curl"], ["python", "Python"], ["node", "Node"]];
+// Windows gets PowerShell: $env: in place of export, and the curl.exe that
+// ships with it (plain curl there is Invoke-WebRequest). The body goes in
+// on stdin, since Windows PowerShell drops the quotes inside an argument.
+const WIN = /^Win/.test(navigator.platform);
+const LANGS = [["shell", WIN ? "PowerShell" : "Shell"], ["curl", "curl"], ["python", "Python"], ["node", "Node"]];
+
+function curlSnippet({ url, headers, body }) {
+  headers = [...headers, "Content-Type: application/json"];
+  if (WIN) return `@'\n${body}\n'@ | curl.exe ${url} \`\n${headers.map((h) => `  -H "${h}" \``).join("\n")}\n  --data-binary "@-"`;
+  return `curl ${url} \\\n${headers.map((h) => `  -H "${h}" \\`).join("\n")}\n  -d '${body.replaceAll("\n", "\n      ")}'`;
+}
+
+function envSnippet(vars) {
+  return vars.map(([k, v]) => (WIN ? `$env:${k}="${v}"` : `export ${k}=${v}`)).join("\n");
+}
 
 // every exposed model, as the ids agents use
 function gatewayModels() {
@@ -971,14 +974,17 @@ function renderConnect() {
 
   const ex = el("div", "stack");
   ex.append(segs(LANGS, lang, (id) => { lang = id; localStorage.setItem("magpie.lang", id); renderConnect(); }));
-  const code = lang === "shell"
-    ? `export ${f.baseEnv}=${base}\nexport ${f.keyEnv}=magpie`
+  const code = lang === "shell" ? envSnippet([[f.baseEnv, base], [f.keyEnv, "magpie"]])
+    : lang === "curl" ? curlSnippet(f.curl(base, model))
     : f[lang](base, model);
   const pre = el("pre", "snip");
   const c = el("code");
   c.append(highlight(code, lang));
-  pre.append(c, copyBtn(code, t("Snippet")));
-  ex.append(pre);
+  pre.append(c);
+  // the button sits outside the scrolling box, so a long line doesn't carry it off
+  const wrap = el("div", "snip-wrap");
+  wrap.append(pre, copyBtn(code, t("Snippet")));
+  ex.append(wrap);
   box.append(...field(t("Example"), ex, lang === "shell" ? t("Put these in the shell (or the tool's settings) and the tool talks to magpie instead of the vendor.") : ""));
 }
 
@@ -988,12 +994,12 @@ const KEYWORDS = {
   python: /^(from|import|def|return|await|async|for|in|if|else|None|True|False)$/,
   node: /^(import|from|const|let|await|async|new|return|function|export|default)$/,
   shell: /^(export|curl)$/,
-  curl: /^(curl)$/,
+  curl: /^(curl|curl\.exe)$/,
 };
 function highlight(code, lang) {
   const re = lang === "node"
     ? /("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`)|(\/\/.*)|(\b\d+(?:\.\d+)?\b)|([A-Za-z_$][\w$]*)(?=\s*\()|([A-Za-z_$][\w$]*)|(\s+|.)/g
-    : /("(?:[^"\\]|\\.)*"|'[^']*'|(?<==)\S+)|(#.*)|(\b\d+(?:\.\d+)?\b(?=[,\s\]}]))|(-{1,2}[A-Za-z][\w-]*)|([A-Z][A-Z0-9_]+)(?==)|([A-Za-z_][\w.]*)(?=\s*\()|([A-Za-z_][\w.]*)|(\\\n)|(\s+|.)/g;
+    : /("(?:[^"\\]|\\.)*"|'[^']*'|(?<==)\S+)|(#.*)|(\b\d+(?:\.\d+)?\b(?=[,\s\]}]))|(-{1,2}[A-Za-z][\w-]*)|([A-Z][A-Z0-9_]+)(?==)|([A-Za-z_][\w.]*)(?=\s*\()|([A-Za-z_][\w.]*)|(\\\n|`\n)|(\s+|.)/g;
   const out = document.createDocumentFragment();
   const kw = KEYWORDS[lang] || KEYWORDS.shell;
   let m;
@@ -1038,7 +1044,9 @@ function renderGatewayModels() {
   $("#copyModels").hidden = !models.length;
   $("#copyModels").onclick = () => copy(models.map((m) => m.id).join("\n"), t("Model ids"));
   if (!all.length) {
-    list.append(el("div", "empty-state", "")).append(el("b", "", t("No models exposed yet")), t("Add a provider, or sign in to Codex or Copilot; their models show up here for every agent."));
+    const empty = el("div", "empty-state", "");
+    empty.append(el("b", "", t("No models exposed yet")), t("Add a provider, or sign in to Codex or Copilot; their models show up here for every agent."));
+    list.append(empty);
     return;
   }
   if (!models.length) {
