@@ -130,7 +130,10 @@ body.panel .seg { display: none; }
   transition: background .12s, color .12s;
 }
 .icon:hover, .icon.on { background: var(--pill); color: var(--fg); }
-.icon.spin svg { animation: spin .9s linear infinite; }
+/* the icon turns on a layer of its own — painted in place, WebKit leaves
+   ghosts of each frame behind (#16) — and always finishes its turn */
+.icon svg { transform-origin: 50% 50%; backface-visibility: hidden; }
+.icon.spin svg { animation: spin .9s linear infinite; will-change: transform; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
 /* ---- lists ---------------------------------------------------------------- */

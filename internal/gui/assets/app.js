@@ -2239,6 +2239,7 @@ $("#prefs").onclick = () => { if (mode === "window") show("settings"); else api(
 
 $("#sync").onclick = async () => {
   const b = $("#sync");
+  if (b.classList.contains("spin")) return;
   b.classList.add("spin");
   try {
     state = await api("sync", {});
@@ -2248,7 +2249,10 @@ $("#sync").onclick = async () => {
   } catch (e) {
     status(t("Sync failed: {e}", { e: e.message }), "err");
   } finally {
-    b.classList.remove("spin");
+    // stop at the end of a turn, not wherever the reply caught it (#16)
+    const svg = b.querySelector("svg");
+    if (svg.getAnimations().length) svg.addEventListener("animationiteration", () => b.classList.remove("spin"), { once: true });
+    else b.classList.remove("spin");
   }
 };
 $("#open").onclick = () => api("window/main", {});
