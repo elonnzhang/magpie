@@ -141,6 +141,9 @@ func ImportFromApps(picks []AppPick) ([]string, error) {
 // freeID is id, or id-2, id-3… whichever no provider has.
 func freeID(id string) string {
 	taken := map[string]bool{"magpie": true}
+	for _, id := range accountIDs {
+		taken[id] = true
+	}
 	for _, p := range All() {
 		taken[p.ID] = true
 	}
