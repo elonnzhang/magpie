@@ -199,3 +199,29 @@ func TestCodexWebSocketUpgradeRequired(t *testing.T) {
 		t.Errorf("%d", rec.Code)
 	}
 }
+
+// A routing group in Codex's model list is named as one, not as its first
+// member's provider, which would read as that provider's own model.
+func TestCodexModelsNameGroups(t *testing.T) {
+	setup(t, provider.Chat, &fake{t: t})
+	chatgpt(t, func(w http.ResponseWriter, r *http.Request) { io.WriteString(w, `{"models":[]}`) })
+	if err := provider.SaveGroup(provider.Group{Name: "G", Members: []string{"fake/m1"}}); err != nil {
+		t.Fatal(err)
+	}
+	rec := httptest.NewRecorder()
+	New().Handler().ServeHTTP(rec, httptest.NewRequest("GET", CodexPath+"/models", nil))
+	var list struct {
+		Models []struct {
+			Slug string `json:"slug"`
+			Name string `json:"display_name"`
+		} `json:"models"`
+	}
+	json.Unmarshal(rec.Body.Bytes(), &list)
+	names := map[string]string{}
+	for _, m := range list.Models {
+		names[m.Slug] = m.Name
+	}
+	if names["group/g"] != "G · routing group" || !strings.HasSuffix(names["fake/m1"], " · Fake") {
+		t.Fatalf("%v", names)
+	}
+}

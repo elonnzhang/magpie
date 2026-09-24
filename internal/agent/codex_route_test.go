@@ -16,6 +16,9 @@ func codexHome(t *testing.T, auth, config string) (home string, read func() stri
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
 	t.Setenv("XDG_CACHE_HOME", filepath.Join(home, ".cache"))
 	t.Setenv("CODEX_HOME", "")
+	usedUp := codexUsedUp
+	codexUsedUp = func() bool { return false }
+	t.Cleanup(func() { codexUsedUp = usedUp })
 	dir := filepath.Join(home, ".codex")
 	os.MkdirAll(dir, 0o755)
 	if auth != "" {
@@ -92,5 +95,20 @@ func TestCodexSignedOutUsesProvider(t *testing.T) {
 	}
 	if cfg = read(); strings.Contains(cfg, "magpie") || strings.Contains(cfg, "model") {
 		t.Fatalf("reset:\n%s", cfg)
+	}
+}
+
+// A ChatGPT account that has used its allowance up keeps the Codex app from
+// sending, so magpie is a provider of Codex's then, as when signed out.
+func TestCodexUsedUpUsesProvider(t *testing.T) {
+	home, read := codexHome(t, `{"tokens":{"access_token":"x","id_token":"x.e30.x"}}`, "")
+	codexUsedUp = func() bool { return true }
+	if err := codex(home).Fields[0].Set("fake/m1"); err != nil {
+		t.Fatal(err)
+	}
+	cfg := read()
+	if strings.Contains(cfg, "openai_base_url") || !strings.Contains(cfg, `model_provider = "magpie"`) ||
+		!strings.Contains(cfg, "[model_providers.magpie]") || !strings.Contains(cfg, `model = "fake/m1"`) {
+		t.Fatalf("\n%s", cfg)
 	}
 }

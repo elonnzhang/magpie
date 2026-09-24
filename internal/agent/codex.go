@@ -1,11 +1,13 @@
 package agent
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/yetone/magpie/internal/catalog"
 	"github.com/yetone/magpie/internal/codexcat"
@@ -22,7 +24,9 @@ import (
 // answers the rest — the model list included, so magpie's models join
 // OpenAI's in /model. Not signed in, the built-in provider can't run, and
 // magpie is a provider of its own: a [model_providers.magpie] table,
-// `model_provider = "magpie"`, and a model catalog file for /model.
+// `model_provider = "magpie"`, and a model catalog file for /model. So it
+// is too for a ChatGPT account that has used its allowance up, which the
+// Codex app won't send anything for, whoever serves the model.
 
 func codex(home string) *Agent {
 	dir := filepath.Join(home, ".codex")
@@ -91,7 +95,10 @@ func codex(home string) *Agent {
 				stash(map[string]string{"codex.model": get("model"), "codex.effort": get("model_reasoning_effort"),
 					"codex.provider": get("model_provider"), "codex.catalog": get("model_catalog_json")})
 			}
-			if codexSignedIn(dir) {
+			// a ChatGPT account out of allowance keeps the Codex app from
+			// sending at all, a magpie model's request too; as a provider
+			// of Codex's own, magpie is past that
+			if codexSignedIn(dir) && !codexUsedUp() {
 				if err := dropProvider(); err != nil {
 					return err
 				}
@@ -244,6 +251,14 @@ func codexGatewayURL() string { return gateway.URL() + gateway.CodexPath }
 // whichever port it listened on then.
 func isCodexGateway(u string) bool {
 	return strings.HasPrefix(u, "http://127.0.0.1:") && strings.HasSuffix(strings.TrimSuffix(u, "/"), gateway.CodexPath)
+}
+
+// codexUsedUp reports whether the ChatGPT account Codex is signed in to
+// has used up its allowance. A var so tests can say.
+var codexUsedUp = func() bool {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	return provider.CodexUsedUp(ctx)
 }
 
 // codexSignedIn reports whether Codex has a sign-in of its own, a ChatGPT

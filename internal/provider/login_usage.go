@@ -114,3 +114,20 @@ func loginQuota(ctx context.Context, l Login) SubscriptionQuota {
 	}
 	return q
 }
+
+// CodexUsedUp reports whether the ChatGPT account Codex is signed in to has
+// used up its allowance for now; false when that isn't known.
+func CodexUsedUp(ctx context.Context) bool {
+	for _, l := range Logins("codex") {
+		if !l.Active {
+			continue
+		}
+		q := loginQuota(ctx, l)
+		for _, w := range q.Windows {
+			if !w.Aside && w.Model == "" && w.Used >= 100 {
+				return true
+			}
+		}
+	}
+	return false
+}

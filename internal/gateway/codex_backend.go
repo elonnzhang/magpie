@@ -260,7 +260,12 @@ func (s *Server) codexModels(w http.ResponseWriter, r *http.Request) {
 		if e.Provider.Account != nil && e.Provider.Account.Agent == "codex" {
 			continue
 		}
-		ms = append(ms, catalog.Model{ID: e.ID, Name: e.Name + " · " + e.Provider.Name, Efforts: e.Efforts})
+		// a group answers for its first member but is not that provider's
+		by := e.Provider.Name
+		if e.Group != "" {
+			by = "routing group"
+		}
+		ms = append(ms, catalog.Model{ID: e.ID, Name: e.Name + " · " + by, Efforts: e.Efforts})
 	}
 	if etag != "" {
 		w.Header().Set("ETag", etag)
