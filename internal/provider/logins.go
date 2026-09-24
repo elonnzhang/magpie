@@ -224,6 +224,12 @@ func liveLogin(agent string) (savedLogin, bool) {
 		if err != nil {
 			return savedLogin{}, false
 		}
+		// credentials a logout left behind are not a sign-in: Claude Code
+		// says so, and the account is not a provider either (claudeAccount)
+		user, _, signedOut := claudeIdentity()
+		if signedOut {
+			return savedLogin{}, false
+		}
 		l := savedLogin{Agent: agent, Plan: c.OAuth.SubscriptionType, Auth: b}
 		if m, err := readClaudeProfile(); err == nil {
 			if acct, ok := m["oauthAccount"].(map[string]any); ok {
@@ -233,10 +239,6 @@ func liveLogin(agent string) (savedLogin, bool) {
 			}
 		}
 		if l.User == "" {
-			user, _, signedOut := claudeIdentity()
-			if signedOut {
-				return savedLogin{}, false
-			}
 			l.User = user
 		}
 		if l.User == "" {
