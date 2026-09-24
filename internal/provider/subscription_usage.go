@@ -29,7 +29,9 @@ type SubscriptionQuota struct {
 	Name     string        `json:"name"`
 	Icon     string        `json:"icon"`
 	Plan     string        `json:"plan,omitempty"`
+	User     string        `json:"user,omitempty"` // the account, so two of one vendor tell apart
 	Windows  []QuotaWindow `json:"windows"`
+	Balance  string        `json:"balance,omitempty"` // what is left on an API key, instead of windows
 	Error    string        `json:"error,omitempty"`
 }
 

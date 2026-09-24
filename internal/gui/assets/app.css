@@ -225,6 +225,8 @@ body.window .field.solo { grid-column: auto; }
 .quota-track { height: 4px; border-radius: 2px; background: var(--pill); overflow: hidden; }
 .quota-track i { display: block; height: 100%; border-radius: inherit; background: var(--accent); }
 .subscription-error { font-size: 11px; color: var(--faint); }
+.quota-balance { display: flex; align-items: baseline; gap: 6px; font-size: 10.5px; color: var(--muted); }
+.quota-balance b { margin-left: auto; font-size: 15px; color: var(--fg); font-weight: 600; font-variant-numeric: tabular-nums; }
 .skeleton { display: block; border-radius: 5px; background: linear-gradient(90deg, var(--pill) 25%, var(--pill-hover) 45%, var(--pill) 65%); background-size: 240% 100%; animation: skeleton-shift 1.4s ease-in-out infinite; }
 @keyframes skeleton-shift { from { background-position: 100% 0; } to { background-position: -100% 0; } }
 .sk-cost { width: 72px; height: 15px; }

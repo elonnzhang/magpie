@@ -1471,7 +1471,7 @@ function renderEditor(p, presetID) {
   const pr = presetID ? providers.presets.find((x) => x.id === presetID) : p?.preset ? providers.presets.find((x) => x.id === p.preset) : null;
   const isNew = !p, custom = !pr;
   draft = draft || (p
-    ? { id: p.id, name: p.name, preset: p.preset, chat: p.chat, responses: p.responses, anthropic: p.anthropic, catalog: p.catalog, key: "", api: p.anthropic && !p.chat ? "anthropic" : "openai", chosen: p.models.filter((m) => m.on).map((m) => m.id), extra: [], headers: headerRows(p.headers), icon: p.icon || "", fallback: [...(p.fallback || [])] }
+    ? { id: p.id, name: p.name, preset: p.preset, chat: p.chat, responses: p.responses, anthropic: p.anthropic, catalog: p.catalog, key: "", api: p.anthropic && !p.chat ? "anthropic" : "openai", chosen: p.models.filter((m) => m.on).map((m) => m.id), extra: [], headers: headerRows(p.headers), icon: p.icon || "", fallback: [...(p.fallback || [])], balanceURL: p.balanceURL || "", balancePath: p.balancePath || "" }
     : pr
       ? { id: pr.id, name: pr.name, preset: pr.id, key: "", chosen: [], extra: [], headers: [] }
       : { id: "", name: "", preset: "", chat: "", responses: "", anthropic: "", catalog: "", key: "", api: "openai", chosen: [], extra: [], headers: [], icon: "" });
@@ -1648,6 +1648,12 @@ function renderEditor(p, presetID) {
     const cat = input(draft.catalog, t("models.dev ids, e.g. openai, deepseek"));
     cat.oninput = () => { draft.catalog = cat.value; };
     inner.append(...field(t("Catalog"), cat, t("Display names and reasoning levels for the models; for a gateway that serves several vendors, list them all, first match wins")));
+    const bal = input(draft.balanceURL, "https://…/api/usage/token", "url");
+    bal.oninput = () => { draft.balanceURL = bal.value; };
+    inner.append(...field(t("Balance URL"), bal, t("Where the vendor tells what is left on the key, asked with it like a chat request; shown on the Usage page")));
+    const balPath = input(draft.balancePath, "data.balance");
+    balPath.oninput = () => { draft.balancePath = balPath.value; };
+    inner.append(...field(t("Balance field"), balPath, t("Where the amount is in the reply, e.g. data.balance; \"$\" in front adds the sign, \"/ 500000\" after it divides")));
     more.append(inner);
     ed.append(more);
   }
@@ -1664,7 +1670,7 @@ function renderEditor(p, presetID) {
   const saveBtn = el("button", "text primary", t(isNew ? "Add" : "Save"));
   const save = () => {
     const body = { id: draft.id, name: draft.name, preset: draft.preset, key: draft.key || "", chat: draft.chat, responses: draft.responses, anthropic: draft.anthropic, catalog: draft.catalog, models: p ? draft.chosen : draft.extra };
-    if (custom) { body.headers = headersOf(draft.headers); body.icon = draft.icon || "generic"; }
+    if (custom) { body.headers = headersOf(draft.headers); body.icon = draft.icon || "generic"; body.balanceURL = (draft.balanceURL || "").trim(); body.balancePath = (draft.balancePath || "").trim(); }
     if (p) body.fallback = draft.fallback;
     if (isNew && custom && !body.name) { name.focus(); return editorError(t("Give it a name"), "warn"); }
     if (isNew && custom && !body.chat && !body.anthropic) { url.focus(); return editorError(t("A base URL is needed"), "warn"); }
@@ -2688,8 +2694,13 @@ function renderQuotas() {
     const head = el("div", "subscription-head");
     head.append(icon(sub.icon), el("b", "", sub.name));
     if (sub.plan) head.append(el("span", "plan", sub.plan));
+    else if (sub.user) head.append(el("span", "plan", sub.user));
     card.append(head);
-    if (sub.error) {
+    if (sub.balance) {
+      const b = el("div", "quota-balance");
+      b.append(el("span", "", t("Balance")), el("b", "", sub.balance));
+      card.append(b);
+    } else if (sub.error) {
       card.append(el("div", "subscription-error", t("Usage unavailable")));
       card.title = sub.error;
     } else {

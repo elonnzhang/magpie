@@ -76,6 +76,13 @@ type Provider struct {
 	// ignore them: their auth is the agent's own.
 	Headers map[string]string `json:"headers,omitempty"`
 
+	// BalanceURL, when set, is where the vendor tells what is left on a
+	// key, asked with the key the way a chat request carries it; BalancePath
+	// picks the amount out of the JSON reply (see balance.go). The vendors
+	// magpie knows need neither.
+	BalanceURL  string `json:"balanceURL,omitempty"`
+	BalancePath string `json:"balancePath,omitempty"`
+
 	// Models the user chose to expose. Empty means "the preset's picks, or
 	// everything the vendor lists when that list is short".
 	Models []string `json:"models,omitempty"`
