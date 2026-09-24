@@ -781,6 +781,15 @@ type copilotSession struct {
 	Endpoints struct {
 		API string `json:"api"`
 	} `json:"endpoints"`
+	direct bool // the Copilot CLI's token, sent as is
+}
+
+// headers are what a request with this session carries.
+func (s copilotSession) headers() map[string]string {
+	if s.direct {
+		return copilotCLIHeaders
+	}
+	return copilotHeaders
 }
 
 var (
@@ -791,6 +800,7 @@ var (
 type copilotApp struct {
 	User  string `json:"user"`
 	Token string `json:"oauth_token"`
+	cli   bool // the standalone Copilot CLI's sign-in
 }
 
 // copilotLogin finds the GitHub token Copilot's editors and CLI keep.
@@ -811,7 +821,15 @@ func copilotLogin(cfg string) (copilotApp, bool) {
 			}
 		}
 	}
-	return copilotApp{}, false
+	return copilotCLILogin()
+}
+
+// session is what this sign-in's requests carry.
+func (a copilotApp) session(ctx context.Context) (copilotSession, error) {
+	if a.cli {
+		return copilotDirect(ctx, a.Token)
+	}
+	return copilotToken(ctx, a.Token)
 }
 
 func copilotAccount(cfg string) (Provider, bool) {
@@ -824,7 +842,7 @@ func copilotAccount(cfg string) (Provider, bool) {
 		acct.User = "GitHub"
 	}
 	acct.sign = func(ctx context.Context, req *http.Request, body []byte) error {
-		s, err := copilotToken(ctx, app.Token)
+		s, err := app.session(ctx)
 		if err != nil {
 			return err
 		}
@@ -834,7 +852,7 @@ func copilotAccount(cfg string) (Provider, bool) {
 			}
 		}
 		req.Header.Set("Authorization", "Bearer "+s.Token)
-		for k, v := range copilotHeaders {
+		for k, v := range s.headers() {
 			req.Header.Set(k, v)
 		}
 		req.Header.Set("Openai-Intent", "conversation-panel")
@@ -849,7 +867,7 @@ func copilotAccount(cfg string) (Provider, bool) {
 		return nil
 	}
 	acct.fetch = func(ctx context.Context) ([]catalog.Model, error) {
-		ms, err := copilotModels(ctx, app.Token)
+		ms, err := copilotModels(ctx, app)
 		if err != nil {
 			return nil, err
 		}
@@ -904,8 +922,8 @@ func copilotToken(ctx context.Context, github string) (copilotSession, error) {
 var copilotInternal = regexp.MustCompile(`^(copilot-search|exec-agent|trajectory)|-(secondary|tertiary|4th|free-auto)$`)
 
 // copilotModels asks Copilot which chat models this account may use.
-func copilotModels(ctx context.Context, github string) ([]catalog.Model, error) {
-	s, err := copilotToken(ctx, github)
+func copilotModels(ctx context.Context, app copilotApp) ([]catalog.Model, error) {
+	s, err := app.session(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -918,7 +936,7 @@ func copilotModels(ctx context.Context, github string) ([]catalog.Model, error) 
 		return nil, err
 	}
 	req.Header.Set("Authorization", "Bearer "+s.Token)
-	for k, v := range copilotHeaders {
+	for k, v := range s.headers() {
 		req.Header.Set(k, v)
 	}
 	res, err := http.DefaultClient.Do(req)
