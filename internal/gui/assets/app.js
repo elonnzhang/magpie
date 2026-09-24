@@ -2934,6 +2934,9 @@ function renderSettings() {
   open.onclick = () => api("settings/reveal", {}).catch(() => {});
   row(t("Config folder"), t("providers, profiles and these settings"), s.dir, copyBtn(s.dir, t("Path")), open);
   row(t("Gateway URL"), t("the address every agent is pointed at"), s.gateway, copyBtn(s.gateway, t("Gateway URL")));
+  const join = el("button", "text", t("Join ↗"));
+  join.onclick = () => api("open", { url: "https://discord.gg/vGSnD3ZKQF" }).catch(() => {});
+  row(t("Community"), t("questions, ideas and feedback, on Discord"), "discord.gg/vGSnD3ZKQF", join);
 }
 
 // renderProxy: magpie's own requests to vendors follow the system proxy on

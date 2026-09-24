@@ -313,6 +313,7 @@ const I18N = {
     "start it with magpie serve, or open magpie at login": "用 magpie serve 启动，或让 magpie 开机自启",
     "Copy the gateway URL": "复制网关地址",
     "Gateway URL": "网关地址",
+    "Community": "社区", "questions, ideas and feedback, on Discord": "提问、想法和反馈，都在 Discord", "Join ↗": "加入 ↗",
     "Copy": "复制",
     "Copied": "已复制",
     "Region": "区域",
