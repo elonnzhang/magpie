@@ -124,7 +124,29 @@ function optionFor(field, value) {
   return field.options.find((o) => o.value === value);
 }
 
+// Rows in the shape of the list while magpie first reads the agents; a
+// reload keeps the rows it has until the new ones are in.
+function renderAgentsLoading() {
+  const page = $("#view-agents");
+  page.classList.add("loading");
+  page.setAttribute("aria-busy", "true");
+  const list = $("#agents");
+  list.replaceChildren();
+  for (let i = 0; i < 5; i++) {
+    const row = el("div", "row agent ag-sk-row");
+    const who = el("div", "who");
+    who.append(el("span", "skeleton ag-sk-name"));
+    const fields = el("div", "fields");
+    fields.append(el("span", "skeleton ag-sk-field"), el("span", "skeleton ag-sk-field"));
+    row.append(el("span", "skeleton ag-sk-icon"), who, fields);
+    list.append(row);
+  }
+}
+
 function renderAgents() {
+  const page = $("#view-agents");
+  page.classList.remove("loading");
+  page.removeAttribute("aria-busy");
   const list = $("#agents");
   list.replaceChildren();
   if (!state.agents.length) {
@@ -312,9 +334,11 @@ function fit(extra = 0, glide) {
 }
 
 async function load() {
+  if (!load.done) renderAgentsLoading();
   if (view === "providers" && !providers) renderProvidersLoading();
   try {
     state = await api("state");
+    load.done = true;
     applyPrefs(state.settings);
     tintPanel();
     renderAgents();
