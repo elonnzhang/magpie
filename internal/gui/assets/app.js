@@ -1368,7 +1368,7 @@ function renderAdd() {
   q.oninput = () => { presetQuery = q.value; drawTiles(); };
   head.append(q);
   const imp = el("button", "text", t("Import…"));
-  imp.title = t("Bring over providers set up in Alma or CC Switch");
+  imp.title = t("Bring over providers set up in other apps");
   imp.onclick = openImportApps;
   head.append(imp);
   if (providers.providers.length) {
@@ -1963,7 +1963,7 @@ async function openImportApps() {
 
 // appIcon is an import source's logo; Claude Code has its mark among the
 // vendor icons rather than an app tile of its own.
-const appIcon = (id) => id === "claude-code" ? "icons/claudecode-color.svg" : `icons/app-${id}.png`;
+const appIcon = (id) => id === "claude-code" ? "icons/claudecode-color.svg" : id === "codex" ? "icons/codex-color.svg" : `icons/app-${id}.png`;
 
 function renderImportApps(ia) {
   const ed = el("div", "editor new importapps");
@@ -1983,7 +1983,7 @@ function renderImportApps(ia) {
   };
   bar.append(count, cancel, go);
   if (ia.loading) {
-    ed.append(el("div", "appnote", t("Reading Alma and CC Switch…")), bar);
+    ed.append(el("div", "appnote", t("Reading other apps…")), bar);
     go.disabled = true;
     return ed;
   }

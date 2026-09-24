@@ -130,6 +130,137 @@ func TestImportAlma(t *testing.T) {
 	}
 }
 
+func TestImportCodexConfig(t *testing.T) {
+	isolate(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	t.Setenv("XDG_CACHE_HOME", filepath.Join(home, ".cache"))
+	t.Setenv("CODEX_HOME", filepath.Join(home, ".codex"))
+	t.Setenv("OPENAI_API_KEY", "sk-unrelated")
+	t.Setenv("RELAY_KEY", "sk-environment")
+	config := codexConfigPath()
+	if err := os.MkdirAll(filepath.Dir(config), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	data := `model_provider = "magpie"
+model = "deepseek/deepseek-chat"
+model_catalog_json = "magpie-models.json"
+
+[model_providers.magpie]
+base_url = "http://127.0.0.1:3448/v1"
+experimental_bearer_token = "magpie"
+
+[model_providers.deepseek]
+name = "DeepSeek"
+base_url = "https://relay.example.com/v1"
+wire_api = "responses"
+experimental_bearer_token = "sk-explicit"
+
+[model_providers.deepseek.http_headers]
+X-Org = "abc"
+
+[model_providers."my.relay"]
+base_url = "https://other.example.com/v1"
+experimental_bearer_token = "sk-other"
+
+[model_providers."my.relay".http_headers]
+X-Org = "xyz"
+
+[model_providers.unkeyed]
+base_url = "https://unkeyed.example.com/v1"
+env_key = "RELAY_KEY"
+
+[profiles."ds"]
+model_provider = "deepseek"
+model = "deepseek-chat"
+model_catalog_json = "models.json"
+
+[profiles.inherited]
+model_provider = "deepseek"
+model = "gpt-6-sol"
+
+[profiles.magpiecatalog]
+model_provider = "deepseek"
+model = "gpt-6-sol"
+model_catalog_json = "magpie-models.json"
+`
+	if err := os.WriteFile(config, []byte(data), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(filepath.Dir(config), "models.json"), []byte(`{"models":[{"slug":"deepseek-chat","visibility":"list"},{"slug":"deepseek-reasoner","visibility":"list"},{"slug":"old-model","visibility":"hide"}]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(filepath.Dir(config), "magpie-models.json"), []byte(`{"models":[{"slug":"openrouter/x-ai/grok-4.7","visibility":"list"},{"slug":"group/auto-glm-5-3","visibility":"list"}]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	items := itemsOf(t, "codex")
+	if len(items) != 4 || items["my.relay"].Ref != "my.relay" || items["my.relay"].Skip != "" {
+		t.Fatalf("provider tables: %+v", items)
+	}
+	if items["magpie"].Skip == "" || items["unkeyed"].Skip == "" {
+		t.Fatalf("gateway or env-key provider offered: %+v %+v", items["magpie"], items["unkeyed"])
+	}
+	ds := items["deepseek"]
+	if ds.Skip != "" || ds.Provider.Key != "sk-explicit" || ds.Provider.Responses != "https://relay.example.com/v1" || strings.Join(ds.Provider.Models, ",") != "deepseek-chat,deepseek-reasoner,gpt-6-sol" {
+		t.Fatalf("Codex import: %+v", ds)
+	}
+	if _, err := Find("deepseek"); err == nil {
+		t.Fatal("Codex config became a provider before import")
+	}
+	if added, err := ImportFromApps([]AppPick{{Source: "codex", Ref: "deepseek"}}); err != nil || len(added) != 1 {
+		t.Fatalf("import: %v %v", added, err)
+	}
+	if err := os.Remove(config); err != nil {
+		t.Fatal(err)
+	}
+	if p, err := Find("deepseek"); err != nil || p.Key != "sk-explicit" || strings.Join(p.Models, ",") != "deepseek-chat,deepseek-reasoner,gpt-6-sol" {
+		t.Fatalf("imported provider did not persist: %+v %v", p, err)
+	}
+}
+
+func TestCodexImportModelsSameBasename(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	config := filepath.Join(home, "other", "config.toml")
+	models := []byte(`{"models":[{"slug":"custom-model","visibility":"list"}]}`)
+	for _, path := range []string{
+		filepath.Join(home, ".codex", "magpie-models.json"),
+		filepath.Join(home, "other", "magpie-models.json"),
+	} {
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, models, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := codexImportModels(config, "../.codex/magpie-models.json"); len(got) != 0 {
+		t.Fatalf("magpie's own catalog was imported: %v", got)
+	}
+	if got := codexImportModels(config, "magpie-models.json"); len(got) != 1 || got[0] != "custom-model" {
+		t.Fatalf("user catalog with the same basename was skipped: %v", got)
+	}
+}
+
+func TestClaudeConfigDirImport(t *testing.T) {
+	isolate(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("CLAUDE_CONFIG_DIR", filepath.Join(home, "custom-claude"))
+	path := claudeSettingsPath()
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(`{"env":{"ANTHROPIC_BASE_URL":"https://relay.example.com/anthropic","ANTHROPIC_AUTH_TOKEN":"sk-claude","ANTHROPIC_MODEL":"claude-sonnet-5"}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	items := itemsOf(t, "claude-code")
+	if items["settings"].Skip != "" || items["settings"].Provider.Key != "sk-claude" {
+		t.Fatalf("Claude custom config dir: %+v", items)
+	}
+}
+
 func FromPresetKey(t *testing.T, id, key string) Provider {
 	p, err := FromPreset(id)
 	if err != nil {

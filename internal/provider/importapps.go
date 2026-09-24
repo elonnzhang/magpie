@@ -66,6 +66,7 @@ var appReaders = []struct {
 	{"alma", "Alma", almaPath, readAlma},
 	{"cc-switch", "CC Switch", ccSwitchPath, readCCSwitch},
 	{"claude-code", "Claude Code", claudeSettingsPath, readClaudeSettings},
+	{"codex", "Codex", codexConfigPath, readCodexConfig},
 }
 
 // ImportSources reads every app magpie can import from.
@@ -351,6 +352,9 @@ func fileExists(p string) bool {
 }
 
 func claudeSettingsPath() string {
+	if dir := os.Getenv("CLAUDE_CONFIG_DIR"); dir != "" {
+		return filepath.Join(dir, "settings.json")
+	}
 	home, _ := os.UserHomeDir()
 	return filepath.Join(home, ".claude", "settings.json")
 }

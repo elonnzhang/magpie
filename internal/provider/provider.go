@@ -2,8 +2,9 @@
 // lives, which protocols it speaks, the API key the user typed in, and which
 // of its models should show up in the agents' pickers.
 //
-// Nothing here reads environment variables. A provider is exactly what the
-// user entered, kept in ~/.config/magpie/providers.json (mode 0600).
+// Provider keys are never read from environment variables. A provider is
+// exactly what the user entered, kept in ~/.config/magpie/providers.json
+// (mode 0600).
 package provider
 
 import (
