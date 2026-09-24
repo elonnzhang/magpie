@@ -52,6 +52,9 @@ type Agent struct {
 	// Notice, if set, is advice worth showing after a change: agents that
 	// read their config once at start-up need a restart to see it.
 	Notice func() string
+	// UA is what the agent's User-Agent begins with, lower-case: how the
+	// gateway tells its requests from others'
+	UA []string
 }
 
 // Running reports whether a process whose command line matches any pattern

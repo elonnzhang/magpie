@@ -163,6 +163,7 @@ func codex(home string) *Agent {
 
 	return &Agent{
 		ID: "codex", Name: "Codex", Icon: "codex-color", Bin: "codex", Dir: dir, Path: path,
+		UA: []string{"codex"},
 		// the app-server behind the Codex app (and every codex TUI) builds
 		// its model list once, at start-up.
 		Notice: func() string {

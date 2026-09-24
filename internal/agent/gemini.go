@@ -156,6 +156,7 @@ func gemini(home string) *Agent {
 
 	return &Agent{
 		ID: "gemini", Name: "Gemini CLI", Icon: "geminicli-color", Aliases: []string{"gemini-cli"},
+		UA:  []string{"geminicli", "gemini-cli"},
 		Bin: "gemini", Dir: dir, Path: path,
 		Notice: func() string {
 			if Running(`(^|/)gemini( |$)`) {

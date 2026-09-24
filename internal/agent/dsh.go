@@ -49,6 +49,7 @@ func dsh(home string) *Agent {
 	}
 	return &Agent{
 		ID: "dsh", Name: "DeepSeek Harness", Icon: "deepseek-color", Aliases: []string{"deepseek-harness"},
+		UA:  []string{"deepseek-harness"},
 		Bin: "dsh", Dir: dir, Path: path,
 		Notice: func() string {
 			var notes []string

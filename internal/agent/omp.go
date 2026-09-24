@@ -55,6 +55,7 @@ func omp(home string) *Agent {
 	}
 	return &Agent{
 		ID: "omp", Name: "omp", Icon: "omp", Aliases: []string{"oh-my-pi"},
+		UA:  []string{"oh-my-pi"},
 		Bin: "omp", Dir: dir, Path: path,
 		Notice: func() string {
 			if Running(`(^|/)omp( |$)`, `@oh-my-pi/pi-coding-agent`) {

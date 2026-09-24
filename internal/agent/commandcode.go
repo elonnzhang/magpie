@@ -32,6 +32,7 @@ func commandCode(home string) *Agent {
 	}
 	return &Agent{
 		ID: "commandcode", Name: "Command Code", Icon: "commandcode", Aliases: []string{"command-code", "cmd"},
+		UA:  []string{"command-code", "commandcode"},
 		Bin: "command-code", Dir: dir, Path: path,
 		Notice: func() string {
 			notes := []string{"Command Code wants its own sign-in (cmd login) even for models through magpie."}

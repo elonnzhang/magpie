@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -91,6 +92,24 @@ func Load(since time.Time) []Record {
 	return out
 }
 
+// Known is an agent as its requests name it.
+type Known struct {
+	ID    string
+	Names []string // its id and aliases, which a record may already carry
+	UA    []string // what its User-Agent begins with
+}
+
+// Agents lists the agents magpie knows. Package agent sets it from each
+// agent's own description, so they are listed in one place only.
+var Agents func() []Known
+
+var knownAgents = sync.OnceValue(func() []Known {
+	if Agents == nil {
+		return nil
+	}
+	return Agents()
+})
+
 // AgentOf names the agent behind a client User-Agent. Known agents map to
 // their magpie id; anything else keeps its product name.
 func AgentOf(ua string) string {
@@ -98,30 +117,15 @@ func AgentOf(ua string) string {
 	name, _, _ := strings.Cut(ua, "/")
 	name, _, _ = strings.Cut(name, " ")
 	l := strings.ToLower(name)
-	for _, k := range known {
-		if strings.HasPrefix(l, k.prefix) {
-			return k.id
+	for _, k := range knownAgents() {
+		if slices.Contains(k.Names, l) || slices.ContainsFunc(k.UA, func(p string) bool { return strings.HasPrefix(l, p) }) {
+			return k.ID
 		}
 	}
 	if name == "" {
 		return "other"
 	}
 	return name
-}
-
-var known = []struct{ prefix, id string }{
-	{"claude-cli", "claude"}, {"claude-code", "claude"},
-	{"codex", "codex"},
-	{"geminicli", "gemini"}, {"gemini-cli", "gemini"},
-	{"opencode", "opencode"},
-	{"pi-", "pi"}, {"pi/", "pi"},
-	{"goose", "goose"},
-	{"cursor", "cursor"},
-	{"copilot", "copilot"}, {"github-copilot", "copilot"},
-	{"crush", "crush"},
-	{"deepseek-harness", "dsh"}, {"dsh", "dsh"},
-	{"oh-my-pi", "omp"}, {"omp", "omp"},
-	{"command-code", "commandcode"}, {"commandcode", "commandcode"},
 }
 
 // ---- summaries --------------------------------------------------------------

@@ -13,7 +13,19 @@ import (
 	"github.com/yetone/magpie/internal/edit"
 	"github.com/yetone/magpie/internal/gateway"
 	"github.com/yetone/magpie/internal/provider"
+	"github.com/yetone/magpie/internal/usage"
 )
+
+// The gateway knows each agent's requests by what this package says of it.
+func init() {
+	usage.Agents = func() []usage.Known {
+		var out []usage.Known
+		for _, a := range All() {
+			out = append(out, usage.Known{ID: a.ID, Names: append([]string{a.ID}, a.Aliases...), UA: a.UA})
+		}
+		return out
+	}
+}
 
 // All returns every agent magpie knows about, detected or not.
 func All() []*Agent {
@@ -240,6 +252,7 @@ func opencode(home, cfg string) *Agent {
 	}
 	return &Agent{
 		ID: "opencode", Name: "OpenCode", Icon: "opencode", Aliases: []string{"oc"},
+		UA:  []string{"opencode"},
 		Bin: "opencode", Dir: dir, Path: path,
 		Fields: []Field{
 			{Key: "model", Label: "model", Get: jsonGet(path, "model"), Set: set("model"), Options: opts("model")},
@@ -261,6 +274,7 @@ func pi(home string) *Agent {
 	}
 	return &Agent{
 		ID: "pi", Name: "Pi", Icon: "pi", Bin: "pi", Dir: dir, Path: path,
+		UA: []string{"pi-"},
 		Fields: []Field{
 			{
 				Key: "model", Label: "model",
@@ -320,6 +334,7 @@ func goose(home, cfg string) *Agent {
 	set := func(kvs ...edit.KV) error { return edit.SetYAMLTop(path, kvs...) }
 	return &Agent{
 		ID: "goose", Name: "Goose", Icon: "goose", Bin: "goose", Dir: filepath.Dir(path), Path: path,
+		UA: []string{"goose"},
 		Fields: []Field{{
 			Key: "model", Label: "model",
 			Get: pairGet(get, "GOOSE_PROVIDER", "GOOSE_MODEL"),
@@ -340,6 +355,7 @@ func cursor(home string) *Agent {
 	path := filepath.Join(home, ".cursor", "cli-config.json")
 	return &Agent{
 		ID: "cursor", Name: "Cursor", Icon: "cursor", Aliases: []string{"cursor-agent"},
+		UA:  []string{"cursor"},
 		Bin: "cursor-agent", Dir: filepath.Dir(path), Path: path,
 		Fields: []Field{{
 			Key: "model", Label: "model",
@@ -367,6 +383,7 @@ func copilot(home string) *Agent {
 	path := filepath.Join(dir, "settings.json")
 	return &Agent{
 		ID: "copilot", Name: "Copilot CLI", Icon: "githubcopilot", Aliases: []string{"gh-copilot"},
+		UA:  []string{"copilot", "github-copilot"},
 		Bin: "copilot", Dir: dir, Path: path,
 		Fields: []Field{{
 			Key: "model", Label: "model",
@@ -436,6 +453,7 @@ func crush(home, cfg string) *Agent {
 	}
 	return &Agent{
 		ID: "crush", Name: "Crush", Icon: "crush", Bin: "crush", Dir: filepath.Dir(path), Path: path,
+		UA: []string{"crush"},
 		Fields: []Field{
 			{Key: "model", Label: "large", Get: pairGet(get, "models.large.provider", "models.large.model"), Set: setter("models.large.provider", "models.large.model"), Options: opts("model")},
 			{Key: "small", Label: "small", Get: pairGet(get, "models.small.provider", "models.small.model"), Set: setter("models.small.provider", "models.small.model"), Options: opts("small")},
