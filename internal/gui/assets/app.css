@@ -109,9 +109,44 @@ code { font: 11.5px var(--code); }
 
 /* ---- header --------------------------------------------------------------- */
 .top { display: flex; align-items: center; gap: 8px; padding: 0 10px 0 14px; height: 46px; flex: none; position: relative; }
-body.window.mac .top { padding-left: 88px; height: 50px; padding-top: 2px; } /* the traffic lights centre 25.75pt from the top, not 25 */
+body.window.mac .top { padding-left: 96px; height: 50px; padding-top: 2px; } /* the traffic lights centre 25.75pt from the top, not 25 */
 body.window.mac .seg { top: calc(50% + 1px); } /* 50% centres in the padding box; the 2px top padding puts the flex row a pixel lower */
 .brand { display: flex; align-items: center; gap: 6px; font-weight: 600; letter-spacing: .01em; }
+body.window:not(.mac) .brand { display: none; } /* the title bar above already shows the icon and the name */
+/* the magpie flaps, flicks its tail and bobs when the window opens and on
+   hover. It moves in pieces cut from the logo, and is drawn whole at rest, so
+   the cuts never show. */
+.logo svg { display: block; overflow: visible; }
+.logo .parts, .logo.wag .whole { display: none; }
+.logo.wag .parts { display: inline; }
+.logo .tail { transform-box: view-box; transform-origin: 14px 22px; }
+.logo .wing { transform-box: view-box; transform-origin: 30px 19.8px; }
+.logo .bird { transform-box: view-box; transform-origin: 26px 38px; }
+.logo.wag .tail { animation: tail-flick .9s cubic-bezier(.3, 0, .3, 1); }
+.logo.wag .wing { animation: wing-flap .9s cubic-bezier(.3, 0, .3, 1); }
+.logo.wag .bird { animation: bird-bob .9s cubic-bezier(.3, 0, .3, 1); }
+@keyframes wing-flap {
+  0%, 100% { transform: none; }
+  12% { transform: rotate(10deg); }
+  26% { transform: rotate(-3deg); }
+  40% { transform: rotate(8deg); }
+  56% { transform: rotate(-2deg); }
+  72% { transform: rotate(3deg); }
+}
+@keyframes tail-flick {
+  0%, 100% { transform: none; }
+  18% { transform: rotate(16deg); }
+  36% { transform: rotate(-7deg); }
+  54% { transform: rotate(9deg); }
+  72% { transform: rotate(-3deg); }
+  86% { transform: rotate(2deg); }
+}
+@keyframes bird-bob {
+  0%, 100% { transform: none; }
+  18% { transform: rotate(-4deg); }
+  40% { transform: rotate(2deg); }
+  62% { transform: rotate(-1deg); }
+}
 .logo { color: var(--fg); display: inline-flex; } /* ink, like the wordmark; the accent blue fought the text in light mode */
 .seg {
   position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);

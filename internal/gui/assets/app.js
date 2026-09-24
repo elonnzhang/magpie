@@ -3087,7 +3087,18 @@ else { $("#nav").remove(); }
 
 // Config files may change underneath us (another magpie, an editor); reload when
 // the panel comes back into view.
-document.addEventListener("visibilitychange", () => { if (!document.hidden) load(); });
+// The magpie in the corner flaps and wags its tail as the window opens and
+// when the pointer comes over it.
+function wag() {
+  const logo = document.querySelector(".brand .logo");
+  if (!logo || logo.classList.contains("wag") || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  logo.classList.add("wag");
+  logo.querySelector(".tail").addEventListener("animationend", () => logo.classList.remove("wag"), { once: true });
+}
+document.querySelector(".brand")?.addEventListener("mouseenter", wag);
+setTimeout(wag, 250);
+
+document.addEventListener("visibilitychange", () => { if (!document.hidden) { load(); wag(); } });
 window.addEventListener("focus", load);
 setInterval(renderUpdateBadge, 15 * 60 * 1000); // a window left open still hears of a new version
 // Opened on a magpie://import link: fetch what it describes (once — the
