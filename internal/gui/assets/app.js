@@ -1759,11 +1759,13 @@ function renderUsage() {
 
 // ---------- settings ----------
 //
-// Two choices (palette, language) and the facts people come looking for:
+// Three choices (palette, language, what the tray icon opens) and the facts
+// people come looking for:
 // the version, where magpie keeps its files, the gateway's address.
 
 const THEMES = [["system", "System"], ["light", "Light"], ["dark", "Dark"]];
 const LOCALES = [["system", "System"], ["en", "English"], ["zh", "中文"]];
+const TRAYS = [["panel", "Quick panel"], ["window", "Main window"]];
 
 // applyPrefs paints and speaks as the saved settings say. A ?theme= or
 // ?locale= in the URL wins, so a forced look stays forced.
@@ -1795,8 +1797,10 @@ async function loadSettings() {
 
 function renderSettings() {
   const s = prefs;
-  $("#themeSegs").replaceChildren(segs(THEMES.map(([id, name]) => [id, t(name)]), s.theme, (theme) => savePrefs({ theme, lang: s.lang })));
-  $("#langSegs").replaceChildren(segs(LOCALES.map(([id, name]) => [id, t(name)]), s.lang, (lang) => savePrefs({ theme: s.theme, lang })));
+  const keep = { theme: s.theme, lang: s.lang, tray: s.tray };
+  $("#themeSegs").replaceChildren(segs(THEMES.map(([id, name]) => [id, t(name)]), s.theme, (theme) => savePrefs({ ...keep, theme })));
+  $("#langSegs").replaceChildren(segs(LOCALES.map(([id, name]) => [id, t(name)]), s.lang, (lang) => savePrefs({ ...keep, lang })));
+  $("#traySegs").replaceChildren(segs(TRAYS.map(([id, name]) => [id, t(name)]), s.tray || "panel", (tray) => savePrefs({ ...keep, tray })));
 
   const about = $("#about");
   about.replaceChildren();
