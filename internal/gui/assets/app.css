@@ -218,6 +218,12 @@ body.window .field.solo { grid-column: auto; }
 .subscription-head { display: flex; align-items: center; gap: 7px; margin-bottom: 9px; }
 .subscription-head .ic { width: 17px; height: 17px; }
 .subscription-head b { font-size: 12.5px; font-weight: 600; }
+.subscription-account { display: flex; align-items: baseline; gap: 7px; margin: 0 0 6px; font-size: 11px; color: var(--fg-2); }
+.subscription-card.several .quota-windows + .subscription-account,
+.subscription-card.several .subscription-error + .subscription-account,
+.subscription-card.several .quota-balance + .subscription-account { margin-top: 10px; padding-top: 9px; border-top: 1px solid var(--line); }
+.subscription-account .user { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.subscription-account .plan { margin-left: auto; flex: none; font-size: 10.5px; color: var(--muted); text-transform: capitalize; }
 .subscription-head .plan { margin-left: auto; font-size: 10.5px; color: var(--muted); text-transform: capitalize; }
 .quota-windows { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px 14px; }
 .quota-labels { display: flex; align-items: baseline; gap: 6px; margin-bottom: 4px; font-size: 10.5px; color: var(--muted); }

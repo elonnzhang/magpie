@@ -372,6 +372,8 @@ const I18N = {
     "5 hours": "5 小时",
     "7 days · Opus": "7 天 · Opus",
     "7 days · Sonnet": "7 天 · Sonnet",
+    "Auto + Composer": "Auto + Composer",
+    "Total": "合计",
     "Usage unavailable": "暂时无法获取用量",
     "Resets {when}": "重置于 {when}",
     "Allowance": "用量额度",

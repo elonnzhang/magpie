@@ -2689,38 +2689,60 @@ function renderQuotas() {
     return;
   }
   subscriptions.hidden = !quotas.length;
+  // an agent with several accounts is one card, a section per account
+  const groups = [];
   for (const sub of quotas) {
-    const card = el("div", "subscription-card");
+    const g = sub.user && groups.find((x) => x[0].user && x[0].provider === sub.provider);
+    if (g) g.push(sub); else groups.push([sub]);
+  }
+  for (const subs of groups) {
+    const first = subs[0];
+    const card = el("div", "subscription-card" + (first.user ? " several" : ""));
     const head = el("div", "subscription-head");
-    head.append(icon(sub.icon), el("b", "", sub.name));
-    if (sub.plan) head.append(el("span", "plan", sub.plan));
-    else if (sub.user) head.append(el("span", "plan", sub.user));
+    head.append(icon(first.icon), el("b", "", first.name));
+    if (!first.user && first.plan) head.append(el("span", "plan", first.plan));
     card.append(head);
-    if (sub.balance) {
-      const b = el("div", "quota-balance");
-      b.append(el("span", "", t("Balance")), el("b", "", sub.balance));
-      card.append(b);
-    } else if (sub.error) {
-      card.append(el("div", "subscription-error", t("Usage unavailable")));
-      card.title = sub.error;
-    } else {
-      const windows = el("div", "quota-windows");
-      for (const w of sub.windows) {
-        const quota = el("div", "quota");
-        const labels = el("div", "quota-labels");
-        labels.append(el("span", "", t(w.name)), el("b", "", w.display || `${Math.round(w.used)}%`));
-        const track = el("div", "quota-track");
-        const fill = el("i");
-        fill.style.width = `${Math.max(0, Math.min(100, w.used))}%`;
-        track.append(fill);
-        quota.append(labels, track);
-        if (w.resetsAt) quota.title = t("Resets {when}", { when: new Date(w.resetsAt).toLocaleString() });
-        windows.append(quota);
+    for (const sub of subs) {
+      if (sub.user) {
+        const who = el("div", "subscription-account");
+        const u = el("span", "user", sub.user);
+        u.title = sub.user;
+        who.append(u);
+        if (sub.plan) who.append(el("span", "plan", sub.plan));
+        card.append(who);
       }
-      card.append(windows);
+      card.append(quotaWindows(sub));
     }
     subscriptions.append(card);
   }
+}
+
+// quotaWindows: one account's allowance as meters, or why there are none.
+function quotaWindows(sub) {
+  if (sub.balance) {
+    const b = el("div", "quota-balance");
+    b.append(el("span", "", t("Balance")), el("b", "", sub.balance));
+    return b;
+  }
+  if (sub.error) {
+    const e = el("div", "subscription-error", t("Usage unavailable"));
+    e.title = sub.error;
+    return e;
+  }
+  const windows = el("div", "quota-windows");
+  for (const w of sub.windows) {
+    const quota = el("div", "quota");
+    const labels = el("div", "quota-labels");
+    labels.append(el("span", "", t(w.name)), el("b", "", w.display || `${Math.round(w.used)}%`));
+    const track = el("div", "quota-track");
+    const fill = el("i");
+    fill.style.width = `${Math.max(0, Math.min(100, w.used))}%`;
+    track.append(fill);
+    quota.append(labels, track);
+    if (w.resetsAt) quota.title = t("Resets {when}", { when: new Date(w.resetsAt).toLocaleString() });
+    windows.append(quota);
+  }
+  return windows;
 }
 
 function renderUsage() {

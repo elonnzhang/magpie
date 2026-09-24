@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -104,23 +105,34 @@ func fetchSubscriptionUsage() []SubscriptionQuota {
 		hidden[p.ID] = p.Hidden
 	}
 	var fetches []func() SubscriptionQuota
-	if _, ok := claudeAccount(); ok && !hidden["claude"] {
-		fetches = append(fetches, func() SubscriptionQuota { return claudeSubscriptionUsage(ctx) })
+	if p, ok := claudeAccount(); ok && !hidden["claude"] {
+		if ls := accountsOf("claude"); len(ls) > 1 {
+			fetches = append(fetches, perLogin(ctx, ls, "Claude Code", "claude-color")...)
+		} else {
+			fetches = append(fetches, withUser(p.Account.User, func() SubscriptionQuota { return claudeSubscriptionUsage(ctx) }))
+		}
+	}
+	if user, plan, ok := cursorIdentity(); ok && !hidden["cursor"] {
+		fetches = append(fetches, withUser(user, func() SubscriptionQuota { return cursorSubscriptionUsage(ctx, plan) }))
 	}
 	if _, ok := grokAccount(); ok && !hidden["grok"] {
 		fetches = append(fetches, func() SubscriptionQuota { return grokSubscriptionUsage(ctx) })
 	}
 	if home, err := os.UserHomeDir(); err == nil {
-		if _, ok := codexAccount(home); ok && !hidden["codex"] {
-			auth := filepath.Join(home, ".codex", "auth.json")
-			fetches = append(fetches, func() SubscriptionQuota { return codexSubscriptionUsage(ctx, auth) })
+		if p, ok := codexAccount(home); ok && !hidden["codex"] {
+			if ls := accountsOf("codex"); len(ls) > 1 {
+				fetches = append(fetches, perLogin(ctx, ls, "Codex", "codex-color")...)
+			} else {
+				auth := filepath.Join(home, ".codex", "auth.json")
+				fetches = append(fetches, withUser(p.Account.User, func() SubscriptionQuota { return codexSubscriptionUsage(ctx, auth) }))
+			}
 		}
 		cfg := os.Getenv("XDG_CONFIG_HOME")
 		if cfg == "" {
 			cfg = filepath.Join(home, ".config")
 		}
 		if app, ok := copilotLogin(cfg); ok && !hidden["copilot"] {
-			fetches = append(fetches, func() SubscriptionQuota { return copilotSubscriptionUsage(ctx, app.Token) })
+			fetches = append(fetches, withUser(app.User, func() SubscriptionQuota { return copilotSubscriptionUsage(ctx, app.Token) }))
 		}
 	}
 	out := make([]SubscriptionQuota, len(fetches))
@@ -130,6 +142,36 @@ func fetchSubscriptionUsage() []SubscriptionQuota {
 		go func() { defer wg.Done(); out[i] = f() }()
 	}
 	wg.Wait()
+	return out
+}
+
+// accountsOf is every account magpie remembers for agent, the one it is
+// signed in to first.
+func accountsOf(agent string) []Login {
+	ls := Logins(agent)
+	sort.SliceStable(ls, func(i, j int) bool { return ls[i].Active && !ls[j].Active })
+	return ls
+}
+
+// withUser names the account a fetch is for.
+func withUser(user string, f func() SubscriptionQuota) func() SubscriptionQuota {
+	return func() SubscriptionQuota {
+		q := f()
+		q.User = user
+		return q
+	}
+}
+
+// perLogin fetches each account's allowance on a card of its own.
+func perLogin(ctx context.Context, ls []Login, name, icon string) []func() SubscriptionQuota {
+	var out []func() SubscriptionQuota
+	for _, l := range ls {
+		out = append(out, func() SubscriptionQuota {
+			q := loginQuota(ctx, l)
+			q.Name, q.Icon, q.User = name, icon, l.User
+			return q
+		})
+	}
 	return out
 }
 

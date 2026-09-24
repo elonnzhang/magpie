@@ -15,6 +15,9 @@ var grokBase = "https://cli-chat-proxy.grok.com/v1"
 
 func grokSubscriptionUsage(ctx context.Context) SubscriptionQuota {
 	q := SubscriptionQuota{Provider: "grok", Name: "Grok", Icon: "xai", Windows: []QuotaWindow{}}
+	if c, ok := readGrokCredential(GrokHome()); ok {
+		q.User = c.Email
+	}
 	c, err := grokAccessToken(GrokHome(), GrokExecutable(), false)
 	if err == nil {
 		q.Windows, err = grokWindows(ctx, c.Key)
