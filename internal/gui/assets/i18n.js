@@ -66,6 +66,9 @@ const I18N = {
 
     // picker
     "Default": "默认",
+    "Icon": "图标",
+    "Choose a picture…": "选择图片…",
+    "Built-in icons": "内置图标",
     "what {agent} ships with": "{agent} 自带的默认值",
     "current value": "当前值",
     "use as typed": "按输入使用",

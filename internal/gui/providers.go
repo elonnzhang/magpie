@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -205,6 +206,32 @@ func providerRoutes(mux *http.ServeMux, w Windows, gw *gateway.Server) {
 	mux.HandleFunc("GET /api/providers", func(rw http.ResponseWriter, r *http.Request) {
 		writeJSON(rw, providersState(gw))
 	})
+	// a picture for a provider, picked in the editor: kept by content before
+	// the provider is saved, which then points at it
+	mux.HandleFunc("POST /api/icons", func(rw http.ResponseWriter, r *http.Request) {
+		b, err := io.ReadAll(io.LimitReader(r.Body, provider.MaxIcon+1))
+		if err != nil {
+			fail(rw, err)
+			return
+		}
+		icon, err := provider.StoreIcon(b)
+		if err != nil {
+			fail(rw, err)
+			return
+		}
+		writeJSON(rw, map[string]string{"icon": icon})
+	})
+	mux.HandleFunc("GET /api/icons/{name}", func(rw http.ResponseWriter, r *http.Request) {
+		f := provider.IconFile(r.PathValue("name"))
+		if f == "" {
+			http.NotFound(rw, r)
+			return
+		}
+		// an SVG is only ever drawn as an image, never run
+		rw.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'")
+		rw.Header().Set("Cache-Control", "max-age=31536000, immutable")
+		http.ServeFile(rw, r, f)
+	})
 	mux.HandleFunc("POST /api/provider/{action}", func(rw http.ResponseWriter, r *http.Request) {
 		var in provider.Provider
 		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
@@ -228,6 +255,9 @@ func providerRoutes(mux *http.ServeMux, w Windows, gw *gateway.Server) {
 			old, _ := provider.Find(in.ID)
 			if in.Key == "" && old != nil {
 				in.Key = old.Key
+			}
+			if in.Icon == "" && old != nil && in.Preset == "" {
+				in.Icon = old.Icon
 			}
 			if err := provider.Save(in); err != nil {
 				fail(rw, err)

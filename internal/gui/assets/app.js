@@ -70,6 +70,16 @@ function icon(name) {
     e.append(svg("M8 2.2 13.2 5.1v5.8L8 13.8 2.8 10.9V5.1Z M8 8v5.8 M2.8 5.1 8 8l5.2-2.9", 16, 1.4));
     return e;
   }
+  if (name?.startsWith("file:")) {
+    // a picture the user gave their own provider
+    const img = el("img");
+    img.src = "/api/icons/" + encodeURIComponent(name.slice(5));
+    img.alt = "";
+    img.draggable = false;
+    img.onerror = () => e.replaceWith(icon("generic"));
+    e.append(img);
+    return e;
+  }
   if (name) {
     if (name.endsWith("-color") || name === "crush") {
       const img = el("img");
@@ -1228,6 +1238,67 @@ function headerEditor() {
 }
 function parses(s) { try { JSON.parse(s); return true; } catch { return false; } }
 
+// iconPicker: a custom provider's icon — one of the built-in ones, or a
+// picture of the user's own, which magpie keeps in ~/.config/magpie/icons.
+function iconPicker(ed) {
+  const box = el("div", "icon-pick");
+  const draw = () => {
+    box.replaceChildren();
+    const now = el("span", "icon-now");
+    now.append(icon(draft.icon || "generic"));
+    box.append(now);
+    const file = el("input");
+    file.type = "file";
+    file.accept = "image/png,image/jpeg,image/gif,image/webp,image/x-icon,image/svg+xml,.ico,.svg";
+    file.hidden = true;
+    file.onchange = async () => {
+      const f = file.files[0];
+      if (!f) return;
+      try {
+        const res = await fetch("/api/icons", { method: "POST", body: f });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || res.statusText);
+        draft.icon = data.icon;
+        editorError("");
+        draw();
+        syncHead();
+      } catch (e) {
+        editorError(e.message);
+      }
+    };
+    const choose = el("button", "text", t("Choose a picture…"));
+    choose.onclick = () => file.click();
+    const builtin = el("button", "text", t("Built-in icons"));
+    builtin.onclick = () => { open = !open; draw(); };
+    box.append(file, choose, builtin);
+    if (draft.icon && draft.icon !== "generic") {
+      const reset = el("button", "text", t("Default"));
+      reset.onclick = () => { draft.icon = ""; draw(); syncHead(); };
+      box.append(reset);
+    }
+    if (open) {
+      const grid = el("div", "icon-grid");
+      const names = [...new Set((providers.presets || []).map((p) => p.icon).filter((n) => n && n !== "generic"))].sort();
+      for (const n of names) {
+        const b = el("button", n === draft.icon ? "on" : "");
+        b.title = n.replace(/-color$/, "");
+        b.append(icon(n));
+        b.onclick = () => { draft.icon = n; open = false; draw(); syncHead(); };
+        grid.append(b);
+      }
+      box.append(grid);
+    }
+  };
+  let open = false;
+  // the dialog's title shows the icon too
+  const syncHead = () => {
+    const old = ed.querySelector(".ehead .ic");
+    if (old) old.replaceWith(icon(draft.icon || "generic"));
+  };
+  draw();
+  return box;
+}
+
 // ---------- modal ----------
 // The provider editor opens as a dialog over the page; Escape, the backdrop
 // or Cancel close it.
@@ -1278,10 +1349,10 @@ function renderEditor(p, presetID) {
   const pr = presetID ? providers.presets.find((x) => x.id === presetID) : p?.preset ? providers.presets.find((x) => x.id === p.preset) : null;
   const isNew = !p, custom = !pr;
   draft = draft || (p
-    ? { id: p.id, name: p.name, preset: p.preset, chat: p.chat, responses: p.responses, anthropic: p.anthropic, catalog: p.catalog, key: "", api: p.anthropic && !p.chat ? "anthropic" : "openai", chosen: p.models.filter((m) => m.on).map((m) => m.id), extra: [], headers: headerRows(p.headers) }
+    ? { id: p.id, name: p.name, preset: p.preset, chat: p.chat, responses: p.responses, anthropic: p.anthropic, catalog: p.catalog, key: "", api: p.anthropic && !p.chat ? "anthropic" : "openai", chosen: p.models.filter((m) => m.on).map((m) => m.id), extra: [], headers: headerRows(p.headers), icon: p.icon || "" }
     : pr
       ? { id: pr.id, name: pr.name, preset: pr.id, key: "", chosen: [], extra: [], headers: [] }
-      : { id: "", name: "", preset: "", chat: "", responses: "", anthropic: "", catalog: "", key: "", api: "openai", chosen: [], extra: [], headers: [] });
+      : { id: "", name: "", preset: "", chat: "", responses: "", anthropic: "", catalog: "", key: "", api: "openai", chosen: [], extra: [], headers: [], icon: "" });
   const ed = el("div", "editor" + (isNew ? " new" : ""));
   ed.onclick = (e) => e.stopPropagation();
 
@@ -1382,6 +1453,9 @@ function renderEditor(p, presetID) {
   keyWrap.append(key, side);
   ed.append(...field(t("API key"), keyWrap, isNew ? t("Kept in ~/.config/magpie/providers.json, readable by you alone. Nothing is read from your shell.") : ""));
 
+  // A user-defined provider can have its own picture; presets keep theirs.
+  if (custom) ed.append(...field(t("Icon"), iconPicker(ed), ""));
+
   // Custom request headers are only supported for a user-defined provider.
   // Presets own their request shape, and signed-in accounts returned above
   // use the agent's own authentication headers.
@@ -1459,7 +1533,7 @@ function renderEditor(p, presetID) {
   const saveBtn = el("button", "text primary", t(isNew ? "Add" : "Save"));
   const save = () => {
     const body = { id: draft.id, name: draft.name, preset: draft.preset, key: draft.key || "", chat: draft.chat, responses: draft.responses, anthropic: draft.anthropic, catalog: draft.catalog, models: p ? draft.chosen : draft.extra };
-    if (custom) body.headers = headersOf(draft.headers);
+    if (custom) { body.headers = headersOf(draft.headers); body.icon = draft.icon || "generic"; }
     if (isNew && custom && !body.name) { name.focus(); return editorError(t("Give it a name"), "warn"); }
     if (isNew && custom && !body.chat && !body.anthropic) { url.focus(); return editorError(t("A base URL is needed"), "warn"); }
     editorError("");
