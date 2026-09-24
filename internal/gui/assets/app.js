@@ -2614,7 +2614,9 @@ async function renderUpdate(r, u) {
       break;
     case "downloading":
       sub.textContent = t("Downloading {v}…", { v: u.latest });
-      setTimeout(() => renderUpdate(r), 2000);
+      if (u.total) sub.textContent += " " + Math.floor((u.done / u.total) * 100) + "% · " + t("{done} of {total} MB", { done: (u.done / 1e6).toFixed(1), total: (u.total / 1e6).toFixed(1) });
+      else if (u.done) sub.textContent += " " + t("{done} MB", { done: (u.done / 1e6).toFixed(1) });
+      setTimeout(() => renderUpdate(r), 700);
       break;
     case "checking":
       sub.textContent = t("Checking for updates…");
@@ -2625,7 +2627,8 @@ async function renderUpdate(r, u) {
       btn(t("Check"), check);
       break;
     case "error":
-      sub.textContent = t("Couldn't check for updates");
+      // the reason in sight: "timed out" says try a proxy, a 404 says wait
+      sub.textContent = t(u.latest ? "Couldn't download {v}" : "Couldn't check for updates", { v: u.latest }) + (u.error ? " · " + u.error.replace(/^Get "[^"]*": /, "") : "");
       sub.title = u.error || "";
       btn(t("Check"), check);
       break;
