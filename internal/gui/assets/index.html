@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>magpie</title>
 <link rel="stylesheet" href="app.css">
+<link rel="stylesheet" href="routing.css">
 </head>
 <body>
 <header class="top" style="--wails-draggable:drag">
@@ -57,6 +58,8 @@
   <div class="list gwcard">
     <div class="row gw" id="gateway"></div>
   </div>
+  <div class="row-head"><span class="label" data-t>Routing</span><span class="rt-livedot" aria-hidden="true"></span><span class="grow"></span><span class="note" data-t>live, as the gateway decides</span></div>
+  <section class="rt" id="rt"></section>
   <div class="row-head"><span class="label" data-t>Connect</span><span class="grow"></span><span class="note" id="connectNote"></span></div>
   <section class="list connect" id="connect"></section>
   <div class="row-head"><span class="label" data-t>Models</span><span class="grow"></span><button class="text" id="copyModels" data-t>Copy all ids</button></div>
@@ -137,5 +140,6 @@
 
 <script src="i18n.js"></script>
 <script src="app.js"></script>
+<script src="routing.js"></script>
 </body>
 </html>

@@ -226,6 +226,7 @@ func ago(t time.Time) string {
 
 func providerRoutes(mux *http.ServeMux, w Windows, gw *gateway.Server) {
 	importAppsRoutes(mux, gw)
+	traceRoutes(mux, gw)
 	mux.HandleFunc("GET /api/providers", func(rw http.ResponseWriter, r *http.Request) {
 		writeJSON(rw, providersState(gw))
 	})
