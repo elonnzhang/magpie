@@ -221,6 +221,27 @@ footer a:hover { color: var(--ink); }
 .arrow { color: var(--ink3); font-size: 22px; }
 
 
+.route { background: var(--card); border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow); padding: 8px; max-width: 460px; width: 100%; margin: 0 auto; }
+.route .rh { display: flex; align-items: center; gap: 9px; padding: 10px 12px 12px; font-size: 14px; font-weight: 600; }
+.route .rh img { width: 20px; height: 20px; max-width: none; margin: 0; border: 0; border-radius: 0; box-shadow: none; flex: none; }
+.route .rh span { margin-left: auto; font-size: 12px; font-weight: 500; color: var(--ink2); background: var(--bg2); border: 1px solid var(--line); border-radius: 999px; padding: 2px 10px; }
+.route ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.route ol li { border: 0; display: grid; grid-template-columns: 10px 1fr auto; align-items: center; column-gap: 12px; row-gap: 6px; padding: 11px 12px; border-radius: 10px; font-size: 14px; color: var(--ink2); }
+.route ol li b { color: var(--ink); font-weight: 560; }
+.route ol li em { font-style: normal; font-size: 12.5px; color: var(--ink3); text-align: right; white-space: nowrap; }
+.route ol li .bar { grid-column: 2 / 4; height: 4px; border-radius: 2px; background: var(--bg2); overflow: hidden; }
+.route ol li .bar i { display: block; height: 100%; background: var(--ink3); border-radius: 2px; }
+.route ol li .dot { width: 8px; height: 8px; border-radius: 50%; border: 1.5px solid var(--ink3); }
+.route ol li.on { background: var(--bg2); }
+.route ol li.on em { color: var(--ink); }
+.route ol li.on .bar i { background: var(--ink); }
+.route ol li.on .dot { background: var(--ink); border-color: var(--ink); box-shadow: 0 0 0 0 color-mix(in srgb, var(--ink) 40%, transparent); animation: live 1.8s infinite; }
+.route ol li.out { opacity: .55; }
+.route ol li.out b { text-decoration: line-through; text-decoration-color: var(--ink3); }
+@keyframes live { 70% { box-shadow: 0 0 0 7px transparent; } 100% { box-shadow: 0 0 0 0 transparent; } }
+@media (prefers-reduced-motion: reduce) { .route li.on .dot { animation: none; } }
+.route .rf { padding: 10px 12px 6px; font-size: 12.5px; color: var(--ink3); border-top: 1px solid var(--line); margin-top: 6px; }
+
 .wide img { width: 100%; height: auto; height: auto; display: block; border-radius: 14px; box-shadow: var(--shadow); border: 1px solid var(--line); }
 .subs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
 .subs > div { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 22px; }
@@ -241,6 +262,8 @@ footer a:hover { color: var(--ink); }
 }
 @media (max-width: 560px) {
   .wrap { padding: 0 16px; }
+  .route ol li { grid-template-columns: 10px 1fr; }
+  .route ol li em { grid-column: 2; text-align: left; white-space: normal; }
   .grid { grid-template-columns: 1fr; }
   .sponsor .card { flex-direction: column; gap: 10px; padding: 16px 20px; text-align: center; }
   .sponsor .card hr, .sponsor .card i { display: none; }
@@ -259,6 +282,7 @@ footer a:hover { color: var(--ink); }
   <a class="brand" href="/"><img class="bird" src="/img/magpie-small.svg" alt="">magpie</a>
   <div class="links">
     <a class="hide" href="#how">How it works</a>
+    <a class="hide" href="#routing">Routing</a>
     <a class="hide" href="#providers">Providers</a>
     <a href="#cli">CLI</a>
     <a class="hide-sm" href="/docs/import">Docs</a>
@@ -402,6 +426,34 @@ footer a:hover { color: var(--ink); }
       <div><div class="who"><img src="/icons/claude-color.svg" alt="">Claude Pro / Max</div><p>Your Claude Code sign-in powers OpenCode, Pi or Goose: <code>claude/claude-sonnet-5</code>.</p></div>
       <div><div class="who"><img class="bird" src="/icons/openai.svg" alt="">ChatGPT Plus / Pro</div><p>Your Codex sign-in puts GPT in Claude Code: <code>codex/gpt-5.5</code>.</p></div>
       <div><div class="who"><img class="bird" src="/icons/githubcopilot.svg" alt="">GitHub Copilot</div><p>Your Copilot seat serves any agent: <code>copilot/claude-sonnet-4.5</code>.</p></div>
+    </div>
+  </section>
+
+  <section id="routing">
+    <div class="split">
+      <div>
+        <p class="eyebrow">Smart routing</p>
+        <h2>Many accounts. It never runs dry.</h2>
+        <p class="sub">Add every key and subscription you have — several Claude, ChatGPT, Copilot or Grok accounts, several keys for one vendor — and turn them all on. The gateway picks one for each request and moves on before you ever see an error.</p>
+        <ul>
+          <li><b>Quota-aware.</b> The first keeps the requests while it has quota to spare, so prompt caches stay warm; running low, the one with the most left takes over.</li>
+          <li><b>Out of credit?</b> A key whose balance ran out sits out half an hour; requests go to one that can still pay.</li>
+          <li><b>Out of quota or rate limited?</b> Passed over until the vendor says it resets — no guessing, no hammering.</li>
+          <li><b>Failover.</b> A failing account steps back a minute, longer if it keeps failing, and the next answers instead — before a byte of the reply is sent.</li>
+        </ul>
+      </div>
+      <div>
+        <div class="route" role="img" aria-label="Four Claude accounts under smart routing: one serving, one low on quota, one out of quota until it resets, one key out of credit">
+          <div class="rh"><img src="/icons/claude-color.svg" alt="">Claude · 4 accounts<span>Smart</span></div>
+          <ol>
+            <li class="on"><i class="dot"></i><b>me@work.dev · Max</b><em>serving</em><div class="bar"><i style="width:31%"></i></div></li>
+            <li><i class="dot"></i><b>me@home.dev · Pro</b><em>94% used · kept for later</em><div class="bar"><i style="width:94%"></i></div></li>
+            <li class="out"><i class="dot"></i><b>team@corp.dev · Team</b><em>out of quota · resets 3 PM</em><div class="bar"><i style="width:100%"></i></div></li>
+            <li class="out"><i class="dot"></i><b>API key sk-…4f2a</b><em>out of credit · back in 30 m</em><div class="bar"><i style="width:100%"></i></div></li>
+          </ol>
+          <div class="rf">Also: in order · in turn · least used first</div>
+        </div>
+      </div>
     </div>
   </section>
 
