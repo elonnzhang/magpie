@@ -7,6 +7,7 @@ require (
 	github.com/charmbracelet/bubbletea v1.3.10
 	github.com/charmbracelet/lipgloss v1.1.1-0.20250404203927-76690c660834
 	github.com/godbus/dbus/v5 v5.2.2
+	github.com/klauspost/compress v1.18.3
 	github.com/tidwall/gjson v1.19.0
 	github.com/tidwall/jsonc v0.3.3
 	github.com/wailsapp/wails/v3 v3.0.0-beta.24
