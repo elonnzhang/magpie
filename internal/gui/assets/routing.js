@@ -122,9 +122,9 @@
   const agentName = (id) => agentOf(id)?.name || (id && id !== "other" ? id : t("your agent"));
   // who names an account or key in a sentence
   const who = (w) => w.kind === "provider" ? w.name : w.who;
-  // why one is left out: an account's plan lacks the model; a key isn't
-  // given it — relays list each key its own group's models
-  const unlistedWord = (w) => w.kind === "key" ? t("not given {model} on this key", { model: w.model }) : t("its plan doesn't list {model}", { model: w.model });
+  // why one is left out: an account's plan lacks the model; a key's list
+  // from its vendor does — relays list each key its own group's models
+  const unlistedWord = (w) => w.kind === "key" ? t("{name}'s list for this key has no {model}", { name: w.name, model: w.model }) : t("its plan doesn't list {model}", { model: w.model });
   const group = (w) => w.used >= 98 ? "spent" : w.used >= 90 ? "low" : "fine";
   const renews = (w) => (w.renews || []).map((s) => known0(s) ? at(s) : 0);
 
