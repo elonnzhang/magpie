@@ -186,6 +186,59 @@ func (s *Server) plan(p provider.Provider, model string, from provider.Protocol)
 		seen[fp.ID+"/"+fm] = true
 		out = append(out, add(fp, fm, true)...)
 	}
+	return restLast(out, pl)
+}
+
+// planGroup is plan for a routing group: every member's keys or accounts
+// weighed together as the group's routing says — in order, member by
+// member, each as its own provider's routing orders it; else all as one,
+// so a subscription whose allowance renews soonest goes first whichever
+// provider it is of. A member's fallbacks are not the group's.
+func (s *Server) planGroup(g provider.Group, ms []provider.Member, from provider.Protocol) ([]candidate, planned) {
+	var pl planned
+	var out []candidate
+	of := map[string]provider.Provider{} // candidate → its member's provider
+	var all []candidate
+	for _, m := range ms {
+		cs, left := perKeyOf(m.Provider, m.Model, from)
+		for _, c := range left {
+			w := weighed(c, m.Provider, weighing{}, false, from)
+			w.Unlisted = true
+			pl.left = append(pl.left, w)
+		}
+		if g.Routing == provider.Ordered {
+			cs, wg := weigh(m.Provider, cs, m.Model, from)
+			for i, c := range cs {
+				w := weighed(c, m.Provider, wg, false, from)
+				w.Turn = i == 0 && m.Provider.Routing == provider.Rotate && len(cs) > 1
+				pl.order = append(pl.order, w)
+			}
+			out = append(out, cs...)
+			continue
+		}
+		for _, c := range cs {
+			of[c.rest+"/"+c.model] = m.Provider
+		}
+		all = append(all, cs...)
+	}
+	if g.Routing != provider.Ordered {
+		cs, wg := weigh(provider.Provider{ID: provider.GroupPrefix + g.ID, Routing: g.Routing}, all, "", from)
+		for i, c := range cs {
+			w := weighed(c, of[c.rest+"/"+c.model], wg, false, from)
+			w.Routing = g.Routing
+			w.Turn = i == 0 && g.Routing == provider.Rotate && len(cs) > 1
+			pl.order = append(pl.order, w)
+		}
+		out = cs
+	}
+	if len(out) == 0 {
+		return nil, pl
+	}
+	return restLast(out, pl)
+}
+
+// restLast moves those resting after a recent failure behind the rest.
+func restLast(out []candidate, pl planned) ([]candidate, planned) {
 	if len(out) == 1 {
 		if r, ok := restOf(out[0].rest); ok {
 			pl.order[0].Rest = &r // tried all the same: there is no other

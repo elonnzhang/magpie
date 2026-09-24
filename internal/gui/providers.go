@@ -50,6 +50,7 @@ type providerJSON struct {
 	Chosen    []string           `json:"chosen"`   // the user's explicit picks, if any
 	Fallback  []string           `json:"fallback"` // where requests go when this one can't take them
 	Routing   string             `json:"routing"`  // how requests spread over its keys or accounts
+	Affinity  string             `json:"affinity"` // how long a conversation stays with who answered it
 	Models    []modelJSON        `json:"models"`   // everything the vendor lists, exposed ones flagged
 	Exposed   int                `json:"exposed"`  // how many reach the agents
 	Fetched   string             `json:"fetched"`  // "3h ago" when the list came from the vendor
@@ -108,6 +109,9 @@ func currentProvider(a *agent.Agent) (string, string) {
 		return "", ""
 	}
 	v := strings.TrimPrefix(a.Fields[0].Get(), "magpie/")
+	if strings.HasPrefix(v, provider.GroupPrefix) {
+		return "", "" // a routing group: no one provider
+	}
 	if pid, model, ok := strings.Cut(v, "/"); ok {
 		if _, err := provider.Find(pid); err == nil {
 			return pid, model
@@ -123,7 +127,7 @@ func providerInfo(p provider.Provider, agents []*agent.Agent) providerJSON {
 		Catalog: p.Catalog, Website: p.Website, KeysURL: p.KeysURL,
 		Headers: p.Headers, BalanceURL: p.BalanceURL, BalancePath: p.BalancePath,
 		Ready: p.Ready(), Chosen: p.Models, Models: []modelJSON{}, Agents: []providerAgent{},
-		Fallback: p.Fallback, Routing: p.Routing,
+		Fallback: p.Fallback, Routing: p.Routing, Affinity: p.Affinity,
 	}
 	if out.Fallback == nil {
 		out.Fallback = []string{}
@@ -227,6 +231,7 @@ func ago(t time.Time) string {
 func providerRoutes(mux *http.ServeMux, w Windows, gw *gateway.Server) {
 	importAppsRoutes(mux, gw)
 	traceRoutes(mux, gw)
+	groupRoutes(mux)
 	mux.HandleFunc("GET /api/providers", func(rw http.ResponseWriter, r *http.Request) {
 		writeJSON(rw, providersState(gw))
 	})
@@ -313,6 +318,11 @@ func providerRoutes(mux *http.ServeMux, w Windows, gw *gateway.Server) {
 			return
 		case "route":
 			if err := provider.SetRouting(in.ID, in.Routing); err != nil {
+				fail(rw, err)
+				return
+			}
+		case "affinity":
+			if err := provider.SetAffinity(in.ID, in.Affinity); err != nil {
 				fail(rw, err)
 				return
 			}

@@ -17,10 +17,19 @@ import (
 // magpieID is the provider id agents know the gateway by.
 const magpieID = "magpie"
 
-// viaMagpie lists the catalog for a picker, one group per provider.
+// RoutingGroups is the picker's group of routing groups.
+const RoutingGroups = "Routing groups"
+
+// viaMagpie lists the catalog for a picker, one group per provider, and
+// the routing groups in one of their own.
 func viaMagpie(prefix string) []Option {
 	var out []Option
 	for _, e := range provider.Catalog() {
+		if e.Group != "" {
+			out = append(out, Option{Value: prefix + e.ID, Label: e.Name, Note: "routing group · via magpie",
+				Icon: e.Provider.Icon, Group: RoutingGroups, Ref: e.ID})
+			continue
+		}
 		note := e.Provider.Name + " · via magpie"
 		if a := e.Provider.Account; a != nil {
 			note = a.User + " · via magpie"
@@ -61,7 +70,11 @@ func firstOf(xs []string) string {
 func magpieModels() []catalog.Model {
 	var out []catalog.Model
 	for _, e := range provider.Catalog() {
-		out = append(out, catalog.Model{ID: e.ID, Name: e.Name + " · " + e.Provider.Name, Provider: firstOf(e.Provider.Catalogs()), Efforts: e.Efforts})
+		by := e.Provider.Name
+		if e.Group != "" {
+			by = "routing group"
+		}
+		out = append(out, catalog.Model{ID: e.ID, Name: e.Name + " · " + by, Provider: firstOf(e.Provider.Catalogs()), Efforts: e.Efforts})
 	}
 	return out
 }
