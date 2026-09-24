@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 
 	"github.com/yetone/magpie/internal/catalog"
 	"github.com/yetone/magpie/internal/edit"
 	"github.com/yetone/magpie/internal/gateway"
+	"github.com/yetone/magpie/internal/provider"
 )
 
 // Codex talks the OpenAI Responses API to whichever provider config.toml
@@ -126,9 +128,11 @@ func codex(home string) *Agent {
 				Get: func() string { return get("model") },
 				Set: set,
 				Options: func(map[string]string) []Option {
-					own := group("OpenAI", options(catalog.Codex(), ""))
+					var own []Option
 					if p := get("model_provider"); p != "" && p != magpieID {
-						own = group(p, own)
+						own = group(p, options(catalog.Codex(), ""))
+					} else {
+						own = group("OpenAI", options(ownCodex(), ""))
 					}
 					return append(own, viaMagpieFor("codex", "")...)
 				},
@@ -224,4 +228,24 @@ func codexCatalog(ms []catalog.Model) []byte {
 	}
 	b, _ := json.MarshalIndent(out, "", " ")
 	return b
+}
+
+// ownCodex is Codex's own models, narrowed to the ones ticked on its ChatGPT
+// subscription in magpie when any are.
+func ownCodex() []catalog.Model {
+	ms := catalog.Codex()
+	p, err := provider.Find("codex")
+	if err != nil || len(p.Models) == 0 {
+		return ms
+	}
+	var out []catalog.Model
+	for _, m := range ms {
+		if slices.Contains(p.Models, m.ID) {
+			out = append(out, m)
+		}
+	}
+	if len(out) == 0 {
+		return ms
+	}
+	return out
 }

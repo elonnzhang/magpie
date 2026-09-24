@@ -384,6 +384,10 @@ body.window .foot { padding-left: 18px; }
   62% { opacity: .72; }
   76%, 100% { opacity: 0; transform: translate3d(225px, 0, 0) scaleX(1); }
 }
+.effort-ticks { position: absolute; z-index: 3; left: 11px; right: 11px; top: 10px; height: 4px; pointer-events: none; }
+.effort-ticks i { position: absolute; left: calc(var(--at) * 100%); width: 4px; height: 4px; margin-left: -2px; border-radius: 50%; background: rgba(255, 255, 255, .34); transition: opacity 120ms ease-out, background-color 120ms ease-out; }
+.effort-ticks i.on { background: rgba(255, 255, 255, .62); }
+.effort-ticks i.cur { opacity: 0; }
 .effort-control input[type="range"] { --fill: 0%; position: relative; z-index: 2; display: block; width: 100%; height: 24px; margin: 0; padding: 0; appearance: none; -webkit-appearance: none; background: transparent; outline: none; cursor: pointer; }
 .effort-control input[type="range"]::-webkit-slider-runnable-track { height: 8px; border-radius: 999px; background: linear-gradient(90deg, #9b62db 0, #712ed0 var(--fill), #414147 var(--fill) 100%); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .08); }
 .effort-control input[type="range"]::-webkit-slider-thumb { width: 22px; height: 22px; margin-top: -7px; border: 0; border-radius: 50%; appearance: none; -webkit-appearance: none; background: #f7f7f8; box-shadow: 0 1px 5px rgba(0, 0, 0, .38), 0 0 0 1px rgba(0, 0, 0, .12); transition: transform 120ms cubic-bezier(.25, 1, .5, 1), box-shadow 120ms ease-out; }

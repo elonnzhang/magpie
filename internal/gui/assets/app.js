@@ -32,6 +32,11 @@ const expandedCalls = new Set(); // recent-call ids whose wire bodies are open
 let savedModelFavorites = [];
 try { savedModelFavorites = JSON.parse(localStorage.getItem("magpie.modelFavorites") || "[]"); } catch {}
 const modelFavorites = new Set(Array.isArray(savedModelFavorites) ? savedModelFavorites : []);
+// A model through magpie is starred as its catalog id, which is the same in
+// every agent; the agent's own models by their value. Stars kept by value
+// before still count.
+const favoriteKey = (o) => o.ref || o.value;
+const isFavorite = (o) => modelFavorites.has(favoriteKey(o)) || modelFavorites.has(o.value);
 
 async function api(path, body) {
   const res = await fetch("/api/" + path, {
@@ -323,8 +328,16 @@ function renderEffortPicker() {
   range.max = String(Math.max(0, options.length - 1));
   range.value = String(selected);
   $("#effortTitle").textContent = t(pick.field.label);
+  // a dot at every level, so the stops show before the thumb gets there
+  const ticks = $("#effortTicks");
+  ticks.replaceChildren(...options.map((_, i) => {
+    const dot = el("i");
+    dot.style.setProperty("--at", options.length > 1 ? i / (options.length - 1) : 0);
+    return dot;
+  }));
   const update = () => {
     const i = Number(range.value);
+    [...ticks.children].forEach((dot, j) => { dot.classList.toggle("on", j < i); dot.classList.toggle("cur", j === i); });
     $("#effortValue").textContent = effortName(options[i]);
     const fill = `${options.length > 1 ? 100 * i / (options.length - 1) : 0}%`;
     range.style.setProperty("--fill", fill);
@@ -361,7 +374,7 @@ function filter() {
   if (!pick) return;
   const q = $("#q").value.trim().toLowerCase();
   let source = pick.options;
-  if (pick.modelPicker && pick.groupFilter === "favorites") source = source.filter((o) => modelFavorites.has(o.value));
+  if (pick.modelPicker && pick.groupFilter === "favorites") source = source.filter((o) => isFavorite(o));
   else if (pick.modelPicker && pick.groupFilter !== "all") source = source.filter((o) => o.group === pick.groupFilter || o.reset);
   const scored = source.map((o) => ({ o, i: pick.options.indexOf(o), s: score(q, o) })).filter((x) => x.s > 0);
   // with a query, best matches first; without, catalog order keeps the groups together
@@ -471,12 +484,13 @@ function renderList() {
     if (note) words.append(el("span", "n", note));
     li.append(words);
     if (pick.modelPicker && o.value && !o.custom) {
-      const star = el("button", "favorite" + (modelFavorites.has(o.value) ? " on" : ""));
-      star.title = modelFavorites.has(o.value) ? t("Remove from favorites") : t("Add to favorites");
+      const star = el("button", "favorite" + (isFavorite(o) ? " on" : ""));
+      star.title = isFavorite(o) ? t("Remove from favorites") : t("Add to favorites");
       star.append(svg("m8 2 1.8 3.7 4.1.6-3 2.9.7 4.1L8 11.4l-3.6 1.9.7-4.1-3-2.9 4.1-.6z", 14, 1.4));
       star.onclick = (ev) => {
         ev.stopPropagation();
-        if (modelFavorites.has(o.value)) modelFavorites.delete(o.value); else modelFavorites.add(o.value);
+        const key = favoriteKey(o);
+        if (isFavorite(o)) { modelFavorites.delete(key); modelFavorites.delete(o.value); } else modelFavorites.add(key);
         localStorage.setItem("magpie.modelFavorites", JSON.stringify([...modelFavorites]));
         filter();
       };
