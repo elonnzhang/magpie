@@ -487,7 +487,7 @@ footer a:hover { color: var(--ink); }
           <button role="tab" data-mode="turn" aria-selected="false">In turn</button>
           <button role="tab" data-mode="least" aria-selected="false">Least used first</button>
         </div>
-        <p class="rt-mode">Smart, the default: the account that resets soonest goes first, so no allowance is left to go to waste; any that can't answer are passed over.</p>
+        <p class="rt-mode">Smart, the default: the account that resets soonest goes first, so no allowance is left to go to waste; any that can't answer are passed over. (Here each request stands for an hour.)</p>
       </div>
       <div class="rt-stage">
         <svg class="rt-wires" aria-hidden="true"></svg>
@@ -667,14 +667,14 @@ magpie tui                             <span class="c"># the whole app, in the t
   const MODES = {
     smart: {
       name: "Smart", n: 30,
-      desc: "Smart, the default: the account that resets soonest goes first, so no allowance is left to go to waste; any that can't answer are passed over.",
-      first: (a) => `${a.name} resets in ${a.resets} — soonest, so it goes first: what it has left is used, not lost at the reset.`,
+      desc: "Smart, the default: the account that resets soonest goes first, so no allowance is left to go to waste; any that can't answer are passed over. (Here each request stands for an hour.)",
+      first: (a) => `${a.name} resets in ${fmt(left(a))} — soonest, so it goes first: what it has left is used, not lost at the reset.`,
       accts: () => [
-        A("claude", 72, 2.4, { resets: "9 h", r: 9 }),
-        A("claude2", 38, 3, { resets: "2 d", r: 48, fail: { at: 3, code: 429, rest: 7000 } }),
-        A("gpt", 30, 3, { resets: "4 d", r: 96 }),
+        A("claude", 72, 1.5, { r: 9 }),
+        A("claude2", 38, 3, { r: 48, fail: { at: 3, code: 429, rest: 7000 } }),
+        A("gpt", 30, 3, { r: 96 }),
         A("or", 0, 0, { key: 1, fail: { at: 0, code: 402 } }),
-        A("gh", 24, 2, { resets: "12 d", r: 288, fail: { at: 4, code: 503, rest: 5000 } }),
+        A("gh", 24, 2, { r: 288, fail: { at: 4, code: 503, rest: 5000 } }),
       ],
     },
     order: {
@@ -698,6 +698,8 @@ magpie tui                             <span class="c"># the whole app, in the t
   };
 
   let mode, M, accts = [], t = 0, gen = 0, next = 0, sent = 0, done = 0, rerouted = 0, errs = 0, ptr = 0;
+  let hours = 0; // the demo's clock in smart mode: an hour a request
+  const left = (a) => a.r - hours, fmt = (h) => h < 48 ? `${h} h` : `${Math.round(h / 24)} d`;
   let began = 0, last = null, trips = [], capQ = [], capAt = -1e9, capLo = false, endAt = 0, wSrc, vis = true;
 
   const resting = (a) => a.until > t;
@@ -733,7 +735,7 @@ magpie tui                             <span class="c"># the whole app, in the t
 
   function reset(m) {
     gen++; mode = m; M = MODES[m]; accts = M.accts();
-    sent = done = rerouted = errs = ptr = began = 0; last = null; endAt = 0; trips = []; capQ = [];
+    sent = done = rerouted = errs = ptr = began = hours = 0; last = null; endAt = 0; trips = []; capQ = [];
     next = t + 600;
     list.innerHTML = accts.map((a) => `<li><i class="dot"></i><b><img${a.cls ? ` class="${a.cls}"` : ""} src="/icons/${a.icon}.svg" alt="">${a.who} <span>${a.plan}</span></b><em></em><div class="bar"><i></i></div><span class="tag"></span></li>`).join("");
     svg.innerHTML = "";
@@ -781,11 +783,19 @@ magpie tui                             <span class="c"># the whole app, in the t
     if (last !== a) {
       if (!began) began = 1, say(M.first(a));
       else if (mode === "smart" && a.used >= 90) say(`The others are resting, so ${a.name.replace(/^The /, "the ")} answers — running low beats no answer.`);
-      else if (mode === "smart" && a.resets) say(`${a.name} takes over — it resets next, in ${a.resets}.`, true);
+      else if (mode === "smart" && a.r) say(`${a.name} takes over — it resets next, in ${fmt(left(a))}.`, true);
       else if (mode === "smart" || mode === "order") say(`${a.name} takes over.`, true);
       last = a;
     }
     if (mode === "smart" && was < 90 && a.used >= 90) say(`${a.name} is at ${Math.round(a.used)}% — kept for last. The next with quota to spare takes over.`);
+    if (mode !== "smart") return;
+    hours++;
+    for (const b of accts) if (b.r && left(b) <= 0) { // its week renews: now the last to reset
+      const lost = Math.round(100 - b.used);
+      b.used = 0; b.r += 168;
+      say(`${b.name}'s week renewed with only ${lost}% unused — it went first, so little was lost. It resets last now; the next to reset takes over.`);
+      if (last === b) last = null;
+    }
   }
 
   const TAGS = { 429: "429 · rate limited", 402: "402 · no credit", 503: "503 · failed", quota: "429 · quota used up" };
@@ -838,7 +848,7 @@ magpie tui                             <span class="c"># the whole app, in the t
         : last === a ? (mode === "smart" && a.used >= 90 ? "serving · running low" : "serving")
         : a.key ? (a.bar ? `${n}% of tokens lately` : "pay as you go")
         : mode === "smart" && a.used >= 90 ? `${n}% used · kept for last`
-        : mode === "smart" && a.resets ? `${n}% used · resets in ${a.resets}` : `${n}% used`;
+        : mode === "smart" && a.r ? `${n}% used · resets in ${fmt(left(a))}` : `${n}% used`;
       if (a.st.textContent !== label) a.st.textContent = label;
       a.bi.style.width = a.used + "%";
       a.li.classList.toggle("on", last === a && !rest);
