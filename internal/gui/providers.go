@@ -353,6 +353,34 @@ func providerRoutes(mux *http.ServeMux, w Windows, gw *gateway.Server) {
 		}
 		writeJSON(rw, providersState(gw))
 	})
+	// Adding a subscription: magpie opens the vendor's sign-in in the
+	// browser and the window follows it until the account is in.
+	mux.HandleFunc("POST /api/signin", func(rw http.ResponseWriter, r *http.Request) {
+		var in struct{ Agent string }
+		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+			fail(rw, err)
+			return
+		}
+		st, err := provider.StartSignIn(in.Agent)
+		if err != nil {
+			fail(rw, err)
+			return
+		}
+		w.OpenURL(st.URL)
+		writeJSON(rw, st)
+	})
+	mux.HandleFunc("GET /api/signin/{id}", func(rw http.ResponseWriter, r *http.Request) {
+		st, ok := provider.SignInStatus(r.PathValue("id"))
+		if !ok {
+			http.NotFound(rw, r)
+			return
+		}
+		writeJSON(rw, st)
+	})
+	mux.HandleFunc("POST /api/signin/{id}/cancel", func(rw http.ResponseWriter, r *http.Request) {
+		provider.CancelSignIn(r.PathValue("id"))
+		rw.WriteHeader(http.StatusNoContent)
+	})
 	mux.HandleFunc("POST /api/open", func(rw http.ResponseWriter, r *http.Request) {
 		var in struct{ URL string }
 		_ = json.NewDecoder(r.Body).Decode(&in)
