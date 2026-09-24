@@ -475,7 +475,7 @@ function openPicker(agent, field, anchor, ev, only) {
   $("#effortControl").hidden = !effortPicker;
   pop.querySelector(".search").hidden = effortPicker;
   pop.querySelector(".picker-body").hidden = effortPicker;
-  placePop(anchor, effortPicker ? 218 : modelPicker ? Math.min(490, innerWidth - 16) : (options.some((o) => o.note && o.note !== o.value) ? 372 : 300), effortPicker ? 90 : modelPicker ? Math.min(420, innerHeight - 16) : 340);
+  placePop(anchor, effortPicker ? 232 : modelPicker ? Math.min(490, innerWidth - 16) : (options.some((o) => o.note && o.note !== o.value) ? 372 : 300), effortPicker ? 96 : modelPicker ? Math.min(420, innerHeight - 16) : 340);
   if (effortPicker) {
     renderEffortPicker();
     $("#effortRange").focus();
@@ -515,6 +515,8 @@ function renderEffortPicker() {
   range.max = String(Math.max(0, options.length - 1));
   range.value = String(selected);
   $("#effortTitle").textContent = t(pick.field.label);
+  $("#effortMin").textContent = effortName(options[0]);
+  $("#effortMax").textContent = effortName(options[options.length - 1]);
   // a dot at every level, so the stops show before the thumb gets there
   const ticks = $("#effortTicks");
   ticks.replaceChildren(...options.map((_, i) => {
