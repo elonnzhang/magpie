@@ -250,6 +250,7 @@ footer a:hover { color: var(--ink); }
 .rt-accts li { position: relative; display: grid; grid-template-columns: 10px minmax(0, 1fr) auto; align-items: center; column-gap: 12px; row-gap: 7px; padding: 11px 14px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; font-size: 14px; transition: opacity .3s, border-color .3s; }
 .rt-accts b { font-weight: 560; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rt-accts b span { font-weight: 450; color: var(--ink3); }
+.rt-accts b img { width: 18px; height: 18px; margin-right: 8px; vertical-align: -3.5px; }
 .rt-accts em { font-style: normal; font-size: 12.5px; color: var(--ink3); white-space: nowrap; font-variant-numeric: tabular-nums; }
 .rt-accts .bar { grid-column: 2 / 4; height: 4px; border-radius: 2px; background: var(--bg2); overflow: hidden; }
 .rt-accts .bar i { display: block; height: 100%; width: 0; border-radius: 2px; background: var(--ink3); transition: width .4s; }
@@ -493,10 +494,10 @@ footer a:hover { color: var(--ink); }
         <div class="rt-node rt-src"><img src="/icons/claudecode-color.svg" alt=""><b>Claude Code</b><small>your agent</small></div>
         <div class="rt-node rt-hub"><img class="bird" src="/img/magpie-small.svg" alt=""><b>magpie</b><small>localhost:3425</small><i>Smart</i></div>
         <ol class="rt-accts">
-          <li class="on"><i class="dot"></i><b>me@work.dev <span>Max</span></b><em>serving</em><div class="bar"><i style="width:72%"></i></div><span class="tag"></span></li>
-          <li><i class="dot"></i><b>me@home.dev <span>Pro</span></b><em>38% used</em><div class="bar"><i style="width:38%"></i></div><span class="tag"></span></li>
-          <li class="nobar"><i class="dot"></i><b>sk-…4f2a <span>API key</span></b><em>pay as you go</em><div class="bar"><i></i></div><span class="tag"></span></li>
-          <li><i class="dot"></i><b>team@corp.dev <span>Team</span></b><em>24% used</em><div class="bar"><i style="width:24%"></i></div><span class="tag"></span></li>
+          <li class="on"><i class="dot"></i><b><img src="/icons/claude-color.svg" alt="">me@work.dev <span>Claude Max</span></b><em>serving</em><div class="bar"><i style="width:72%"></i></div><span class="tag"></span></li>
+          <li><i class="dot"></i><b><img class="bird" src="/icons/openai.svg" alt="">me@home.dev <span>ChatGPT Pro</span></b><em>38% used</em><div class="bar"><i style="width:38%"></i></div><span class="tag"></span></li>
+          <li class="nobar"><i class="dot"></i><b><img class="bird" src="/icons/openrouter.svg" alt="">sk-or-…4f2a <span>OpenRouter</span></b><em>pay as you go</em><div class="bar"><i></i></div><span class="tag"></span></li>
+          <li><i class="dot"></i><b><img class="bird" src="/icons/githubcopilot.svg" alt="">octo-dev <span>Copilot Business</span></b><em>24% used</em><div class="bar"><i style="width:24%"></i></div><span class="tag"></span></li>
         </ol>
       </div>
       <div class="rt-foot">
@@ -652,36 +653,44 @@ magpie tui                             <span class="c"># the whole app, in the t
   const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
   const NS = "http://www.w3.org/2000/svg";
 
-  const A = (who, plan, used, inc, x = {}) => ({ who, plan, used, inc, ...x });
+  // Each account is a different vendor's: its icon beside it, and the
+  // captions name it by the vendor.
+  const V = {
+    claude: ["me@work.dev", "Claude Max", "claude-color", "Claude Max", ""],
+    gpt: ["me@home.dev", "ChatGPT Pro", "openai", "ChatGPT Pro", "bird"],
+    or: ["sk-or-…4f2a", "OpenRouter", "openrouter", "The OpenRouter key", "bird"],
+    gh: ["octo-dev", "Copilot Business", "githubcopilot", "Copilot", "bird"],
+  };
+  const A = (v, used, inc, x = {}) => { const [who, plan, icon, name, cls] = V[v]; return { who, plan, icon, name, cls, used, inc, ...x }; };
   const MODES = {
     smart: {
       name: "Smart", n: 26,
       desc: "Smart, the default: one account keeps the requests while it has quota to spare, and any that can't answer are passed over.",
-      first: (a) => `Every request goes to ${a.who} while it has quota to spare — its prompt cache stays warm.`,
+      first: (a) => `Every request goes to ${a.name.replace(/^The /, "the ")} while it has quota to spare — its prompt cache stays warm.`,
       accts: () => [
-        A("me@work.dev", "Max", 72, 2.4),
-        A("me@home.dev", "Pro", 38, 3, { fail: { at: 3, code: 429, rest: 7000 } }),
-        A("sk-…4f2a", "API key", 0, 0, { key: 1, fail: { at: 0, code: 402 } }),
-        A("team@corp.dev", "Team", 24, 2, { fail: { at: 4, code: 503, rest: 5000 } }),
+        A("claude", 72, 2.4),
+        A("gpt", 38, 3, { fail: { at: 3, code: 429, rest: 7000 } }),
+        A("or", 0, 0, { key: 1, fail: { at: 0, code: 402 } }),
+        A("gh", 24, 2, { fail: { at: 4, code: 503, rest: 5000 } }),
       ],
     },
     order: {
       name: "In order", n: 18,
       desc: "In order: the first answers everything until it can't; then the next takes over.",
-      first: (a) => `${a.who} answers everything, for as long as it can.`,
-      accts: () => [A("me@work.dev", "Max", 76, 3), A("me@home.dev", "Pro", 30, 3), A("sk-…4f2a", "API key", 0, 0, { key: 1 }), A("team@corp.dev", "Team", 24, 2)],
+      first: (a) => `${a.name} answers everything, for as long as it can.`,
+      accts: () => [A("claude", 76, 3), A("gpt", 30, 3), A("or", 0, 0, { key: 1 }), A("gh", 24, 2)],
     },
     turn: {
       name: "In turn", n: 16,
       desc: "In turn: each request goes to the next account, so the load is spread evenly.",
       first: () => "Each request goes to the next account in turn.",
-      accts: () => [A("me@work.dev", "Max", 30, 2), A("me@home.dev", "Pro", 52, 2), A("sk-…4f2a", "API key", 0, 0, { key: 1 }), A("team@corp.dev", "Team", 18, 2)],
+      accts: () => [A("claude", 30, 2), A("gpt", 52, 2), A("or", 0, 0, { key: 1 }), A("gh", 18, 2)],
     },
     least: {
       name: "Least used", n: 18,
       desc: "Least used first: each request goes to the account with the most allowance left; a key by the tokens magpie sent it lately.",
       first: () => "Each request goes to whichever has the most left — watch the bars even out.",
-      accts: () => [A("me@work.dev", "Max", 64, 6), A("me@home.dev", "Pro", 22, 6), A("sk-…4f2a", "API key", 40, 6, { key: 1, bar: 1 }), A("team@corp.dev", "Team", 46, 6)],
+      accts: () => [A("claude", 64, 6), A("gpt", 22, 6), A("or", 40, 6, { key: 1, bar: 1 }), A("gh", 46, 6)],
     },
   };
 
@@ -723,7 +732,7 @@ magpie tui                             <span class="c"># the whole app, in the t
     gen++; mode = m; M = MODES[m]; accts = M.accts();
     sent = done = rerouted = errs = ptr = began = 0; last = null; endAt = 0; trips = []; capQ = [];
     next = t + 600;
-    list.innerHTML = accts.map((a) => `<li><i class="dot"></i><b>${a.who} <span>${a.plan}</span></b><em></em><div class="bar"><i></i></div><span class="tag"></span></li>`).join("");
+    list.innerHTML = accts.map((a) => `<li><i class="dot"></i><b><img${a.cls ? ` class="${a.cls}"` : ""} src="/icons/${a.icon}.svg" alt="">${a.who} <span>${a.plan}</span></b><em></em><div class="bar"><i></i></div><span class="tag"></span></li>`).join("");
     svg.innerHTML = "";
     wSrc = path();
     accts.forEach((a, i) => {
@@ -768,11 +777,11 @@ magpie tui                             <span class="c"># the whole app, in the t
     a.served++; a.used = Math.min(100, a.used + a.inc);
     if (last !== a) {
       if (!began) began = 1, say(M.first(a));
-      else if (mode === "smart" && a.used >= 90) say(`The others are resting, so ${a.who} answers — running low beats no answer.`);
-      else if (mode === "smart" || mode === "order") say(`${a.who} takes over.`, true);
+      else if (mode === "smart" && a.used >= 90) say(`The others are resting, so ${a.name.replace(/^The /, "the ")} answers — running low beats no answer.`);
+      else if (mode === "smart" || mode === "order") say(`${a.name} takes over.`, true);
       last = a;
     }
-    if (mode === "smart" && was < 90 && a.used >= 90) say(`${a.who} is at ${Math.round(a.used)}% — kept for last. The next with quota to spare takes over.`);
+    if (mode === "smart" && was < 90 && a.used >= 90) say(`${a.name} is at ${Math.round(a.used)}% — kept for last. The next with quota to spare takes over.`);
   }
 
   const TAGS = { 429: "429 · rate limited", 402: "402 · no credit", 503: "503 · failed", quota: "429 · quota used up" };
@@ -783,10 +792,10 @@ magpie tui                             <span class="c"># the whole app, in the t
     if (resting(a)) return; // it was already out when the request got there
     a.code = code;
     next = Math.max(next, t + 1500); // a moment to read what happened
-    if (code === 429) { a.why = "rate"; a.until = t + a.fail.rest; say(`${a.who} answered 429 — it rests for as long as the vendor asks, and the request is retried on the next at once.`); }
-    if (code === 402) { a.why = "credit"; a.until = Infinity; say(`${a.who} is out of credit — it sits out half an hour, and the request moves on. Claude Code never sees the error.`); }
-    if (code === 503) { a.why = "fail"; a.until = t + a.fail.rest; say(`${a.who} failed — it steps back a while, longer each time it fails again. Another account answers instead.`); }
-    if (code === "quota") { a.why = "quota"; a.until = Infinity; say(`${a.who} is out of quota — passed over until it resets. The request goes to the next.`); }
+    if (code === 429) { a.why = "rate"; a.until = t + a.fail.rest; say(`${a.name} answered 429 — it rests for as long as the vendor asks, and the request is retried on the next at once.`); }
+    if (code === 402) { a.why = "credit"; a.until = Infinity; say(`${a.name} is out of credit — it sits out half an hour, and the request moves on. Claude Code never sees the error.`); }
+    if (code === 503) { a.why = "fail"; a.until = t + a.fail.rest; say(`${a.name} failed — it steps back a while, longer each time it fails again. Another account answers instead.`); }
+    if (code === "quota") { a.why = "quota"; a.until = Infinity; say(`${a.name} is out of quota — passed over until it resets. The request goes to the next.`); }
     if (last === a) last = null;
   }
 
@@ -851,7 +860,7 @@ magpie tui                             <span class="c"># the whole app, in the t
     }
     for (const a of accts) if (a.until && a.until !== Infinity && t >= a.until) {
       a.until = 0;
-      say(`${a.who} is back — ${a.why === "rate" ? "its rate limit is over" : "it gets another chance"}.`, true);
+      say(`${a.name} is back — ${a.why === "rate" ? "its rate limit is over" : "it gets another chance"}.`, true);
     }
     if (capQ.length && t - capAt > (capLo && !capQ[0].lo ? 700 : 2200)) show(capQ.shift());
     if (done >= M.n && !endAt) {
