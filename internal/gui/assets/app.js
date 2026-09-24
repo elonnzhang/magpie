@@ -1136,6 +1136,96 @@ function input(value, placeholder, type = "text") {
 }
 function cancelEdit() { editing = null; draft = null; importing = null; renderProviders(); }
 
+// Custom request headers: the draft keeps them as an ordered [name, value,
+// json?] list so a half-typed row (and its open JSON editor) survives a
+// re-render; headersOf folds that back into the object the backend stores,
+// dropping rows with an empty name and minifying any value that parses as
+// JSON — a header value is one line, so pretty-printing is display-only.
+function headerRows(obj) {
+  return Object.entries(obj || {}).map(([k, v]) => [k, v, false]);
+}
+function headersOf(rows) {
+  const out = {};
+  for (const [k, v] of rows || []) {
+    const name = (k || "").trim();
+    if (!name) continue;
+    const val = (v || "").trim();
+    // minify only a JSON blob; a plain value like "2.0" must stay verbatim
+    out[name] = looksJSON(val) ? minifyJSON(val) : val;
+  }
+  return out;
+}
+// minifyJSON collapses a value to one line when it is valid JSON, so a
+// pretty-printed blob in the editor never reaches the wire with newlines.
+function minifyJSON(s) {
+  try { return JSON.stringify(JSON.parse(s)); } catch { return s; }
+}
+function prettyJSON(s) {
+  try { return JSON.stringify(JSON.parse(s), null, 2); } catch { return s; }
+}
+function looksJSON(s) {
+  s = (s || "").trim();
+  return s.startsWith("{") || s.startsWith("[");
+}
+function headerEditor() {
+  const box = el("div", "headers");
+  const render = () => {
+    box.replaceChildren();
+    draft.headers.forEach((row, i) => {
+      const line = el("div", "pair");
+      const name = input(row[0], t("Header-Name"));
+      name.oninput = () => { row[0] = name.value; };
+
+      // the value: a one-line box, or (when the row is expanded) a full-width
+      // textarea that pretty-prints JSON for editing. The toggle is always
+      // offered — a value only becomes JSON after you paste it in.
+      let valCtl;
+      if (row[2]) {
+        valCtl = el("textarea", "json");
+        valCtl.value = prettyJSON(row[1]);
+        valCtl.spellcheck = false;
+        valCtl.wrap = "off"; // each JSON line stays on one line; scroll instead
+        valCtl.rows = Math.min(16, Math.max(4, valCtl.value.split("\n").length));
+        valCtl.placeholder = t("value");
+        valCtl.oninput = () => {
+          row[1] = valCtl.value;
+          valCtl.classList.toggle("bad", looksJSON(valCtl.value) && !parses(valCtl.value));
+        };
+        valCtl.onkeydown = (e) => { e.stopPropagation(); if (e.key === "Escape") cancelEdit(); };
+      } else {
+        valCtl = input(row[1], t("value"));
+        valCtl.oninput = () => { row[1] = valCtl.value; };
+      }
+
+      const side = el("div", "side");
+      const j = el("button", "text" + (row[2] ? " on" : ""), "{ }");
+      j.title = row[2] ? t("Collapse to one line") : t("Edit as JSON");
+      j.onclick = () => { row[2] = !row[2]; if (!row[2]) row[1] = minifyJSON(row[1]); render(); };
+      side.append(j);
+      const del = el("button", "text danger", "×");
+      del.title = t("Remove header");
+      del.onclick = () => { draft.headers.splice(i, 1); render(); };
+      side.append(del);
+
+      if (row[2]) {
+        line.classList.add("col");
+        const top = el("div", "hhead");
+        top.append(name, side);
+        line.append(top, valCtl);
+      } else {
+        line.append(name, valCtl, side);
+      }
+      box.append(line);
+    });
+    const add = el("button", "text", t("+ Add header"));
+    add.onclick = () => { draft.headers.push(["", "", false]); render(); };
+    box.append(add);
+  };
+  render();
+  return box;
+}
+function parses(s) { try { JSON.parse(s); return true; } catch { return false; } }
+
 // ---------- modal ----------
 // The provider editor opens as a dialog over the page; Escape, the backdrop
 // or Cancel close it.
@@ -1186,10 +1276,10 @@ function renderEditor(p, presetID) {
   const pr = presetID ? providers.presets.find((x) => x.id === presetID) : p?.preset ? providers.presets.find((x) => x.id === p.preset) : null;
   const isNew = !p, custom = !pr;
   draft = draft || (p
-    ? { id: p.id, name: p.name, preset: p.preset, chat: p.chat, responses: p.responses, anthropic: p.anthropic, catalog: p.catalog, key: "", api: p.anthropic && !p.chat ? "anthropic" : "openai", chosen: p.models.filter((m) => m.on).map((m) => m.id), extra: [] }
+    ? { id: p.id, name: p.name, preset: p.preset, chat: p.chat, responses: p.responses, anthropic: p.anthropic, catalog: p.catalog, key: "", api: p.anthropic && !p.chat ? "anthropic" : "openai", chosen: p.models.filter((m) => m.on).map((m) => m.id), extra: [], headers: headerRows(p.headers) }
     : pr
-      ? { id: pr.id, name: pr.name, preset: pr.id, key: "", chosen: [], extra: [] }
-      : { id: "", name: "", preset: "", chat: "", responses: "", anthropic: "", catalog: "", key: "", api: "openai", chosen: [], extra: [] });
+      ? { id: pr.id, name: pr.name, preset: pr.id, key: "", chosen: [], extra: [], headers: [] }
+      : { id: "", name: "", preset: "", chat: "", responses: "", anthropic: "", catalog: "", key: "", api: "openai", chosen: [], extra: [], headers: [] });
   const ed = el("div", "editor" + (isNew ? " new" : ""));
   ed.onclick = (e) => e.stopPropagation();
 
@@ -1290,6 +1380,14 @@ function renderEditor(p, presetID) {
   keyWrap.append(key, side);
   ed.append(...field(t("API key"), keyWrap, isNew ? t("Kept in ~/.config/magpie/providers.json, readable by you alone. Nothing is read from your shell.") : ""));
 
+  // Custom request headers are only supported for a user-defined provider.
+  // Presets own their request shape, and signed-in accounts returned above
+  // use the agent's own authentication headers.
+  if (custom) {
+    if (!draft.headers.length) draft.headers.push(["", ""]);
+    ed.append(...field(t("Headers"), headerEditor(), t("Extra HTTP headers sent to the vendor, applied after auth. For gateways that need a private scheme.")));
+  }
+
   // a relay that offers several regional endpoints: one selector, and the
   // provider's base URLs follow it
   let refreshEndpoints = () => {};
@@ -1359,6 +1457,7 @@ function renderEditor(p, presetID) {
   const saveBtn = el("button", "text primary", t(isNew ? "Add" : "Save"));
   const save = () => {
     const body = { id: draft.id, name: draft.name, preset: draft.preset, key: draft.key || "", chat: draft.chat, responses: draft.responses, anthropic: draft.anthropic, catalog: draft.catalog, models: p ? draft.chosen : draft.extra };
+    if (custom) body.headers = headersOf(draft.headers);
     if (isNew && custom && !body.name) { name.focus(); return status(t("Give it a name"), "warn"); }
     if (isNew && custom && !body.chat && !body.anthropic) { url.focus(); return status(t("A base URL is needed"), "warn"); }
     saveBtn.classList.add("busy");
