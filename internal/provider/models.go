@@ -236,9 +236,10 @@ type Entry struct {
 	Model    string   `json:"model"` // what magpie sends the vendor
 	Name     string   `json:"name"`
 	Efforts  []string `json:"efforts,omitempty"`
-	Provider Provider `json:"-"`               // a group's: its first member's
-	Group    string   `json:"group,omitempty"` // set on a routing group (group.go)
-	Icons    []string `json:"-"`               // a group's: its providers' icons, one per provider
+	Provider Provider `json:"-"`                // a group's: its first member's
+	Group    string   `json:"group,omitempty"`  // set on a routing group (group.go)
+	Icons    []string `json:"-"`                // a group's: its providers' icons, one per provider
+	Images   bool     `json:"images,omitempty"` // takes images as input (a group's: every member does)
 }
 
 // Catalog lists every exposed model of every ready provider, then the
@@ -256,7 +257,8 @@ func providerEntries() []Entry {
 			continue
 		}
 		for _, m := range p.Exposed() {
-			out = append(out, Entry{ID: p.ID + "/" + m.ID, Model: m.ID, Name: m.Name, Efforts: m.Efforts, Provider: p})
+			out = append(out, Entry{ID: p.ID + "/" + m.ID, Model: m.ID, Name: m.Name, Efforts: m.Efforts, Provider: p,
+				Images: m.Images || catalog.SeesImages(m.ID)})
 		}
 	}
 	return out

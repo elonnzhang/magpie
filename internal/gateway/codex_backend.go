@@ -265,7 +265,7 @@ func (s *Server) codexModels(w http.ResponseWriter, r *http.Request) {
 		if e.Group != "" {
 			by = "routing group"
 		}
-		ms = append(ms, catalog.Model{ID: e.ID, Name: e.Name + " · " + by, Efforts: e.Efforts})
+		ms = append(ms, catalog.Model{ID: e.ID, Name: e.Name + " · " + by, Efforts: e.Efforts, Images: e.Images})
 	}
 	if etag != "" {
 		w.Header().Set("ETag", etag)

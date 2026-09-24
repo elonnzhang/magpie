@@ -192,6 +192,7 @@ func Decorate(live []Model, known []Model) []Model {
 				m.Name = k.Name
 			}
 			m.Efforts, m.Released, m.Provider = k.Efforts, k.Released, k.Provider
+			m.Images = m.Images || k.Images
 			if k.Temperature != nil {
 				m.Temperature = k.Temperature
 			}

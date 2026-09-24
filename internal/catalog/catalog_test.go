@@ -68,3 +68,24 @@ func TestDecorateCarriesTemperature(t *testing.T) {
 		t.Fatalf("decorated: %+v", out[1])
 	}
 }
+
+// A model takes images where models.dev says so; one listed by several
+// providers takes them as most of those say, whatever a vendor prefixes.
+func TestImages(t *testing.T) {
+	writeCatalog(t, `{
+	  "a": {"models": {
+	    "vision": {"id":"vision","name":"V","modalities":{"input":["text","image"],"output":["text"]}},
+	    "text":   {"id":"text","name":"T","modalities":{"input":["text"],"output":["text"]}}
+	  }},
+	  "b": {"models": {"text": {"id":"text","name":"T","modalities":{"input":["text"],"output":["text"]}}}},
+	  "c": {"models": {"org/text": {"id":"org/text","name":"T","modalities":{"input":["text","image"],"output":["text"]}}}}
+	}`)
+	for _, m := range Provider("a") {
+		if m.Images != (m.ID == "vision") {
+			t.Errorf("%s: images %v", m.ID, m.Images)
+		}
+	}
+	if !SeesImages("z-ai/Vision") || SeesImages("text") || SeesImages("unknown") {
+		t.Error("SeesImages")
+	}
+}

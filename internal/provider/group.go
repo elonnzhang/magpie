@@ -187,17 +187,19 @@ func groupEntries(entries []Entry) []Entry {
 		if len(ms) == 0 {
 			continue
 		}
-		e := Entry{ID: GroupPrefix + g.ID, Model: ms[0].Model, Name: g.Name, Provider: ms[0].Provider, Group: g.ID}
+		e := Entry{ID: GroupPrefix + g.ID, Model: ms[0].Model, Name: g.Name, Provider: ms[0].Provider, Group: g.ID, Images: true}
 		for i, m := range ms {
 			if !slices.ContainsFunc(ms[:i], func(o Member) bool { return o.Provider.ID == m.Provider.ID }) {
 				e.Icons = append(e.Icons, m.Provider.Icon) // each provider once, "" for one without
 			}
 			var efforts []string
+			images := false
 			for _, x := range entries {
 				if x.Provider.ID == m.Provider.ID && x.Model == m.Model {
-					efforts = x.Efforts
+					efforts, images = x.Efforts, x.Images
 				}
 			}
+			e.Images = e.Images && images
 			if i == 0 {
 				e.Efforts = efforts
 				continue

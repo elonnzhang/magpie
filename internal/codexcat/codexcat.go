@@ -86,6 +86,9 @@ func Entries(ms []catalog.Model, after int) []any {
 			Shell: "unified_exec", Visibility: "list", InAPI: true, Priority: after + i + 1,
 			ApplyPatch: "freeform", Tools: []string{}, Modalities: []string{"text"},
 		}
+		if m.Images {
+			e.Modalities = append(e.Modalities, "image")
+		}
 		e.Truncation.Mode, e.Truncation.Limit = "tokens", 10000
 		for _, ef := range m.Efforts {
 			e.Efforts = append(e.Efforts, level{Effort: ef})

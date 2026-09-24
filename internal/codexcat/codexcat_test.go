@@ -47,3 +47,20 @@ func TestCodexCatalogKeepsOwnEntries(t *testing.T) {
 		t.Error("start-up notice kept")
 	}
 }
+
+// A model that takes images says so, and Codex lets images be attached.
+func TestCodexCatalogImages(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	var got struct {
+		Models []struct {
+			Modalities []string `json:"input_modalities"`
+		} `json:"models"`
+	}
+	json.Unmarshal(Catalog([]catalog.Model{
+		{ID: "a/text", Name: "text"},
+		{ID: "a/vision", Name: "vision", Images: true},
+	}), &got)
+	if len(got.Models) != 2 || len(got.Models[0].Modalities) != 1 || len(got.Models[1].Modalities) != 2 || got.Models[1].Modalities[1] != "image" {
+		t.Errorf("%+v", got.Models)
+	}
+}

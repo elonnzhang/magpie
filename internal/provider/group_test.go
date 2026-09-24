@@ -31,3 +31,24 @@ func TestAutoGroupsSameModel(t *testing.T) {
 	}
 
 }
+
+// A group takes images only when every member does: any of them may be
+// the one that answers.
+func TestGroupImages(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("XDG_CONFIG_HOME", "")
+	e := func(p, m string, images bool) Entry {
+		return Entry{ID: p + "/" + m, Model: m, Name: m, Provider: Provider{ID: p}, Images: images}
+	}
+	gs := groupEntries([]Entry{
+		e("a", "kimi-k3", true), e("b", "kimi-k3", true),
+		e("a", "glm-5.3", true), e("b", "glm-5.3", false),
+	})
+	got := map[string]bool{}
+	for _, g := range gs {
+		got[g.ID] = g.Images
+	}
+	if len(got) != 2 || !got[GroupPrefix+"auto-kimi-k3"] || got[GroupPrefix+"auto-glm-5-3"] {
+		t.Errorf("%v", got)
+	}
+}

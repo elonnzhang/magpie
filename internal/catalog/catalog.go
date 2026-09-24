@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -32,6 +33,8 @@ type Model struct {
 	// APIs, when the vendor says, are the APIs the model is served on
 	// ("chat", "responses", "anthropic"); empty is not known.
 	APIs []string `json:",omitempty"`
+	// Images is set on a model that takes images as input.
+	Images bool `json:",omitempty"`
 }
 
 // Price is what a model costs, in USD per million tokens.
@@ -66,6 +69,7 @@ type mdModel struct {
 		Values []string `json:"values"`
 	} `json:"reasoning_options"`
 	Modalities struct {
+		Input  []string `json:"input"`
 		Output []string `json:"output"`
 	} `json:"modalities"`
 	Cost *Price `json:"cost"`
@@ -76,6 +80,9 @@ const modelsDevURL = "https://models.dev/api.json"
 var (
 	once sync.Once
 	mdev map[string]mdProvider
+	// images are the models, by bare id, most of the providers serving
+	// them say take images (a few mislabel a text model)
+	images map[string]bool
 
 	syncMu sync.Mutex
 )
@@ -114,6 +121,22 @@ func load() map[string]mdProvider {
 			var m map[string]mdProvider
 			if json.Unmarshal(b, &m) == nil && len(m) > 0 {
 				mdev = m
+				votes := map[string]int{}
+				for _, p := range m {
+					for id, x := range p.Models {
+						if slices.Contains(x.Modalities.Input, "image") {
+							votes[bareID(id)]++
+						} else {
+							votes[bareID(id)]--
+						}
+					}
+				}
+				images = map[string]bool{}
+				for id, v := range votes {
+					if v > 0 {
+						images[id] = true
+					}
+				}
 				return
 			}
 		}
@@ -124,7 +147,7 @@ func load() map[string]mdProvider {
 // Reset forgets the loaded catalog so the next call re-reads the cache.
 func Reset() {
 	once = sync.Once{}
-	mdev = nil
+	mdev, images = nil, nil
 }
 
 // Sync downloads the models.dev catalog into CachePath. It serializes with
@@ -216,7 +239,8 @@ func Provider(id string) []Model {
 		if !textModel(m) {
 			continue
 		}
-		mm := Model{ID: m.ID, Name: m.Name, Provider: id, Released: m.ReleaseDate, Price: m.Cost, Temperature: m.Temperature}
+		mm := Model{ID: m.ID, Name: m.Name, Provider: id, Released: m.ReleaseDate, Price: m.Cost, Temperature: m.Temperature,
+			Images: slices.Contains(m.Modalities.Input, "image")}
 		for _, r := range m.Reasoning {
 			if r.Type == "effort" {
 				mm.Efforts = r.Values
@@ -237,6 +261,24 @@ func Provider(id string) []Model {
 // for "github-copilot"), or "" when the catalog doesn't know it.
 func ProviderName(id string) string {
 	return load()[id].Name
+}
+
+// SeesImages reports whether models.dev says a model of this id takes
+// images, as most of the providers it lists serving it do; for a vendor it
+// doesn't list, serving a model it knows from others ("z-ai/glm-5.3" is
+// glm-5.3).
+func SeesImages(id string) bool {
+	load()
+	return images[bareID(id)]
+}
+
+// bareID is a model's id without the vendor's prefix, lowercase.
+func bareID(id string) string {
+	id = strings.ToLower(id)
+	if i := strings.LastIndexByte(id, '/'); i >= 0 {
+		id = id[i+1:]
+	}
+	return id
 }
 
 func textModel(m mdModel) bool {
