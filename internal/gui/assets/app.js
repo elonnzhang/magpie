@@ -214,27 +214,6 @@ async function load() {
   } catch (e) {
     status(e.message, "err");
   }
-  renderUpdateBadge();
-}
-
-// renderUpdateBadge shows the header's Update pill once a newer magpie is
-// downloaded (a click restarts into it) or, where magpie can't replace
-// itself, out (a click opens the release page).
-async function renderUpdateBadge() {
-  const b = $("#update");
-  const u = await api("update").catch(() => null);
-  const on = !!u && (u.state === "ready" || u.state === "available");
-  if (b.hidden !== !on) b.hidden = !on;
-  if (!on || b.classList.contains("busy")) return;
-  b.querySelector("span").textContent = t("Update");
-  b.title = u.state === "ready" ? t("Restart to update to {v}", { v: u.latest }) : t("{v} is out", { v: u.latest });
-  b.onclick = () => {
-    if (u.state === "ready") {
-      b.classList.add("busy");
-      b.querySelector("span").textContent = t("Restarting…");
-    }
-    api("update/install", {}).catch(() => b.classList.remove("busy"));
-  };
 }
 
 // ---------- picker ----------
@@ -1606,23 +1585,6 @@ function renderEditor(p, presetID) {
   return ed;
 }
 
-// fetchImportIcon asks the server to download the vendor's own logo, named
-// by the link. It swaps the header mark when it lands; a failure is silent
-// (the generic outline stays), since the icon is decoration, not the deal.
-function fetchImportIcon(p, head, ed) {
-  const host = hostOf(p.iconUrl);
-  const note = el("div", "hint", t("Fetching {host}’s icon…", { host: host || t("the vendor") }));
-  ed.append(note);
-  api("import/icon", { url: p.iconUrl }).then((r) => {
-    p.icon = r.icon;
-    delete p.iconUrl;
-    const old = head.firstChild;
-    const now = icon(p.icon);
-    old ? old.replaceWith(now) : head.prepend(now);
-    note.remove();
-  }).catch(() => note.remove());
-}
-
 // renderImport: what a magpie://import link would add, for the user to
 // check. Nothing is saved until they press Add; the key stays hidden unless
 // they ask to see it.
@@ -1670,12 +1632,6 @@ function renderImport(im) {
     ed.append(...field(t("Models"), chips, ""));
   }
   if (im.replaces) ed.append(el("div", "warnbox soft", t("Replaces your {name}, key and all.", { name: im.replaces })));
-
-  // The link may name the vendor's own logo — an explicit icon= wins over
-  // whatever the catalog or preset gave. magpie fetches it here (the dialog
-  // being open is the confirmation), once, quietly, and only ever into its
-  // icons folder; the fallback mark stays when it fails.
-  if (p.iconUrl) fetchImportIcon(p, h, ed);
 
   const addBtn = el("button", "text primary", t(im.replaces ? "Replace" : "Add"));
   const add = () => {
@@ -2735,7 +2691,6 @@ else { $("#nav").remove(); }
 // the panel comes back into view.
 document.addEventListener("visibilitychange", () => { if (!document.hidden) load(); });
 window.addEventListener("focus", load);
-setInterval(renderUpdateBadge, 15 * 60 * 1000); // a window left open still hears of a new version
 // Opened on a magpie://import link: fetch what it describes (once — the
 // id is spent) and ask before adding it.
 if (mode === "window" && params.get("import")) {
