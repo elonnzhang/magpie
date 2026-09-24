@@ -3195,10 +3195,10 @@ function show(v) {
   view = v;
   if (mode === "window") { for (const b of $("#nav").querySelectorAll("button")) b.classList.toggle("on", b.dataset.view === v); slide($("#nav"), "nav"); }
   $("#prefs").classList.toggle("on", v === "settings");
-  for (const id of ["agents", "providers", "gateway", "usage", "settings"]) $("#view-" + id).hidden = v !== id;
+  for (const id of ["agents", "providers", "gateway", "routing", "usage", "settings"]) $("#view-" + id).hidden = v !== id;
   closePicker();
   if (v !== "providers" && editing !== null) cancelEdit();
-  if (v === "providers" || v === "gateway") loadProviders().catch((e) => status(e.message, "err"));
+  if (v === "providers" || v === "gateway" || v === "routing") loadProviders().catch((e) => status(e.message, "err"));
   if (v === "usage") loadUsage().catch((e) => status(e.message, "err"));
   if (v === "settings") loadSettings().catch((e) => status(e.message, "err"));
   syncURL();
@@ -3291,6 +3291,6 @@ if (mode === "window" && params.get("import")) {
   }).catch(() => {});
 }
 if (mode === "window" && params.get("view") === "providers" && params.get("edit")) editing = params.get("edit");
-if (mode === "window" && ["providers", "gateway", "usage", "settings"].includes(params.get("view"))) show(params.get("view"));
+if (mode === "window" && ["providers", "gateway", "routing", "usage", "settings"].includes(params.get("view"))) show(params.get("view"));
 else if (mode === "window") slide($("#nav"), "nav");
 load();

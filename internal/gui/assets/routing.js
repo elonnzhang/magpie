@@ -10,7 +10,7 @@
   if (!box) return;
   const NS = "http://www.w3.org/2000/svg";
   const still = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
-  const shown = () => !$("#view-gateway").hidden && !document.hidden;
+  const shown = () => !$("#view-routing").hidden && !document.hidden;
 
   // ---------- the stage ----------
 
@@ -50,10 +50,23 @@
   const log = el("div", "rt-log");
   const logHead = el("div", "rt-log-head");
   const steps = el("ol", "rt-steps");
-  const hist = el("div", "rt-hist");
   log.append(logHead, steps);
   const off = el("div", "none rt-off");
-  box.append(top, stage, foot, hist, log, off);
+  box.append(top, stage, foot, log, off);
+
+  // under the stage: every request the gateway keeps, and each account or
+  // key as those requests found it
+  const more = $("#rtMore");
+  const reqHead = el("div", "row-head"), reqNote = el("span", "note");
+  const reqs = el("div", "list rt-reqs");
+  const actHead = el("div", "row-head"), actNote = el("span", "note");
+  const acts = el("div", "list rt-acts");
+  const hist = el("div", "rt-cols");
+  const colA = el("div", "rt-col"), colB = el("div", "rt-col");
+  colA.append(reqHead, reqs);
+  colB.append(actHead, acts);
+  hist.append(colA, colB);
+  more.append(hist);
 
   const path = () => { const p = document.createElementNS(NS, "path"); wires.appendChild(p); return p; };
   const wSrc = path();
@@ -201,7 +214,8 @@
   }
 
   function tryWhy(r, i) {
-    const tr = r.tries[i], w = r.order.find((x) => x.id === tr.id), name = w ? who(w) : tr.id, agent = agentName(r.agent);
+    const tr = r.tries[i], w = r.order.find((x) => x.id === tr.id), agent = agentName(r.agent);
+    const name = w ? `${who(w)} (${w.model})` : tr.id;
     if (!tr.done) return t("{who} is answering…", { who: name });
     if (tr.status < 400) {
       const tk = r.tokens ? " · " + t("{n} tokens", { n: tokens(r.tokens) }) : "";
@@ -279,8 +293,8 @@
         b.append(icon(w.icon || (w.preset ? w.preset : "generic")));
         const name = el("span", "who", who(w));
         // the provider's name heads the card; a row names what differs
-        const sub = el("span", "", w.fallback ? `${w.name} · ${w.provider}/${w.model}` : w.kind === "provider" ? w.model : w.plan || "");
-        b.append(name, " ", sub);
+        const sub = el("span", "", w.fallback ? w.name : w.kind === "provider" ? "" : w.plan || "");
+        b.append(name, " ", sub, el("code", "mdl", w.model));
         if (w.fallback) b.append(el("small", "fb", t("fallback")));
         const st = el("em"), bar = el("div", "bar"), bi = el("i"), tg = el("span", "tag");
         bar.append(bi);
@@ -384,7 +398,10 @@
       logHead.append(live);
     }
     const items = [];
-    items.push([t("{agent} asked for {model}", { agent: agentName(r.agent), model: r.model }) + " → " + (r.order.find((x) => !x.fallback)?.name || r.provider), ""]);
+    const main = r.order.find((x) => !x.fallback);
+    items.push([main && main.model !== r.model
+      ? t("{agent} asked for {model}: {name} serves it, and the vendor is asked for {sent}", { agent: agentName(r.agent), model: r.model, name: main.name, sent: main.model })
+      : t("{agent} asked for {model}", { agent: agentName(r.agent), model: r.model }) + " → " + (main?.name || r.provider), ""]);
     items.push([firstWhy(r), "why"]);
     for (const a of asides(r)) items.push([a, "aside"]);
     r.tries.forEach((_, i) => items.push([tryWhy(r, i), r.tries[i].done ? (r.tries[i].status < 400 ? "ok" : "bad") : "wait"]));
@@ -392,25 +409,127 @@
     steps.replaceChildren(...items.map(([s, c]) => el("li", c, s)));
   }
 
-  // the strip of recent requests: pick one to see how it was routed
+  // pick sets the stage to a past request, or back to live with the newest
+  function pick(r) {
+    pinned = r.id === newest()?.id ? null : r;
+    gen++; trips = []; flying.clear(); for (const p of wires.querySelectorAll(".pkt")) p.remove();
+    stageFor(pinned || r); renderAll();
+    say(firstWhy(r));
+    if (pinned) box.scrollIntoView({ block: "nearest", behavior: still() ? "auto" : "smooth" });
+  }
+
+  // who answered a request, or what its agent got
+  function outcome(r) {
+    if (!r.done) {
+      const tr = r.tries[r.tries.length - 1], w = tr && r.order.find((x) => x.id === tr.id);
+      return [w ? t("{who} is answering…", { who: `${who(w)} · ${w.model}` }) : t("routing…"), "wait"];
+    }
+    const ok = r.tries.find((tr) => tr.done && tr.status < 400), w = ok && r.order.find((x) => x.id === ok.id);
+    if (r.status < 400) return [w ? `${who(w)} · ${w.model}` : r.provider, r.tries.length > 1 ? "moved" : "ok"];
+    const last = r.tries[r.tries.length - 1];
+    return [last ? `${r.status} · ${failWord(last.fail)}` : `${r.status || ""} ${r.error || ""}`.trim(), "bad"];
+  }
+
+  // the requests the gateway keeps, newest first: pick one to see how it was routed
   function renderHist() {
-    const rs = [...routes.values()].sort((a, b) => b.id - a.id).slice(0, 14);
-    hist.hidden = rs.length < 2;
-    hist.replaceChildren(el("span", "label", t("Recent")));
-    for (const r of rs) {
-      const b = el("button", "rt-h" + (r.done ? r.status >= 400 ? " bad" : r.tries.length > 1 ? " moved" : "" : " wait"));
+    const rs = [...routes.values()].sort((a, b) => b.id - a.id);
+    hist.hidden = !rs.length;
+    reqHead.replaceChildren(el("span", "label", t("Requests")), el("span", "grow"), reqNote);
+    reqNote.textContent = t("the last {n} the gateway keeps", { n: rs.length });
+    reqs.replaceChildren(...rs.map((r) => {
+      const [said, how] = outcome(r);
+      const b = el("button", "rt-req " + how);
       const sel = pinned ? pinned.id === r.id : cur?.id === r.id;
       b.setAttribute("aria-pressed", String(sel));
-      b.title = `${clock(r.time)} · ${r.model}` + (r.tries.length > 1 ? " · " + t("rerouted {n}×", { n: r.tries.length - 1 }) : "") + (r.done ? ` · ${r.status}` : "");
-      b.append(el("i"), el("span", "", new Date(r.time).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })));
-      b.onclick = () => {
-        pinned = r.id === newest()?.id ? null : r;
-        gen++; trips = []; flying.clear(); for (const p of wires.querySelectorAll(".pkt")) p.remove();
-        stageFor(r); renderAll();
-        say(firstWhy(r));
-      };
-      hist.append(b);
+      const ag = agentOf(r.agent);
+      const when = el("span", "at", new Date(r.time).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }));
+      const asked = el("span", "asked");
+      asked.append(icon(ag?.icon || "generic"), el("span", "m", r.model));
+      const to = el("span", "to");
+      to.append(el("i"), el("span", "", said));
+      const meta = [];
+      if (r.tries.length > 1) meta.push(t("{n} tries", { n: r.tries.length }));
+      if (r.done && r.ms) meta.push(took(r.ms));
+      if (r.tokens) meta.push(t("{n} tokens", { n: tokens(r.tokens) }));
+      b.append(when, asked, to, el("span", "meta", meta.join(" · ")));
+      b.title = `${agentName(r.agent)} · ${r.model} → ${r.provider}`;
+      b.onclick = () => pick(r);
+      return b;
+    }));
+    renderActs(rs);
+  }
+
+  // each account or key the kept requests weighed: how often it was
+  // tried, answered and failed in them, and how the latest found it
+  function renderActs(rs) {
+    const by = new Map();
+    for (const r of [...rs].reverse()) { // oldest first, so the latest wins
+      const all = [...r.order, ...(r.left || [])];
+      all.forEach((w, i) => {
+        const a = by.get(w.id) || { w, tried: 0, ok: 0, fails: {}, last: 0, rest: null, restAt: 0, seen: 0, pos: 0, models: new Set() };
+        a.w = w; a.seen++; a.pos = i; a.at = r.time;
+        // a later request found it resting, or not
+        if (at(r.time) >= a.restAt) { a.rest = w.rest || null; a.restAt = at(r.time); }
+        by.set(w.id, a);
+      });
+      for (const tr of r.tries) {
+        const a = by.get(tr.id);
+        if (!a || !tr.done) continue;
+        a.tried++;
+        const end = at(tr.start) + (tr.ms || 0);
+        if (tr.status < 400) { a.ok++; a.last = Math.max(a.last, end); const m = r.order.find((x) => x.id === tr.id)?.model; if (m) a.models.add(m); }
+        else a.fails[tr.fail || "other"] = (a.fails[tr.fail || "other"] || 0) + 1;
+        if (tr.rest && end >= a.restAt) { a.rest = tr.rest; a.restAt = end; }
+      }
     }
+    const list = [...by.values()].sort((x, y) => (x.w.name || "").localeCompare(y.w.name || "") || x.w.provider.localeCompare(y.w.provider) || x.pos - y.pos);
+    actHead.replaceChildren(el("span", "label", t("Accounts and keys")), el("span", "grow"), actNote);
+    actNote.textContent = t("over those requests");
+    const n = now();
+    let prov = "";
+    const out = [];
+    for (const a of list) {
+      const w = a.w;
+      if (w.provider !== prov) {
+        prov = w.provider;
+        const h = el("div", "rt-prov");
+        h.append(icon(w.icon || w.preset || "generic"), el("b", "", w.name || w.provider));
+        const m = MODES[list.find((x) => x.w.provider === prov && !x.w.fallback)?.w.routing || ""] || MODES[""];
+        h.append(el("span", "", t(w.kind === "key" && !w.routing ? "Smart" : m[0])));
+        out.push(h);
+      }
+      const row = el("div", "rt-act");
+      const name = el("div", "nm");
+      name.append(el("b", "", who(w)), el("span", "", w.kind === "provider" ? w.model : w.plan || (w.kind === "key" ? t("API key") : "")));
+      let st, cls = "";
+      const resting = a.rest && at(a.rest.until) > n;
+      if (resting) { st = `${failWord(a.rest.why)} · ${restWhen(a.rest)}`; cls = "rest"; }
+      else if (w.unlisted) { st = t("its plan doesn't list {model}", { model: w.model }); cls = "left"; }
+      else if (w.kind === "account" && w.known) {
+        const soon = renews(w)[0];
+        st = soon && soon <= n ? t("{n} used at {time}; it has renewed since", { n: pct(w.used), time: clock(a.at) })
+          : (soon ? t("{n} used · renews in {d}", { n: pct(w.used), d: dur(soon - n) }) : t("{n} used", { n: pct(w.used) })) + " · " + t("as of {time}", { time: clock(a.at) });
+      } else if (w.kind === "account") st = t("what's left not known yet");
+      else st = "";
+      const tally = el("div", "tally");
+      const fails = Object.entries(a.fails).map(([k, v]) => `${v} ${failWord(k)}`);
+      tally.append(
+        el("span", "", t("tried {n}", { n: a.tried })),
+        el("span", "ok", t("answered {n}", { n: a.ok })),
+        ...(fails.length ? [el("span", "bad", fails.join(", "))] : []),
+        ...(a.last ? [el("span", "", t("last answered {time}", { time: clock(a.last) }))] : []),
+        ...[...a.models].map((m) => el("code", "mdl", m)));
+      row.append(name, el("div", "st " + cls, st), tally);
+      if (w.kind === "account" && w.known) {
+        const bar = el("div", "bar"), bi = el("i");
+        bi.style.width = Math.min(100, w.used) + "%";
+        bar.append(bi);
+        row.append(bar);
+      }
+      row.title = w.id;
+      out.push(row);
+    }
+    acts.replaceChildren(...out);
   }
 
   function renderAll() { render(); renderLog(); renderHist(); }
@@ -520,12 +639,13 @@
     requestAnimationFrame(frame);
   }
   // countdowns tick once a second
-  setInterval(() => { if (shown()) render(); }, 1000);
+  setInterval(() => { if (shown()) { render(); renderActs([...routes.values()].sort((a, b) => b.id - a.id)); } }, 1000);
 
   function offline(msg) {
     off.textContent = msg;
     off.hidden = !msg;
-    for (const e of [top, stage, foot, hist, log]) e.hidden = !!msg;
+    for (const e of [top, stage, foot, log]) e.hidden = !!msg;
+    more.hidden = !!msg;
   }
 
   function empty() {

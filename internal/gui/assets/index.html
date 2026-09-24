@@ -17,6 +17,7 @@
     <button data-view="agents" class="on" data-t>Agents</button>
     <button data-view="providers" data-t>Providers</button>
     <button data-view="gateway" data-t>Gateway</button>
+    <button data-view="routing" data-t>Routing</button>
     <button data-view="usage" data-t>Usage</button>
   </nav>
   <div class="actions" style="--wails-draggable:no-drag">
@@ -58,14 +59,18 @@
   <div class="list gwcard">
     <div class="row gw" id="gateway"></div>
   </div>
-  <div class="row-head"><span class="label" data-t>Routing</span><span class="rt-livedot" aria-hidden="true"></span><span class="grow"></span><span class="note" data-t>live, as the gateway decides</span></div>
-  <section class="rt" id="rt"></section>
   <div class="row-head"><span class="label" data-t>Connect</span><span class="grow"></span><span class="note" id="connectNote"></span></div>
   <section class="list connect" id="connect"></section>
   <div class="row-head"><span class="label" data-t>Models</span><span class="grow"></span><button class="text" id="copyModels" data-t>Copy all ids</button></div>
   <div class="list" id="gwModels"></div>
   <div class="row-head"><span class="label" data-t>Recent calls</span><span class="grow"></span><span class="note" id="callsNote"></span></div>
   <div class="list activity" id="activity"></div>
+</main>
+
+<main class="view" id="view-routing" hidden>
+  <div class="row-head"><span class="label" data-t>Routing</span><span class="rt-livedot" aria-hidden="true"></span><span class="note" data-t>live, as the gateway decides</span></div>
+  <section class="rt" id="rt"></section>
+  <div class="rt-more" id="rtMore"></div>
 </main>
 
 <main class="view" id="view-usage" hidden>
