@@ -495,7 +495,8 @@ footer a:hover { color: var(--ink); }
         <div class="rt-node rt-hub"><img class="bird" src="/img/magpie-small.svg" alt=""><b>magpie</b><small>localhost:3425</small><i>Smart</i></div>
         <ol class="rt-accts">
           <li class="on"><i class="dot"></i><b><img src="/icons/claude-color.svg" alt="">me@work.dev <span>Claude Max</span></b><em>serving</em><div class="bar"><i style="width:72%"></i></div><span class="tag"></span></li>
-          <li><i class="dot"></i><b><img class="bird" src="/icons/openai.svg" alt="">me@home.dev <span>ChatGPT Pro</span></b><em>38% used</em><div class="bar"><i style="width:38%"></i></div><span class="tag"></span></li>
+          <li><i class="dot"></i><b><img src="/icons/claude-color.svg" alt="">me@home.dev <span>Claude Pro</span></b><em>38% used</em><div class="bar"><i style="width:38%"></i></div><span class="tag"></span></li>
+          <li><i class="dot"></i><b><img class="bird" src="/icons/openai.svg" alt="">me@home.dev <span>ChatGPT Pro</span></b><em>30% used</em><div class="bar"><i style="width:30%"></i></div><span class="tag"></span></li>
           <li class="nobar"><i class="dot"></i><b><img class="bird" src="/icons/openrouter.svg" alt="">sk-or-…4f2a <span>OpenRouter</span></b><em>pay as you go</em><div class="bar"><i></i></div><span class="tag"></span></li>
           <li><i class="dot"></i><b><img class="bird" src="/icons/githubcopilot.svg" alt="">octo-dev <span>Copilot Business</span></b><em>24% used</em><div class="bar"><i style="width:24%"></i></div><span class="tag"></span></li>
         </ol>
@@ -653,10 +654,11 @@ magpie tui                             <span class="c"># the whole app, in the t
   const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
   const NS = "http://www.w3.org/2000/svg";
 
-  // Each account is a different vendor's: its icon beside it, and the
-  // captions name it by the vendor.
+  // Two Claude subscriptions and three other vendors' accounts, each with
+  // its vendor's icon; the captions name them by plan.
   const V = {
     claude: ["me@work.dev", "Claude Max", "claude-color", "Claude Max", ""],
+    claude2: ["me@home.dev", "Claude Pro", "claude-color", "Claude Pro", ""],
     gpt: ["me@home.dev", "ChatGPT Pro", "openai", "ChatGPT Pro", "bird"],
     or: ["sk-or-…4f2a", "OpenRouter", "openrouter", "The OpenRouter key", "bird"],
     gh: ["octo-dev", "Copilot Business", "githubcopilot", "Copilot", "bird"],
@@ -664,12 +666,13 @@ magpie tui                             <span class="c"># the whole app, in the t
   const A = (v, used, inc, x = {}) => { const [who, plan, icon, name, cls] = V[v]; return { who, plan, icon, name, cls, used, inc, ...x }; };
   const MODES = {
     smart: {
-      name: "Smart", n: 26,
+      name: "Smart", n: 30,
       desc: "Smart, the default: one account keeps the requests while it has quota to spare, and any that can't answer are passed over.",
       first: (a) => `Every request goes to ${a.name.replace(/^The /, "the ")} while it has quota to spare — its prompt cache stays warm.`,
       accts: () => [
         A("claude", 72, 2.4),
-        A("gpt", 38, 3, { fail: { at: 3, code: 429, rest: 7000 } }),
+        A("claude2", 38, 3, { fail: { at: 3, code: 429, rest: 7000 } }),
+        A("gpt", 30, 3),
         A("or", 0, 0, { key: 1, fail: { at: 0, code: 402 } }),
         A("gh", 24, 2, { fail: { at: 4, code: 503, rest: 5000 } }),
       ],
@@ -678,19 +681,19 @@ magpie tui                             <span class="c"># the whole app, in the t
       name: "In order", n: 18,
       desc: "In order: the first answers everything until it can't; then the next takes over.",
       first: (a) => `${a.name} answers everything, for as long as it can.`,
-      accts: () => [A("claude", 76, 3), A("gpt", 30, 3), A("or", 0, 0, { key: 1 }), A("gh", 24, 2)],
+      accts: () => [A("claude", 76, 3), A("claude2", 44, 3), A("gpt", 30, 3), A("or", 0, 0, { key: 1 }), A("gh", 24, 2)],
     },
     turn: {
       name: "In turn", n: 16,
       desc: "In turn: each request goes to the next account, so the load is spread evenly.",
       first: () => "Each request goes to the next account in turn.",
-      accts: () => [A("claude", 30, 2), A("gpt", 52, 2), A("or", 0, 0, { key: 1 }), A("gh", 18, 2)],
+      accts: () => [A("claude", 30, 2), A("claude2", 40, 2), A("gpt", 52, 2), A("or", 0, 0, { key: 1 }), A("gh", 18, 2)],
     },
     least: {
       name: "Least used", n: 18,
       desc: "Least used first: each request goes to the account with the most allowance left; a key by the tokens magpie sent it lately.",
       first: () => "Each request goes to whichever has the most left — watch the bars even out.",
-      accts: () => [A("claude", 64, 6), A("gpt", 22, 6), A("or", 40, 6, { key: 1, bar: 1 }), A("gh", 46, 6)],
+      accts: () => [A("claude", 64, 6), A("claude2", 30, 6), A("gpt", 22, 6), A("or", 40, 6, { key: 1, bar: 1 }), A("gh", 46, 6)],
     },
   };
 
