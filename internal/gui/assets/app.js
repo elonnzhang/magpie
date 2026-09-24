@@ -212,6 +212,7 @@ function fit() {
 }
 
 async function load() {
+  if (view === "providers" && !providers) renderProvidersLoading();
   try {
     state = await api("state");
     applyPrefs(state.settings);
@@ -603,10 +604,30 @@ $("#save").onclick = () => {
 
 async function loadProviders() {
   if (view === "gateway") renderGatewayLoading();
+  else if (!providers) renderProvidersLoading();
   providers = await api("providers");
   if (!providers.providers.length && editing === null) adding = true;
   if (view === "gateway") renderGatewayView();
   else renderProviders();
+}
+
+// Rows in the shape of the list while it is first asked for; a reload keeps
+// the list it has until the new one is in.
+function renderProvidersLoading() {
+  const page = $("#view-providers");
+  page.classList.add("loading");
+  page.setAttribute("aria-busy", "true");
+  const list = $("#providers");
+  list.hidden = false;
+  list.replaceChildren();
+  for (let i = 0; i < 5; i++) {
+    const row = el("div", "row provider pv-sk-row");
+    const who = el("div", "who pv-sk-who");
+    who.append(el("span", "skeleton pv-sk-name"), el("span", "skeleton pv-sk-sub"));
+    row.append(el("span", "skeleton pv-sk-icon"), who, el("span", "skeleton pv-sk-key"));
+    list.append(row);
+  }
+  $("#excluded").replaceChildren();
 }
 
 // One row per provider: logo, name, the agents pointed at it, key status.
@@ -616,6 +637,8 @@ function renderProviders() {
   // scroll to the top; put it back so closing the editor leaves the reader
   // where they were.
   const view = $("#view-providers"), top = view.scrollTop;
+  view.classList.remove("loading");
+  view.removeAttribute("aria-busy");
   closeProtoMenu();
   const list = $("#providers");
   list.replaceChildren();
