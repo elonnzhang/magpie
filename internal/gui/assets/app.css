@@ -211,8 +211,21 @@ body.window .row .ic { width: 22px; height: 22px; }
 .empty-state b { display: block; color: var(--fg); font-weight: 500; margin-bottom: 4px; }
 
 /* the last row of the list: the agents nothing is set on, folded away */
-.agent-more { display: block; width: 100%; border: 0; border-top: 1px solid var(--line-2); background: none; font: inherit; font-size: 12px; color: var(--muted); padding: 9px; cursor: pointer; }
+.agent-more { display: flex; align-items: center; justify-content: center; gap: 5px; width: 100%; border: 0; border-top: 1px solid var(--line-2); background: none; font: inherit; font-size: 12px; color: var(--muted); padding: 9px; cursor: pointer; transition: color .2s, background-color .2s; }
 .agent-more:hover { color: var(--fg); background: var(--card-2); }
+.agent-more span { display: inline-flex; }
+.agent-more .chev { transition: transform .5s cubic-bezier(.22, 1, .36, 1); }
+.agent-more[aria-expanded="true"] .chev { transform: rotate(180deg); }
+/* the folded agents unroll like a scroll: the height opens on a long ease-out,
+   each row settles in a beat after the one above, and the unrolling edge is
+   soft while it moves. Rolling up is quicker, bottom row first. */
+.agent-fold { display: grid; grid-template-rows: 0fr; transition: grid-template-rows .42s cubic-bezier(.4, 0, .2, 1); }
+.agent-fold.open { grid-template-rows: 1fr; transition-duration: .62s; transition-timing-function: cubic-bezier(.22, 1, .36, 1); }
+.agent-fold-inner { min-height: 0; overflow: hidden; }
+.agent-fold-inner > .row:first-child { border-top: 1px solid var(--line-2); }
+.agent-fold.moving .agent-fold-inner { -webkit-mask-image: linear-gradient(#000 calc(100% - 32px), transparent); mask-image: linear-gradient(#000 calc(100% - 32px), transparent); }
+.agent-fold .row { opacity: 0; transform: translateY(-10px) scale(.985); transform-origin: 50% 0; transition: opacity .22s ease, transform .32s cubic-bezier(.4, 0, .2, 1); transition-delay: calc((var(--n) - 1 - var(--i)) * 22ms); }
+.agent-fold.open .row { opacity: 1; transform: none; transition: opacity .42s ease, transform .56s cubic-bezier(.22, 1, .36, 1); transition-delay: calc(70ms + var(--i) * 48ms); }
 
 /* an agent row: logo, name, then one pop-up button per setting */
 /* two columns: the model, then the smaller setting; single controls sit at the end.

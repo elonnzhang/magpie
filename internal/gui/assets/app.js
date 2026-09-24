@@ -135,8 +135,8 @@ function renderAgents() {
   // An agent no one has set anything on is noise in a picker: fold it away,
   // unless that is all of them (a fresh magpie has nothing to show otherwise).
   const used = state.agents.filter((a) => a.fields.some((f) => f.value));
-  const rows = showAllAgents || !used.length ? state.agents : used;
-  for (const a of rows) {
+  const folded = used.length ? state.agents.filter((a) => !used.includes(a)) : [];
+  const agentRow = (a) => {
     const row = el("div", "row agent");
     row.dataset.id = a.id;
     row.title = a.path;
@@ -167,13 +167,57 @@ function renderAgents() {
       fields.append(b);
     }
     row.append(icon(a.icon), who, fields);
-    list.append(row);
-  }
-  if (used.length && used.length < state.agents.length) {
-    const n = state.agents.length - used.length;
-    const more = el("button", "agent-more", showAllAgents ? t("Show less") : t("Show {n} more", { n }));
-    more.onclick = () => { showAllAgents = !showAllAgents; renderAgents(); };
-    list.append(more);
+    return row;
+  };
+  if (!folded.length) {
+    for (const a of state.agents) list.append(agentRow(a));
+  } else {
+    // the ones in use stay put; the rest unroll beneath them like a scroll
+    for (const a of used) list.append(agentRow(a));
+    const fold = el("div", "agent-fold" + (showAllAgents ? " open" : ""));
+    const inner = el("div", "agent-fold-inner");
+    inner.inert = !showAllAgents;
+    fold.style.setProperty("--n", folded.length);
+    folded.forEach((a, i) => {
+      const row = agentRow(a);
+      row.style.setProperty("--i", i);
+      inner.append(row);
+    });
+    fold.append(inner);
+    const more = el("button", "agent-more");
+    const label = el("span", "", "");
+    const chev = el("span", "chev");
+    chev.append(svg(CHEV, 10, 1.8));
+    more.append(label, chev);
+    const labelFor = () => {
+      label.textContent = showAllAgents ? t("Show less") : t("Show {n} more", { n: folded.length });
+      more.setAttribute("aria-expanded", String(showAllAgents));
+    };
+    labelFor();
+    // settled: the soft edge goes, and a folded scroll gives the panel its room
+    // back. A hidden window never ends its transition, so a timer backs it up.
+    let settle;
+    const settled = () => {
+      clearTimeout(settle);
+      fold.classList.remove("moving");
+      fit();
+    };
+    fold.addEventListener("transitionend", (e) => { if (e.target === fold) settled(); });
+    more.onclick = () => {
+      showAllAgents = !showAllAgents;
+      // opening: the panel makes room first, so nothing unrolls out of sight
+      if (showAllAgents) fit(inner.scrollHeight);
+      clearTimeout(settle);
+      settle = setTimeout(settled, 900);
+      fold.classList.add("moving");
+      fold.classList.toggle("open", showAllAgents);
+      inner.inert = !showAllAgents;
+      labelFor();
+      if (!matchMedia("(prefers-reduced-motion: reduce)").matches) {
+        label.animate([{ opacity: 0, transform: "translateY(3px)" }, { opacity: 1, transform: "none" }], { duration: 260, easing: "cubic-bezier(.22, 1, .36, 1)" });
+      }
+    };
+    list.append(fold, more);
   }
 
   const chips = $("#profiles");
@@ -216,9 +260,10 @@ function tierMenu(a) {
 }
 
 // The tray panel has no scrollbars to speak of, so it grows to fit instead.
-function fit() {
+// extra is room about to be taken, e.g. by agents unrolling.
+function fit(extra = 0) {
   if (mode !== "panel") return;
-  const h = $(".top").offsetHeight + $("#agents").offsetHeight + $(".profiles").offsetHeight + $(".foot").offsetHeight + 4;
+  const h = $(".top").offsetHeight + $("#agents").offsetHeight + $(".profiles").offsetHeight + $(".foot").offsetHeight + 4 + extra;
   if (h !== fit.last) { fit.last = h; api("window/fit?h=" + h, {}); }
 }
 
