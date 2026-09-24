@@ -266,6 +266,40 @@ function tierMenu(a) {
 const UNROLL = { ms: 620, ease: ".22,1,.36,1" };
 const ROLLUP = { ms: 420, ease: ".4,0,.2,1" };
 
+// tintPanel hands the colour the panel's page shows to the system, to paint
+// under the page, which then leaves its own background clear: the page is
+// drawn a frame or two after the panel grows, and what shows at the new edge
+// meanwhile is that colour, not a dark band. ms is how long a change of theme
+// fades.
+async function tintPanel(ms = 0) {
+  if (mode !== "panel") return;
+  const probe = tintPanel.probe || (tintPanel.probe = document.body.appendChild(el("div", "tint-probe")));
+  const c = document.createElement("canvas").getContext("2d", { willReadFrequently: true });
+  c.fillStyle = "#010203";
+  const none = c.fillStyle;
+  c.fillStyle = getComputedStyle(probe).backgroundColor;
+  if (c.fillStyle === none) return; // a colour the canvas can't read
+  // what the page shows: its thin paint over the webview's white
+  const paint = c.fillStyle;
+  c.fillStyle = "#fff";
+  c.fillRect(0, 0, 1, 1);
+  c.fillStyle = paint;
+  c.fillRect(0, 0, 1, 1);
+  const rgba = [...c.getImageData(0, 0, 1, 1).data].join(",");
+  if (rgba === tintPanel.last) return;
+  tintPanel.last = rgba;
+  try {
+    const r = await api("window/tint?c=" + rgba + "&ms=" + ms, {});
+    document.body.classList.toggle("tinted", !!r?.ok);
+  } catch {
+    tintPanel.last = null;
+    document.body.classList.remove("tinted");
+  }
+}
+if (mode === "panel") {
+  matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => tintPanel(450));
+}
+
 // extra is room about to be taken (or given back), e.g. by agents unrolling;
 // glide moves the panel's edge there over time instead of at once.
 function fit(extra = 0, glide) {
@@ -282,6 +316,7 @@ async function load() {
   try {
     state = await api("state");
     applyPrefs(state.settings);
+    tintPanel();
     renderAgents();
     // an open provider editor is someone typing: coming back to the window
     // must not rebuild it under them
@@ -2999,6 +3034,7 @@ function applyPrefs(s) {
         applyPrefs.t = setTimeout(() => root.classList.remove("theming"), 450);
       }
       if (want) root.dataset.theme = want; else delete root.dataset.theme;
+      if (applyPrefs.ready) tintPanel(450);
     }
   }
   applyPrefs.ready = true;

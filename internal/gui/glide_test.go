@@ -48,3 +48,18 @@ func TestGlideCurve(t *testing.T) {
 		}
 	}
 }
+
+func TestParseTint(t *testing.T) {
+	c, ms, ok := parseTint(url.Values{"c": {"27, 28, 32, 255"}, "ms": {"450"}})
+	if !ok || c != [4]uint8{27, 28, 32, 255} || ms != 450 {
+		t.Fatalf("got %v %d %v", c, ms, ok)
+	}
+	if _, ms, _ := parseTint(url.Values{"c": {"0,0,0,255"}, "ms": {"99999"}}); ms != 2000 {
+		t.Errorf("ms not capped: %d", ms)
+	}
+	for _, bad := range []string{"", "1,2,3", "1,2,3,256", "1,2,x,4", "-1,0,0,0"} {
+		if _, _, ok := parseTint(url.Values{"c": {bad}}); ok {
+			t.Errorf("%q read as a colour", bad)
+		}
+	}
+}

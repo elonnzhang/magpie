@@ -5,6 +5,7 @@ package gui
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"io/fs"
 	"log"
@@ -144,13 +145,16 @@ type remoteWindows string // the shell's control address
 
 func (c remoteWindows) do(op, arg string) { c.post(op, url.Values{"arg": {arg}}) }
 
-func (c remoteWindows) post(op string, form url.Values) {
+// post says what the shell answered; a shell from before an op answers nothing.
+func (c remoteWindows) post(op string, form url.Values) string {
 	res, err := backendClient.PostForm("http://"+string(c)+"/"+op, form)
 	if err != nil {
 		log.Println("dev shell:", err)
-		return
+		return ""
 	}
-	res.Body.Close()
+	defer res.Body.Close()
+	b, _ := io.ReadAll(io.LimitReader(res.Body, 64))
+	return string(b)
 }
 
 func (c remoteWindows) HidePanel()             { c.do("hide", "") }
@@ -161,6 +165,10 @@ func (c remoteWindows) OpenFolder(path string) { c.do("reveal", path) }
 // The glide rides beside the height, so a shell from before it still sizes.
 func (c remoteWindows) FitPanel(height int, g Glide) {
 	c.post("fit", url.Values{"arg": {strconv.Itoa(height)}, "ms": {strconv.Itoa(g.MS)}, "ease": {g.ease()}})
+}
+func (c remoteWindows) TintPanel(rgba [4]uint8, ms int) bool {
+	q := url.Values{"c": {fmt.Sprintf("%d,%d,%d,%d", rgba[0], rgba[1], rgba[2], rgba[3])}, "ms": {strconv.Itoa(ms)}}
+	return c.post("tint", url.Values{"arg": {q.Encode()}}) == "ok"
 }
 
 // backendClient waits out a backend's restart: a request made while the old
@@ -208,6 +216,12 @@ func devShell(h *host) http.Handler {
 			q := url.Values{"h": {arg}, "ms": {r.FormValue("ms")}, "ease": {r.FormValue("ease")}}
 			if n, g, ok := parseFit(q); ok {
 				h.FitPanel(n, g)
+			}
+		case "tint":
+			q, _ := url.ParseQuery(arg)
+			if c, ms, ok := parseTint(q); ok && h.TintPanel(c, ms) {
+				rw.Write([]byte("ok"))
+				return
 			}
 		}
 		rw.WriteHeader(http.StatusNoContent)

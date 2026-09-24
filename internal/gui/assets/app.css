@@ -83,7 +83,11 @@ body {
   cursor: default;
 }
 /* The tray panel sits on a frosted NSVisualEffectView, so its own paint is thin. */
-body.panel { background: color-mix(in srgb, var(--bg) 93%, transparent); border-radius: 12px; }
+body.panel { --panel-tint: color-mix(in srgb, var(--bg) 93%, transparent); background: var(--panel-tint); border-radius: 12px; }
+/* on the Mac the panel's colour is painted under the page, where it keeps up
+   with the panel as it grows (see tintPanel) */
+body.panel.tinted { background: transparent; }
+.tint-probe { display: none; background: var(--panel-tint); }
 /* on the frosted panel the surfaces are tints of the backdrop, not flat paint */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) body.panel { --bg: #1b1c20; --card: #25262c; --card-2: #212227; --line: rgba(255, 255, 255, .07); --line-2: rgba(255, 255, 255, .06); --pill: #2e2f36; --pill-hover: #383942; --pill-line: rgba(255, 255, 255, .11); --pill-shadow: 0 1px 2px rgba(0, 0, 0, .28); --muted: #9c9ca6; --faint: #7c7c87; --card-edge: inset 0 0 0 1px rgba(255, 255, 255, .06); }

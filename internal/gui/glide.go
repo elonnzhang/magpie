@@ -103,3 +103,21 @@ func (g Glide) ease() string {
 	}
 	return strings.Join(s, ",")
 }
+
+// parseTint reads a tint request: c as "r,g,b,a" (0…255 each) and ms, how
+// long the change of colour takes.
+func parseTint(q url.Values) (c [4]uint8, ms int, ok bool) {
+	parts := strings.Split(q.Get("c"), ",")
+	if len(parts) != 4 {
+		return c, 0, false
+	}
+	for i, p := range parts {
+		v, err := strconv.Atoi(strings.TrimSpace(p))
+		if err != nil || v < 0 || v > 255 {
+			return c, 0, false
+		}
+		c[i] = uint8(v)
+	}
+	ms, _ = strconv.Atoi(q.Get("ms"))
+	return c, max(0, min(2000, ms)), true
+}

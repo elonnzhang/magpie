@@ -40,6 +40,10 @@ type Windows interface {
 	OpenFolder(path string)
 	// FitPanel asks for the panel to be tall enough for its content.
 	FitPanel(height int, g Glide)
+	// TintPanel paints the panel's tint behind the page, where the system
+	// keeps up with the panel's size; false when it can't, for the page to
+	// go on painting it itself.
+	TintPanel(rgba [4]uint8, ms int) bool
 }
 
 type fieldJSON struct {
@@ -204,6 +208,11 @@ func Handler(w Windows, gw *gateway.Server) http.Handler {
 		case "fit":
 			if h, g, ok := parseFit(r.URL.Query()); ok {
 				w.FitPanel(h, g)
+			}
+		case "tint":
+			if c, ms, ok := parseTint(r.URL.Query()); ok && w.TintPanel(c, ms) {
+				writeJSON(rw, map[string]bool{"ok": true})
+				return
 			}
 		}
 		rw.WriteHeader(http.StatusNoContent)

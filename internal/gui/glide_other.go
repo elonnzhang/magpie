@@ -13,3 +13,6 @@ func (h *host) glidePanel(height int, g Glide) bool {
 	})
 	return true
 }
+
+// TintPanel: the page paints the panel's tint itself here.
+func (h *host) TintPanel(c [4]uint8, ms int) bool { return false }
