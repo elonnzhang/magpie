@@ -62,6 +62,7 @@ type signInFlow struct {
 	state    string
 	redirect string
 	srv      *http.Server
+	stop     func() // ends an agent's own login command, when that is the sign-in
 	done     chan struct{}
 }
 
@@ -119,14 +120,21 @@ func StartSignIn(agent string) (SignInState, error) {
 		q.Set("state", s.state)
 		q.Set("originator", "codex_cli_rs")
 		s.st.URL = codexAuthorizeURL + "?" + q.Encode()
+	case "cursor":
+		// Cursor has no sign-in of its own to borrow: its CLI signs in
+		if err := startCursorSignIn(s); err != nil {
+			return SignInState{}, err
+		}
 	default:
 		return SignInState{}, fmt.Errorf("magpie can't sign in to %s accounts", agent)
 	}
 
-	mux := http.NewServeMux()
-	mux.HandleFunc("/", s.callback)
-	s.srv = &http.Server{Handler: mux, ReadHeaderTimeout: 10 * time.Second}
-	go func() { _ = s.srv.Serve(ln) }()
+	if ln != nil {
+		mux := http.NewServeMux()
+		mux.HandleFunc("/", s.callback)
+		s.srv = &http.Server{Handler: mux, ReadHeaderTimeout: 10 * time.Second}
+		go func() { _ = s.srv.Serve(ln) }()
+	}
 	go func() {
 		select {
 		case <-s.done:
@@ -222,6 +230,12 @@ func (s *signInFlow) finish(out SignInState) bool {
 	s.st = out
 	s.mu.Unlock()
 	close(s.done)
+	if s.stop != nil {
+		s.stop()
+	}
+	if s.srv == nil {
+		return true
+	}
 	go func() {
 		// after the browser has had its page
 		time.Sleep(time.Second)

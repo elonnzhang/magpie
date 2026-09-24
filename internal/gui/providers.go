@@ -144,6 +144,9 @@ func providerInfo(p provider.Provider, agents []*agent.Agent) providerJSON {
 		out.Account = &accountJSON{Account: *a, Agent: a.Agent, Name: a.Agent, Icon: "generic"}
 		if ag, err := agent.Find(a.Agent); err == nil {
 			out.Account.Name, out.Account.Icon = ag.Name, ag.Icon
+		} else if a.Agent == "cursor" {
+			// cursor-agent runs behind the gateway, not as an agent magpie configures
+			out.Account.Name, out.Account.Icon = "Cursor CLI", "cursor"
 		}
 		out.Account.Logins = provider.Logins(a.Agent)
 	}

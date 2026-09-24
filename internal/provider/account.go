@@ -542,6 +542,9 @@ func Accounts() []Provider {
 	if p, ok := copilotAccount(cfg); ok {
 		out = append(out, p)
 	}
+	if p, ok := cursorAccount(); ok {
+		out = append(out, p)
+	}
 	return out
 }
 

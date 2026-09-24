@@ -6,6 +6,8 @@ package claudebridge
 import (
 	"bufio"
 	"bytes"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -97,10 +99,11 @@ func RunMCP(args []string) error {
 					rpcErr = map[string]any{"code": -32602, "message": err.Error()}
 					break
 				}
+				// Claude Code names the call it is making; an agent that does
+				// not (Cursor) gets an id of the helper's own.
 				id, _ := p.Meta["claudecode/toolUseId"].(string)
 				if id == "" {
-					rpcErr = map[string]any{"code": -32602, "message": "Claude Code omitted claudecode/toolUseId"}
-					break
+					id = newCallID()
 				}
 				payload, _ := json.Marshal(callbackRequest{ToolCallID: id, Name: p.Name, Arguments: p.Arguments})
 				httpReq, _ := http.NewRequest(http.MethodPost, callbackURL, bytes.NewReader(payload))
@@ -135,4 +138,10 @@ func RunMCP(args []string) error {
 		}(req)
 	}
 	return in.Err()
+}
+
+func newCallID() string {
+	var b [12]byte
+	_, _ = rand.Read(b[:])
+	return "call_" + hex.EncodeToString(b[:])
 }

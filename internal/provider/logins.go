@@ -372,6 +372,7 @@ func ForgetLogin(agent, user string) error {
 func forgetAccountCaches() {
 	forgetClaudeCredential()
 	forgetClaudeStatus()
+	forgetCursorStatus()
 	subscriptionUsageCache.Lock()
 	subscriptionUsageCache.at = time.Time{}
 	subscriptionUsageCache.data = nil

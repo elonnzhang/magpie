@@ -649,6 +649,7 @@ function accountPlan(a) {
   if (a.agent === "codex") return "ChatGPT" + (a.plan ? " " + a.plan[0].toUpperCase() + a.plan.slice(1) : "");
   if (a.agent === "copilot") return "GitHub";
   if (a.agent === "claude") return "Claude" + (a.plan ? " " + a.plan[0].toUpperCase() + a.plan.slice(1) : "");
+  if (a.agent === "cursor") return "Cursor" + (a.plan ? " " + a.plan[0].toUpperCase() + a.plan.slice(1) : "");
   return t("signed in");
 }
 
@@ -1159,7 +1160,7 @@ function subTile(x) {
   b.append(icon(x.icon));
   const tt = el("span", "tt");
   tt.append(el("span", "n", t("{name} subscription", { name: x.name })),
-    el("span", "s", n ? t(n === 1 ? "1 account · add another" : "{n} accounts · add another", { n }) : x.plans));
+    el("span", "s", !n ? x.plans : x.single ? t("signed in · switch account") : t(n === 1 ? "1 account · add another" : "{n} accounts · add another", { n })));
   b.append(tt);
   b.onclick = () => startSignIn(x.agent);
   return b;
@@ -1465,7 +1466,7 @@ function renderEditor(p, presetID) {
     // the sign-in belongs to the agent; magpie only borrows it
     const a = p.account;
     if (subOf(a.agent)) {
-      ed.append(...field(t("Accounts"), renderAccounts(a), t("{agent} signs in to the first. Tick more and the gateway moves on to the next when the one before it is out of quota. Sessions already running keep theirs until restarted.", { agent: a.agentName })));
+      ed.append(...field(t("Accounts"), renderAccounts(a), subOf(a.agent).single ? t("{agent} keeps one account; the gateway runs it for every request. Signing in to another replaces it.", { agent: a.agentName }) : t("{agent} signs in to the first. Tick more and the gateway moves on to the next when the one before it is out of quota. Sessions already running keep theirs until restarted.", { agent: a.agentName })));
     } else {
       const acct = el("div", "acct");
       acct.append(icon(a.agentIcon), el("span", "n", a.user), el("span", "plan", accountPlan(a)));
@@ -1843,6 +1844,8 @@ function fallbackHint(p) {
 const SUBS = [
   { agent: "claude", name: "Claude", icon: "claude-color", plans: "Pro · Max · Team" },
   { agent: "codex", name: "ChatGPT", icon: "openai", plans: "Plus · Pro · Business" },
+  // cursor-agent keeps one account; signing in again replaces it
+  { agent: "cursor", name: "Cursor", icon: "cursor", plans: "Pro · Ultra · Teams", single: true },
 ];
 const subOf = (agent) => SUBS.find((x) => x.agent === agent);
 let signing = null; // the sign-in under way: { id, agent, url, state, error }
@@ -1971,7 +1974,7 @@ function renderAccounts(a) {
     const add = el("button", "acc add");
     const ic = el("span", "dot");
     ic.append(svg(PLUS, 10, 1.8));
-    add.append(ic, el("span", "n", t("Add another {name} account", { name: sub.name })));
+    add.append(ic, el("span", "n", t(sub.single ? "Sign in to another {name} account" : "Add another {name} account", { name: sub.name })));
     add.onclick = () => startSignIn(a.agent);
     list.append(add);
   }
