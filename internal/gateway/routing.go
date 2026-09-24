@@ -5,9 +5,10 @@ package gateway
 // least used first. Whichever goes first, a key that suits the request
 // still goes before one that doesn't, and one resting after a failure
 // waits at the back for as long as its failure says: out of credit for
-// half an hour, out of quota until it says it resets, rate limited until
-// it says to try again, and otherwise a minute, longer each time it
-// fails again.
+// half an hour, out of quota until it says it resets — or, for a
+// subscription, until the window it filled does — rate limited until it
+// says to try again, and otherwise a minute, longer each time it fails
+// again.
 
 import (
 	"math"
@@ -66,7 +67,9 @@ var (
 	// creditWords: the account or key has no money left.
 	creditWords = regexp.MustCompile(`(?i)insufficient.?(balance|credit|fund)|balance|credit|billing|payment|arrear|overdue|suspended|余额|欠费|充值|账户.*(不足|停)`)
 	// quotaWords: it has used up what its plan allows for now.
-	usedUpWords = regexp.MustCompile(`(?i)quota|usage.?limit|limit.?reached|exceeded.*(plan|limit)|额度|用量|套餐|上限`)
+	usedUpWords = regexp.MustCompile(`(?i)quota|usage.?limit|limit.?reached|hit your .*limit|limit.{0,24}resets|exceeded.*(plan|limit)|额度|用量|套餐|上限`)
+	// resetsWords: Claude Code's "usage limit reached|<when it resets>".
+	resetsWords = regexp.MustCompile(`(?i)limit reached\|(\d{10})\b`)
 )
 
 // Why a candidate failed, as rest tells it.
@@ -91,16 +94,23 @@ func failure(status int, body []byte) string {
 }
 
 // restAfter sets a failed candidate aside for as long as its failure says.
-func (s *Server) restAfter(rest string, status int, header http.Header, body []byte) {
+func (s *Server) restAfter(c candidate, status int, header http.Header, body []byte) {
 	now := time.Now()
 	d := fallbackCooldown
-	switch failure(status, body) {
+	why := failure(status, body)
+	switch why {
 	case failCredit:
 		d = creditRest
 	case failQuota:
 		d = quotaRest
 		if w := retryAfter(header, now); w > 0 {
 			d = w
+		} else if m := resetsWords.FindSubmatch(body); m != nil {
+			if n, _ := strconv.ParseInt(string(m[1]), 10, 64); time.Unix(n, 0).After(now) {
+				d = time.Unix(n, 0).Sub(now)
+			}
+		} else if t := c.full(now); !t.IsZero() {
+			d = t.Sub(now)
 		}
 	case failRate:
 		if w := retryAfter(header, now); w > 0 {
@@ -108,14 +118,31 @@ func (s *Server) restAfter(rest string, status int, header http.Header, body []b
 		}
 	default:
 		routed.Lock()
-		routed.failures[rest]++
-		n := routed.failures[rest]
+		routed.failures[c.rest]++
+		n := routed.failures[c.rest]
 		routed.Unlock()
 		d = min(fallbackCooldown<<min(n-1, 10), longestRetry)
+		// a subscription that failed with a window full is out of it,
+		// whatever it said
+		if t := c.full(now); !t.IsZero() {
+			d = t.Sub(now)
+		}
+	}
+	if a := c.p.Account; a != nil && why != failOther {
+		provider.StaleAllowance(a.Agent, a.User) // ask again what it has left
 	}
 	restingUntil.Lock()
-	restingUntil.m[rest] = now.Add(d)
+	restingUntil.m[c.rest] = now.Add(d)
 	restingUntil.Unlock()
+}
+
+// full is when a subscription whose allowance, as last known, has a window
+// used up for the candidate's model renews; zero otherwise.
+func (c candidate) full(now time.Time) time.Time {
+	if c.p.Account == nil {
+		return time.Time{}
+	}
+	return allowances(c.p.Account.Agent)[c.p.Account.User].Full(c.model, usedShare, now)
 }
 
 // retryAfter is when a vendor says to try again: Retry-After, in seconds
@@ -167,20 +194,30 @@ func route(p provider.Provider, cs []candidate, model string, from provider.Prot
 	if p.Account != nil {
 		known = allowances(p.Account.Agent)
 	}
-	allowanceOf := func(c candidate) provider.Allowance { // zero when not known
-		if c.p.Account == nil {
-			return provider.Allowance{}
-		}
-		return known[c.p.Account.User]
+	now := time.Now()
+	type left struct {
+		used   float64
+		renews []time.Time
 	}
-	shareOf := func(c candidate) float64 { return allowanceOf(c).Used }
+	lefts := map[string]left{}
+	for _, c := range cs {
+		if c.p.Account != nil {
+			u, r := known[c.p.Account.User].For(c.model, now)
+			lefts[c.rest] = left{u, r}
+		}
+	}
+	shareOf := func(c candidate) float64 { return lefts[c.rest].used }
 	switch p.Routing {
 	case "":
 		// of those with quota to spare, the one whose allowance renews
 		// soonest, since what it has left is lost then, while one renewing
-		// later keeps; the first of them while that holds, keeping the
-		// vendor's prompt cache warm. Past that, whichever has the most
-		// left, and one all but used up only when nothing else can take it
+		// later keeps: the biggest window decides — the week, not the five
+		// hours in it — and the next one only when that renews in the
+		// same hour. Those alike stay in their order, keeping the vendor's
+		// prompt cache warm. Past that, whichever has the most left, and
+		// one all but used up only when nothing else can take it. Only the
+		// windows that count the model do: Opus's own weekly allowance
+		// being used up leaves Sonnet alone.
 		var fine, low, spent []candidate
 		for _, c := range cs {
 			switch v := shareOf(c); {
@@ -192,20 +229,25 @@ func route(p provider.Provider, cs []candidate, model string, from provider.Prot
 				fine = append(fine, c)
 			}
 		}
-		now := time.Now()
-		renews := func(c candidate) time.Time { // to the hour, so a few minutes don't reorder
-			t := allowanceOf(c).Resets
-			if !t.After(now) {
-				return time.Time{}
-			}
-			return t.Truncate(time.Hour)
-		}
 		sort.SliceStable(fine, func(i, j int) bool {
-			ri, rj := renews(fine[i]), renews(fine[j])
-			if ri.IsZero() || rj.IsZero() { // not known: after those known
-				return !ri.IsZero() && rj.IsZero()
+			ri, rj := lefts[fine[i].rest].renews, lefts[fine[j].rest].renews
+			for k := 0; k < len(ri) || k < len(rj); k++ {
+				var a, b time.Time // to the hour, so a few minutes don't reorder
+				if k < len(ri) {
+					a = ri[k].Truncate(time.Hour)
+				}
+				if k < len(rj) {
+					b = rj[k].Truncate(time.Hour)
+				}
+				switch {
+				case a.Equal(b):
+					continue
+				case a.IsZero() || b.IsZero(): // not known: after those known
+					return b.IsZero()
+				}
+				return a.Before(b)
 			}
-			return ri.Before(rj)
+			return false
 		})
 		for _, l := range [][]candidate{low, spent} {
 			sort.SliceStable(l, func(i, j int) bool {
@@ -224,7 +266,6 @@ func route(p provider.Provider, cs []candidate, model string, from provider.Prot
 	case provider.LeastUsed:
 		// a subscription by the share of its allowance used, as the vendor
 		// says; then, and for keys, by what magpie sent it lately
-		now := time.Now()
 		routed.Lock()
 		tokens := make([]float64, len(cs))
 		for i, c := range cs {

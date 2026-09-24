@@ -126,7 +126,7 @@ func TestLoginUsageEachAccount(t *testing.T) {
 	if len(u) != 2 || u["me@example.com"].Windows[0].Used != 12 || u["work@example.com"].Windows[0].Used != 97 || u["work@example.com"].Windows[0].Name != "5 hours" {
 		t.Fatalf("usage %+v", u)
 	}
-	if len(LoginUsage(context.Background(), "copilot")) != 0 {
+	if len(LoginUsage(context.Background(), "opencode")) != 0 {
 		t.Fatal("usage for an agent without accounts")
 	}
 }
