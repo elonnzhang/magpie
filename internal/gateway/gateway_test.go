@@ -370,6 +370,18 @@ func TestPassthroughRewritesModel(t *testing.T) {
 	}
 }
 
+func TestChatPassthroughSendsDeveloperAsSystem(t *testing.T) {
+	f := &fake{t: t, ctype: "application/json", reply: `{"id":"c1","choices":[]}`}
+	setup(t, provider.Chat, f)
+	code, body := post(t, "/v1/chat/completions", `{"model":"m1","reasoning_effort":"high","messages":[{"role":"developer","content":"be brief"},{"role":"user","content":"a developer asks"}]}`)
+	if code != 200 {
+		t.Fatalf("%d %s", code, body)
+	}
+	if !bytes.Contains(f.got, []byte(`{"content":"be brief","role":"system"}`)) || bytes.Contains(f.got, []byte(`"role":"developer"`)) || !bytes.Contains(f.got, []byte(`"content":"a developer asks"`)) {
+		t.Errorf("forwarded body: %s", f.got)
+	}
+}
+
 func TestErrorsAndUnknownModel(t *testing.T) {
 	f := &fake{t: t, ctype: "application/json", code: 402, reply: `{"error":{"message":"Insufficient Balance","type":"x"}}`}
 	setup(t, provider.Chat, f)

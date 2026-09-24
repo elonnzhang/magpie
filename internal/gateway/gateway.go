@@ -414,7 +414,11 @@ func (s *Server) forward(ctx context.Context, p provider.Provider, to provider.P
 // model name swapped for the provider's own. The token counts the reply
 // carries are read on the way past into u.
 func (s *Server) passthrough(w http.ResponseWriter, r *http.Request, p provider.Provider, proto provider.Protocol, model string, body []byte, u *Usage) (int, string) {
-	res, err := s.forward(r.Context(), p, proto, pathOf(proto), p.Prepare(rewriteModel(body, model)), r.Header)
+	body = rewriteModel(body, model)
+	if proto == provider.Chat {
+		body = developerAsSystem(body)
+	}
+	res, err := s.forward(r.Context(), p, proto, pathOf(proto), p.Prepare(body), r.Header)
 	if err != nil {
 		return writeError(w, proto, 502, p.Name+": "+err.Error()), err.Error()
 	}
@@ -704,6 +708,38 @@ func modelOf(body []byte) string {
 // rewriteModel swaps the model field, keeping every other field as it was.
 func rewriteModel(body []byte, model string) []byte {
 	return withFields(body, map[string]any{"model": model})
+}
+
+// developerAsSystem turns "developer" messages into "system" ones. Agents
+// such as Pi send the developer role to reasoning models, which OpenAI
+// accepts, but other Chat Completions backends (DeepSeek among them) reject
+// the whole request; every backend accepts system, OpenAI included.
+func developerAsSystem(body []byte) []byte {
+	if !bytes.Contains(body, []byte(`"developer"`)) {
+		return body
+	}
+	dec := json.NewDecoder(bytes.NewReader(body))
+	dec.UseNumber()
+	var m map[string]any
+	if err := dec.Decode(&m); err != nil {
+		return body
+	}
+	msgs, _ := m["messages"].([]any)
+	changed := false
+	for _, v := range msgs {
+		if msg, ok := v.(map[string]any); ok && msg["role"] == "developer" {
+			msg["role"] = "system"
+			changed = true
+		}
+	}
+	if !changed {
+		return body
+	}
+	out, err := json.Marshal(m)
+	if err != nil {
+		return body
+	}
+	return out
 }
 
 // withFields sets top-level fields, keeping every other field as it was.
