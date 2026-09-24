@@ -214,6 +214,27 @@ async function load() {
   } catch (e) {
     status(e.message, "err");
   }
+  renderUpdateBadge();
+}
+
+// renderUpdateBadge shows the header's Update pill once a newer magpie is
+// downloaded (a click restarts into it) or, where magpie can't replace
+// itself, out (a click opens the release page).
+async function renderUpdateBadge() {
+  const b = $("#update");
+  const u = await api("update").catch(() => null);
+  const on = !!u && (u.state === "ready" || u.state === "available");
+  if (b.hidden !== !on) b.hidden = !on;
+  if (!on || b.classList.contains("busy")) return;
+  b.querySelector("span").textContent = t("Update");
+  b.title = u.state === "ready" ? t("Restart to update to {v}", { v: u.latest }) : t("{v} is out", { v: u.latest });
+  b.onclick = () => {
+    if (u.state === "ready") {
+      b.classList.add("busy");
+      b.querySelector("span").textContent = t("Restarting…");
+    }
+    api("update/install", {}).catch(() => b.classList.remove("busy"));
+  };
 }
 
 // ---------- picker ----------
@@ -572,6 +593,11 @@ async function loadProviders() {
 // One row per provider: logo, name, the agents pointed at it, key status.
 // Everything else lives in the editor, a dialog over the page.
 function renderProviders() {
+  // Rebuilding the list empties the page for a moment, which clamps its
+  // scroll to the top; put it back so closing the editor leaves the reader
+  // where they were.
+  const view = $("#view-providers"), top = view.scrollTop;
+  closeProtoMenu();
   const list = $("#providers");
   list.replaceChildren();
   list.hidden = !providers.providers.length;
@@ -606,7 +632,7 @@ function renderProviders() {
     const chev = el("span", "chev");
     chev.append(svg(CHEV_R, 11, 1.7));
     row.append(icon(p.icon || "generic"), who, uses, key, chev);
-    row.onclick = () => { editing = open ? null : p.id; draft = null; adding = false; renderProviders(); };
+    row.onclick = () => { editing = open ? null : p.id; draft = null; renderProviders(); }; // the preset sheet stays as it is under the dialog
     list.append(row);
     if (open) dialog = renderEditor(p);
   }
@@ -614,6 +640,7 @@ function renderProviders() {
   dialog = renderAdd() || dialog;
   if (importing) dialog = renderImport(importing);
   if (dialog) openModal(dialog); else closeModal();
+  view.scrollTop = top;
 }
 
 // Sign-ins magpie found but leaves alone, so nobody wonders why an agent that
@@ -1146,7 +1173,7 @@ function tile(pr) {
     ck.append(svg(CHECK, 10, 2));
     b.append(ck);
     b.title = t("{name} is already added — open it", { name: pr.name });
-    b.onclick = () => { editing = pr.id; adding = false; draft = null; renderProviders(); };
+    b.onclick = () => { editing = pr.id; draft = null; renderProviders(); };
   } else {
     b.onclick = () => { editing = { preset: pr.id }; draft = null; renderProviders(); };
   }
@@ -1579,6 +1606,23 @@ function renderEditor(p, presetID) {
   return ed;
 }
 
+// fetchImportIcon asks the server to download the vendor's own logo, named
+// by the link. It swaps the header mark when it lands; a failure is silent
+// (the generic outline stays), since the icon is decoration, not the deal.
+function fetchImportIcon(p, head, ed) {
+  const host = hostOf(p.iconUrl);
+  const note = el("div", "hint", t("Fetching {host}’s icon…", { host: host || t("the vendor") }));
+  ed.append(note);
+  api("import/icon", { url: p.iconUrl }).then((r) => {
+    p.icon = r.icon;
+    delete p.iconUrl;
+    const old = head.firstChild;
+    const now = icon(p.icon);
+    old ? old.replaceWith(now) : head.prepend(now);
+    note.remove();
+  }).catch(() => note.remove());
+}
+
 // renderImport: what a magpie://import link would add, for the user to
 // check. Nothing is saved until they press Add; the key stays hidden unless
 // they ask to see it.
@@ -1626,6 +1670,12 @@ function renderImport(im) {
     ed.append(...field(t("Models"), chips, ""));
   }
   if (im.replaces) ed.append(el("div", "warnbox soft", t("Replaces your {name}, key and all.", { name: im.replaces })));
+
+  // The link may name the vendor's own logo — an explicit icon= wins over
+  // whatever the catalog or preset gave. magpie fetches it here (the dialog
+  // being open is the confirmation), once, quietly, and only ever into its
+  // icons folder; the fallback mark stays when it fails.
+  if (p.iconUrl) fetchImportIcon(p, h, ed);
 
   const addBtn = el("button", "text primary", t(im.replaces ? "Replace" : "Add"));
   const add = () => {
@@ -2109,25 +2159,94 @@ function renderKeyAccounts(p) {
 // key for Anthropic and another for OpenAI; a key set to one is used on
 // that endpoint only, and the gateway sends each request to the key that
 // suits it. Only offered when the provider has more than one endpoint.
-const PROTO_NAMES = { "": "Any protocol", anthropic: "Anthropic only", chat: "Chat Completions only", responses: "Responses only" };
+const PROTO_OPTS = [
+  { v: "", pill: "Any protocol", name: "Any protocol", note: "Used on every endpoint" },
+  { v: "anthropic", pill: "Anthropic", name: "Anthropic", note: "Messages API · Claude Code, Claude" },
+  { v: "chat", pill: "Chat", name: "Chat Completions", note: "OpenAI API · GPT models, most agents" },
+  { v: "responses", pill: "Responses", name: "Responses", note: "OpenAI Responses API · Codex" },
+];
+
+// protoPicker is the key row's protocol badge; clicking it drops a small menu
+// that says what each choice is for.
 function protoPicker(p, value, onChange) {
+  value = value || "";
   const have = ["anthropic", "chat", "responses"].filter((x) => p[x]);
   if (have.length < 2 && !value) return null;
-  // a pill as wide as its words, the native menu laid over it
-  const pill = el("label", "proto" + (value ? " set" : ""));
+  const opts = PROTO_OPTS.filter((o) => !o.v || have.includes(o.v) || o.v === value);
+  const pill = el("button", "proto" + (value ? " set" : ""));
+  pill.type = "button";
   pill.title = t("Some relays give out a key per protocol. Set it here and the gateway sends each request to the key that fits: Claude models to the Anthropic key, GPT models to the OpenAI one.");
-  const text = el("span", "", t(PROTO_NAMES[value]));
-  const sel = el("select");
-  for (const v of Object.keys(PROTO_NAMES).filter((x) => !x || have.includes(x) || x === value)) {
-    const o = el("option", "", t(PROTO_NAMES[v]));
-    o.value = v;
-    o.selected = v === value;
-    sel.append(o);
-  }
-  sel.onchange = () => { text.textContent = t(PROTO_NAMES[sel.value]); pill.classList.toggle("set", !!sel.value); onChange(sel.value); };
-  sel.onclick = (e) => e.stopPropagation();
-  pill.append(text, svg(CHEV, 11, 1.6), sel);
+  const paint = () => pill.replaceChildren(el("span", "", t(PROTO_OPTS.find((o) => o.v === value).pill)), svg(CHEV, 11, 1.6));
+  paint();
+  pill.onclick = (e) => {
+    e.stopPropagation();
+    if (pill.classList.contains("open")) return closeProtoMenu();
+    openProtoMenu(pill, opts, value, (v) => {
+      if (v === value) return;
+      value = v;
+      pill.classList.toggle("set", !!v);
+      paint();
+      onChange(v);
+    });
+  };
   return pill;
+}
+
+let protoMenu = null;
+function closeProtoMenu() {
+  if (!protoMenu) return;
+  protoMenu.anchor.classList.remove("open");
+  protoMenu.box.remove();
+  document.removeEventListener("mousedown", protoMenu.outside, true);
+  document.removeEventListener("keydown", protoMenu.keys, true);
+  document.removeEventListener("scroll", closeProtoMenu, true);
+  removeEventListener("resize", closeProtoMenu);
+  protoMenu = null;
+}
+function openProtoMenu(anchor, opts, value, choose) {
+  closeProtoMenu();
+  const box = el("div", "pop proto-menu");
+  box.setAttribute("role", "menu");
+  box.append(el("div", "pm-head", t("Protocol this key speaks")));
+  const items = opts.map((o) => {
+    const b = el("button", "pm-item" + (o.v === value ? " on" : ""));
+    b.type = "button";
+    b.setAttribute("role", "menuitemradio");
+    b.setAttribute("aria-checked", o.v === value);
+    const tick = el("span", "pm-tick");
+    if (o.v === value) tick.append(svg(CHECK, 12, 1.9));
+    const words = el("span", "pm-words");
+    words.append(el("span", "pm-name", t(o.name)), el("span", "pm-note", t(o.note)));
+    b.append(tick, words);
+    b.onclick = (e) => { e.stopPropagation(); closeProtoMenu(); choose(o.v); };
+    b.onmouseenter = () => b.focus({ preventScroll: true });
+    box.append(b);
+    return b;
+  });
+  document.body.append(box);
+  // under the pill, or above it when the window runs out
+  const r = anchor.getBoundingClientRect(), w = box.offsetWidth, h = box.offsetHeight, pad = 8;
+  let y = r.bottom + 5;
+  if (y + h > innerHeight - pad && r.top - 5 - h >= pad) { y = r.top - 5 - h; box.classList.add("up"); }
+  box.style.left = Math.max(pad, Math.min(r.left, innerWidth - w - pad)) + "px";
+  box.style.top = Math.max(pad, y) + "px";
+  anchor.classList.add("open");
+  const outside = (e) => { if (!box.contains(e.target) && !anchor.contains(e.target)) closeProtoMenu(); };
+  const keys = (e) => {
+    const i = items.indexOf(document.activeElement);
+    if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); closeProtoMenu(); anchor.focus(); }
+    else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault(); e.stopPropagation();
+      const n = items.length, from = i < 0 ? (e.key === "ArrowDown" ? n - 1 : 0) : i;
+      items[(from + (e.key === "ArrowDown" ? 1 : n - 1)) % n].focus();
+    }
+  };
+  document.addEventListener("mousedown", outside, true);
+  document.addEventListener("keydown", keys, true);
+  document.addEventListener("scroll", closeProtoMenu, true); // it is pinned to the window; the dialog moving under it would strand it
+  addEventListener("resize", closeProtoMenu);
+  protoMenu = { box, anchor, outside, keys };
+  (items.find((b) => b.classList.contains("on")) || items[0]).focus({ preventScroll: true });
 }
 
 // keyPill is a key provider's row badge: the key in use, or how many are.
@@ -2616,6 +2735,7 @@ else { $("#nav").remove(); }
 // the panel comes back into view.
 document.addEventListener("visibilitychange", () => { if (!document.hidden) load(); });
 window.addEventListener("focus", load);
+setInterval(renderUpdateBadge, 15 * 60 * 1000); // a window left open still hears of a new version
 // Opened on a magpie://import link: fetch what it describes (once — the
 // id is spent) and ask before adding it.
 if (mode === "window" && params.get("import")) {
