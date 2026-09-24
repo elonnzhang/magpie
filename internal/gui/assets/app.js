@@ -1633,6 +1633,23 @@ function renderEditor(p, presetID) {
   return ed;
 }
 
+// fetchImportIcon asks the server to download the vendor's own logo, named
+// by the link. It swaps the header mark when it lands; a failure is silent
+// (the generic outline stays), since the icon is decoration, not the deal.
+function fetchImportIcon(p, head, ed) {
+  const host = hostOf(p.iconUrl);
+  const note = el("div", "hint", t("Fetching {host}’s icon…", { host: host || t("the vendor") }));
+  ed.append(note);
+  api("import/icon", { url: p.iconUrl }).then((r) => {
+    p.icon = r.icon;
+    delete p.iconUrl;
+    const old = head.firstChild;
+    const now = icon(p.icon);
+    old ? old.replaceWith(now) : head.prepend(now);
+    note.remove();
+  }).catch(() => note.remove());
+}
+
 // renderImport: what a magpie://import link would add, for the user to
 // check. Nothing is saved until they press Add; the key stays hidden unless
 // they ask to see it.
@@ -1680,6 +1697,12 @@ function renderImport(im) {
     ed.append(...field(t("Models"), chips, ""));
   }
   if (im.replaces) ed.append(el("div", "warnbox soft", t("Replaces your {name}, key and all.", { name: im.replaces })));
+
+  // The link may name the vendor's own logo — an explicit icon= wins over
+  // whatever the catalog or preset gave. magpie fetches it here (the dialog
+  // being open is the confirmation), once, quietly, and only ever into its
+  // icons folder; the fallback mark stays when it fails.
+  if (p.iconUrl) fetchImportIcon(p, h, ed);
 
   const addBtn = el("button", "text primary", t(im.replaces ? "Replace" : "Add"));
   const add = () => {

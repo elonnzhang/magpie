@@ -197,6 +197,8 @@ const I18N = {
     "Get a key ↗": "获取密钥 ↗",
     "Import link": "导入链接",
     "from a link": "来自链接",
+    "Fetching {host}’s icon…": "正在获取 {host} 的图标…",
+    "the vendor": "该厂商",
     "Close": "关闭",
     "This link can't be imported: {e}": "这个链接无法导入：{e}",
     "Added from a link. Your prompts and this key will go to {hosts}; add it only if you trust the site that sent you here.": "这是从链接导入的。你的提示词和这个密钥会发往 {hosts}；只有信任发来链接的网站时才添加。",
