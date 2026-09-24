@@ -163,8 +163,8 @@ func affine(scope, mode string, rotate bool, in http.Header, from provider.Proto
 func after(cs []candidate, pl planned, at int) ([]candidate, planned) {
 	for d := 1; d < len(cs); d++ {
 		i := (at + d) % len(cs)
-		if pl.order[i].Rest != nil {
-			continue
+		if pl.order[i].Rest != nil || pl.order[i].Aside {
+			continue // a turn goes round the keys routed over only
 		}
 		if i > 0 {
 			cs = append(append([]candidate{cs[i]}, cs[:i]...), cs[i+1:]...)

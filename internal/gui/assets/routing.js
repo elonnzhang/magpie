@@ -13,6 +13,13 @@
   const NS = "http://www.w3.org/2000/svg";
   const still = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
   const shown = () => !$("#view-routing").hidden && !document.hidden;
+  // steady redraws a part of the page where the reader is: WebKit has no
+  // scroll anchoring, and a part emptied and filled again, measured between,
+  // pulls the page up to what was left of it for that moment
+  function steady(fn) {
+    const v = $("#view-routing"), top = v.scrollTop;
+    try { return fn(); } finally { if (v.scrollTop !== top) v.scrollTop = top; }
+  }
 
   // ---------- the stage ----------
 
@@ -215,6 +222,8 @@
       else if (smart(x) && x.known && group(x) === "low") out.push(t("{who} is at {n} — kept for when the others can't.", { who: who(x), n: pct(x.used) }));
       else if (smart(x) && !x.known && someKnown) out.push(t("{who}: what it has left isn't known yet, so it goes after those known.", { who: who(x) }));
     }
+    const pooled = r.order.find((x) => !x.aside && x.kind === "key");
+    for (const x of r.order.filter((x) => x.aside)) out.push(t("{who} is made for {api}, not {other} as the keys routed over are, so it isn't one of them: it's tried after them.", { who: who(x), api: API[x.speaks] || x.speaks || t("any API"), other: API[pooled?.speaks] || pooled?.speaks || t("any API") }));
     for (const x of r.left || []) out.push(t("{who} is left out: its plan doesn't list {model}.", { who: who(x), model: x.model }));
     return out;
   }
@@ -365,6 +374,25 @@
     }
   }
 
+  // seated: a route's accounts and keys each in a place of its own, not in
+  // the order routing weighed them this time — the group's members in the
+  // group's order, a provider's fallbacks after its own, then by name — so
+  // the column holds still while the one put first moves.
+  function seated(r) {
+    const members = r.group?.members || [];
+    const left = new Set((r.left || []).map((w) => w.id));
+    const key = (w) => {
+      const m = members.findIndex((x) => x.startsWith(w.provider + "/"));
+      return [left.has(w.id) ? 1 : 0, w.fallback ? 1 : 0, m < 0 ? members.length : m, w.name || w.provider, w.aside ? 1 : 0, w.who || "", w.id];
+    };
+    const cmp = (a, b) => {
+      const x = key(a), y = key(b);
+      for (let i = 0; i < x.length; i++) if (x[i] !== y[i]) return typeof x[i] === "number" ? x[i] - y[i] : String(x[i]).localeCompare(String(y[i]));
+      return 0;
+    };
+    return [...r.order, ...(r.left || [])].sort(cmp);
+  }
+
   const setOf = (r) => [...r.order, ...(r.left || [])].map((w) => w.id).sort().join("\n");
 
   // staged: the routes the stage shows — a picked one alone; else those
@@ -430,6 +458,10 @@
   function sync(force) {
     const rs = staged();
     if (!rs.length) return;
+    if (force) return steady(() => rebuild(rs, true));
+    rebuild(rs, false);
+  }
+  function rebuild(rs, force) {
     cur = routes.get((pinned || rs[rs.length - 1]).id) || pinned || rs[rs.length - 1];
     if (force) {
       for (const row of rows.values()) row.wire.remove();
@@ -459,7 +491,7 @@
     const ids = [], wOf = new Map(), rOf = new Map();
     for (const k of sets) {
       const r = latest.get(k);
-      for (const w of [...r.order, ...(r.left || [])]) if (!ids.includes(w.id)) ids.push(w.id);
+      for (const w of seated(r)) if (!ids.includes(w.id)) ids.push(w.id);
     }
     for (const r of rs) for (const w of [...r.order, ...(r.left || [])]) { wOf.set(w.id, w); rOf.set(w.id, r.id); }
     const before = new Map([...rows].map(([id, row]) => [id, row.li.getBoundingClientRect().top]));
@@ -548,6 +580,7 @@
           : soon ? t("{n} used · renews in {d}", { n: pct(w.used), d: dur(soon - n) }) : t("{n} used", { n: pct(w.used) });
       } else if (w.kind === "account") s = t("what's left not known yet");
       else if (w.routing === "usage") s = t("{n} tokens lately", { n: tokens(w.tokens || 0) });
+      else if (w.aside) s = t("{api} only · after the others", { api: API[w.speaks] || w.speaks || t("any API") });
       else if (w.speaks) s = t("{api} only", { api: API[w.speaks] || w.speaks });
       else s = w.kind === "key" ? t("API key") : t("one key");
       if (row.st.textContent !== s) row.st.textContent = s;
@@ -602,7 +635,7 @@
     cur = r;
     sync(true); renderAll();
     say(affWhy(r, true) || firstWhy(r));
-    if (pinned) box.scrollIntoView({ block: "nearest", behavior: still() ? "auto" : "smooth" });
+    if (pinned) { scrollOnPurpose(); box.scrollIntoView({ block: "nearest", behavior: still() ? "auto" : "smooth" }); }
   }
 
   // who answered a request, or what its agent got
@@ -1006,8 +1039,225 @@
     for (const s of stats.children) s.lastChild.textContent = t(s.dataset.label);
     hubText();
     if (loaded) { if (cur) { sync(true); renderAll(); } else empty(); }
+    renderGroups();
   }
   new MutationObserver(words).observe(document.documentElement, { attributes: true, attributeFilter: ["lang"] });
+
+  // ---------- routing groups ----------
+  // The groups agents can pick as one model (group/<id>): the user's, and
+  // those magpie found — one model several providers serve. Each is made,
+  // changed or removed here; changing one magpie found makes it the user's.
+  // Below them, each provider with several keys or accounts on, which
+  // routes over them already: how, and how long a conversation stays.
+  const gsec = el("div", "rt-gsec");
+  const gHead = el("div", "row-head"), gList = el("div", "list rt-groups");
+  const pHead = el("div", "row-head"), pList = el("div", "list rt-pools");
+  gsec.append(gHead, gList, pHead, pList);
+  more.prepend(gsec);
+  const ROUTE_OPTS = [["", "Smart"], ["order", "In order"], ["rotate", "In turn"], ["usage", "Least used"]];
+  const AFF_OPTS = [["", "Auto"], ["session", "Session"], ["turn", "Within a turn"], ["off", "Off"]];
+  const AFF_HINT = {
+    "": "A conversation stays with the account or key that answered it while what the vendor cached of it is worth keeping — within a turn always, across turns while it's fresh.",
+    session: "A conversation stays with the account or key that answered it for the whole session, while it can answer.",
+    turn: "A conversation stays put within a turn, while the agent sends tool results back; when you speak again, routing decides afresh.",
+    off: "Every request is routed afresh, whoever answered its conversation before.",
+  };
+  const GROUP_HINT = {
+    "": "Smart, over every member's accounts and keys together: of the subscriptions with quota to spare, the one whose allowance renews soonest goes first; one resting after a failure goes last.",
+    order: "In order: the first model until it can't answer, then the next — each over its own accounts or keys as its provider routes them.",
+    rotate: "In turn: each conversation's next turn goes to the next member's account or key, spreading the load.",
+    usage: "Least used first: the account or key with the most of its allowance left goes first.",
+  };
+  const slug = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+  let groups = null, gEdit = null; // gEdit: { id: "" for a new one, draft }
+  async function loadGroups() {
+    try { groups = await api("groups"); } catch { return; }
+    if (!gEdit && !gsec.contains(document.activeElement)) renderGroups(); // not under someone's hands
+  }
+  async function groupAction(action, body, ok) {
+    try {
+      groups = await api("groups/" + action, body);
+      gEdit = null;
+      renderGroups();
+      if (ok) status(ok, "ok");
+      load(); // the gateway's model list, the agents' pickers
+    } catch (e) { status(e.message, "err"); }
+  }
+  const modelOf = (id) => groups?.models.find((m) => m.id === id);
+  function memberLabel(g, id) {
+    const i = g.memberInfo?.find((x) => x.id === id), m = modelOf(id);
+    if (m) return `${m.providerName} · ${m.name || m.id}`;
+    return i?.name ? `${i.name} · ${i.model}` : id;
+  }
+  function renderGroups() {
+    if (groups) steady(drawGroups);
+  }
+  function drawGroups() {
+    const newBtn = el("button", "text", t("New group"));
+    newBtn.onclick = () => { gEdit = { id: "", draft: { name: "", members: [], routing: "", affinity: "" } }; renderGroups(); };
+    gHead.replaceChildren(el("span", "label", t("Routing groups")), el("span", "grow"), el("span", "note", t("models agents pick as one")), newBtn);
+    const rows = [];
+    if (gEdit && !gEdit.id) rows.push(groupEditor(null));
+    const shown = groups.groups.filter((g) => !g.hidden), hidden = groups.groups.filter((g) => g.hidden);
+    for (const g of shown) rows.push(gEdit?.id === g.id ? groupEditor(g) : groupRow(g));
+    if (!rows.length) rows.push(el("div", "none rt-gnone", t("No group yet. A model two of your providers serve becomes one on its own; New group makes one of any models you like.")));
+    if (hidden.length) {
+      const h = el("div", "rt-ghidden");
+      h.append(el("span", "", t("Removed:")));
+      for (const g of hidden) {
+        const b = el("button", "text", g.id.replace(/^auto-/, ""));
+        b.title = t("Bring it back");
+        b.onclick = () => groupAction("show", { id: g.id }, t("{name} is back", { name: g.id }));
+        h.append(b);
+      }
+      rows.push(h);
+    }
+    gList.replaceChildren(...rows);
+    renderPools();
+  }
+  function groupRow(g) {
+    const row = el("div", "rt-group" + (g.ready ? "" : " off"));
+    const ics = el("span", "ics");
+    ics.append(stackIcon([...new Map((g.memberInfo || []).filter((i) => i.provider).map((i) => [i.provider, i.icon])).values()]));
+    const main = el("div", "main");
+    const nm = el("div", "nm");
+    nm.append(el("b", "", g.name), el("code", "mdl", "group/" + g.id));
+    if (g.auto) nm.append(el("small", "auto", t("found by magpie")));
+    const sep = g.routing === "order" ? " → " : " · ";
+    const mem = el("div", "mem", g.members.map((id) => memberLabel(g, id)).join(sep));
+    main.append(nm, mem);
+    const m = ROUTE_OPTS.find(([id]) => id === (g.routing || "")) || ROUTE_OPTS[0];
+    const tags = el("span", "tags");
+    tags.append(el("span", "tag", t(m[1])));
+    if (g.affinity) tags.append(el("span", "tag", t(AFF_OPTS.find(([id]) => id === g.affinity)?.[1] || "")));
+    if (!g.ready) tags.append(el("span", "tag bad", t("no member ready")));
+    const edit = el("button", "text", t("Edit"));
+    edit.onclick = (e) => { e.stopPropagation(); open(); };
+    const open = () => { gEdit = { id: g.id, draft: { name: g.name, members: [...g.members], routing: g.routing || "", affinity: g.affinity || "" } }; renderGroups(); };
+    row.onclick = open;
+    row.append(ics, main, tags, edit);
+    return row;
+  }
+  function groupEditor(g) {
+    const d = gEdit.draft;
+    const ed = el("div", "editor rt-gedit");
+    const h = el("div", "ehead");
+    h.append(el("b", "", g ? g.name : t("New group")));
+    if (g?.auto) h.append(el("span", "note", t("found by magpie — saving a change makes it yours")));
+    ed.append(h);
+    const keys = (i) => { i.onkeydown = (e) => { e.stopPropagation(); if (e.key === "Escape") { gEdit = null; renderGroups(); } else if (e.key === "Enter" && i === name) save(); }; return i; };
+    const name = keys(input(d.name, t("e.g. Opus anywhere")));
+    const idHint = el("div", "hint");
+    const idOf = () => {
+      if (g) return g.id;
+      let id = slug(d.name) || "group", n = 1;
+      const base = id;
+      while (groups.groups.some((x) => x.id === id)) id = `${base}-${++n}`;
+      return id;
+    };
+    const showId = () => { idHint.textContent = t("Agents pick it as {id}", { id: "group/" + idOf() }); };
+    name.oninput = () => { d.name = name.value; showId(); };
+    const nw = el("div");
+    nw.append(name, idHint);
+    ed.append(el("label", "", t("Name")), nw);
+    showId();
+
+    // members, in order: the first is what an agent is told the model can do.
+    // More are picked with the model picker the agents use.
+    const box = el("div", "fallback");
+    const list = el("div", "fbl");
+    const addBtn = el("button", "rt-gadd");
+    addBtn.append(svg(PLUS, 11, 1.8), el("span", "", t("Add a model")));
+    const draw = () => {
+      list.replaceChildren();
+      d.members.forEach((id, i) => {
+        const m = modelOf(id);
+        const row = el("div", "fbrow");
+        const n = el("span", "n");
+        n.append(el("span", "", m ? m.name || m.id : id));
+        if (m) n.append(el("small", "", m.providerName));
+        row.append(el("span", "i", String(i + 1)), icon(m?.icon || "generic"), n, el("span", "grow"));
+        if (!m) { row.classList.add("off"); row.title = t("No provider serves {id} now; it is skipped", { id }); }
+        if (i) { const up = el("button", "text", t("Up")); up.onclick = () => { d.members.splice(i - 1, 0, d.members.splice(i, 1)[0]); draw(); }; row.append(up); }
+        const rm = el("button", "text", t("Remove"));
+        rm.onclick = () => { d.members.splice(i, 1); draw(); };
+        row.append(rm);
+        list.append(row);
+      });
+      addBtn.querySelector("span").textContent = t(d.members.length ? "Add another model" : "Add a model");
+    };
+    addBtn.onclick = (ev) => {
+      const options = groups.models.filter((x) => !d.members.includes(x.id))
+        .map((x) => ({ value: x.id, label: x.name || x.id, note: x.providerName, icon: x.icon, group: x.providerName, ref: x.id }));
+      openPicker({ id: "", name: "", fields: [] }, { key: "member", label: "model", value: "", options, onPick: (id) => {
+        if (id && !d.members.includes(id)) d.members.push(id);
+        draw();
+      } }, addBtn, ev);
+    };
+    box.append(list, addBtn);
+    draw();
+    const mw = el("div");
+    mw.append(box, el("div", "hint", t("The first answers for what the model can do. In order, they are tried top first.")));
+    ed.append(el("label", "", t("Models")), mw);
+
+    const rHint = el("div", "hint", t(GROUP_HINT[d.routing] || GROUP_HINT[""]));
+    const rw = el("div");
+    rw.append(segs(ROUTE_OPTS.map(([id, n]) => [id, t(n)]), d.routing, (v) => { d.routing = v; rHint.textContent = t(GROUP_HINT[v] || GROUP_HINT[""]); }), rHint);
+    ed.append(el("label", "", t("Routing")), rw);
+    const aHint = el("div", "hint", t(AFF_HINT[d.affinity] || AFF_HINT[""]));
+    const aw = el("div");
+    aw.append(segs(AFF_OPTS.map(([id, n]) => [id, t(n)]), d.affinity, (v) => { d.affinity = v; aHint.textContent = t(AFF_HINT[v] || AFF_HINT[""]); }), aHint);
+    ed.append(el("label", "", t("Stays")), aw);
+
+    const bar = el("div", "bar");
+    if (g) {
+      const del = el("button", "text danger", t("Remove"));
+      del.onclick = () => groupAction("delete", { id: g.id }, t("{name} removed", { name: g.name }));
+      bar.append(del);
+    }
+    bar.append(el("span", "grow"));
+    const cancel = el("button", "text", t("Cancel"));
+    cancel.onclick = () => { gEdit = null; renderGroups(); };
+    const saveBtn = el("button", "text primary", t(g ? "Save" : "Add"));
+    const save = () => {
+      if (!d.members.length) { addBtn.focus({ preventScroll: true }); return status(t("A group needs a model in it"), "warn"); }
+      saveBtn.classList.add("busy");
+      groupAction("save", { id: idOf(), name: d.name.trim() || idOf(), members: d.members, routing: d.routing, affinity: d.affinity }, t(g ? "{name} saved" : "{name} added", { name: d.name.trim() || idOf() }));
+    };
+    saveBtn.onclick = save;
+    bar.append(cancel, saveBtn);
+    ed.append(bar);
+    if (!g) setTimeout(() => name.focus({ preventScroll: true }), 0); // WebKit would scroll the page to put it mid-view
+    return ed;
+  }
+  // the providers that route over several accounts or keys of their own
+  function renderPools() {
+    const ps = groups?.pools || [];
+    pHead.hidden = pList.hidden = !ps.length;
+    pHead.replaceChildren(el("span", "label", t("Several accounts or keys")), el("span", "grow"), el("span", "note", t("each provider routes over its own")));
+    pList.replaceChildren(...ps.map((p) => {
+      const row = el("div", "rt-pool");
+      const nm = el("div", "nm");
+      nm.append(icon(p.icon || "generic"), el("b", "", p.name), el("span", "", p.protocol
+        ? t("{n} keys for {api}", { n: p.who.length, api: API[p.protocol] || p.protocol })
+        : t(p.kind === "account" ? "{n} accounts" : "{n} keys", { n: p.who.length })));
+      const ctl = el("div", "ctl");
+      const set = async (what, body, ok) => {
+        try { await api("provider/" + what, body); status(ok, "ok"); groups = await api("groups"); load(); } catch (e) { status(e.message, "err"); }
+      };
+      const lab = (s, c) => { const w = el("span", "lab"); w.append(el("small", "", s), c); return w; };
+      ctl.append(
+        lab(t("Routing"), segs(ROUTE_OPTS.map(([id, n]) => [id, t(n)]), p.routing || "", (v) => set("route", { id: p.provider, routing: v }, t("{name}: {routing}", { name: p.name, routing: t(ROUTE_OPTS.find(([id]) => id === v)[1]) })))),
+        lab(t("Stays"), segs(AFF_OPTS.map(([id, n]) => [id, t(n)]), p.affinity || "", (v) => set("affinity", { id: p.provider, affinity: v }, t("{name}: {routing}", { name: p.name, routing: t(AFF_OPTS.find(([id]) => id === v)[1]) })))));
+      row.append(nm, ctl);
+      row.title = p.who.join(", ");
+      return row;
+    }));
+  }
+  // loaded when the view is shown, and again when the window comes back
+  new MutationObserver(() => { if (!$("#view-routing").hidden) loadGroups(); }).observe($("#view-routing"), { attributes: true, attributeFilter: ["hidden"] });
+  window.addEventListener("focus", () => { if (shown()) loadGroups(); });
+  loadGroups();
 
   // ---------- hiding emails, for a screenshot to share ----------
   // Each email address on the page — an account's, in a row, a sentence,

@@ -177,7 +177,7 @@ function renderAgents() {
       const opt = optionFor(f, f.value);
       b.title = t("{label}: {value}", { label: t(f.label), value: f.value || t("agent default") }) + (opt?.note ? ` · ${opt.note}` : "");
       const effort = f.key === "effort" || f.label === "effort" || f.label === "thinking";
-      if (opt?.icon) b.append(icon(opt.icon));
+      if (opt?.icon || opt?.icons?.length) b.append(optionIcon(opt));
       // a field with no logo of its own still leads with an icon: how much
       // effort, or the agent's own for its default, as the picker shows it
       else if (effort) b.append(effortIcon(f));
@@ -452,6 +452,8 @@ function openPicker(agent, field, anchor, ev, only) {
   closePicker();
   const cur = field.value;
   let options = field.options.filter((o) => !only || only(o));
+  // routing groups come first, before the agent's own models and each provider's
+  options = [...options.filter((o) => o.group === ROUTING_GROUPS), ...options.filter((o) => o.group !== ROUTING_GROUPS)];
   const effortPicker = !only && (field.key === "effort" || field.label === "effort" || field.label === "thinking");
   // Current model first, then the rest in catalog order. Effort levels keep
   // their natural low → high order because their position is meaningful.
@@ -462,7 +464,7 @@ function openPicker(agent, field, anchor, ev, only) {
   if (TIERS.includes(field.label)) {
     const main = agent.fields.find((f) => f.key === "model");
     options.unshift({ value: "", label: t("Same as model"), note: optionFor(main, main.value)?.label || main.value, icon: optionFor(main, main.value)?.icon, reset: true });
-  } else if (!only && !field.menu) options.unshift({ value: "", label: t("Default"), note: t("what {agent} ships with", { agent: agent.name }), icon: agent.icon, reset: true });
+  } else if (!only && !field.menu && !field.onPick) options.unshift({ value: "", label: t("Default"), note: t("what {agent} ships with", { agent: agent.name }), icon: agent.icon, reset: true });
   const modelPicker = ["model", "small", "large", ...TIERS].includes(field.label) && !only;
   pick = { agent, field, options, anchor, cursor: 0, free: !only && !field.menu, modelPicker, effortPicker, groupFilter: "all" };
   anchor.classList.add("open");
@@ -643,7 +645,8 @@ function renderPickerRail() {
     if (groups.length) rail.append(el("span", "rail-sep"));
     for (const group of groups) {
       const sample = pick.options.find((o) => o.group === group);
-      add(group, group, icon(sample?.groupIcon || sample?.icon || "generic"));
+      if (group === ROUTING_GROUPS) add(group, t(group), svg(FAN, 16, 1.5));
+      else add(group, group, icon(sample?.groupIcon || sample?.icon || "generic"));
     }
   }
   queueMicrotask(updatePickerRailSelection);
@@ -657,11 +660,11 @@ function renderList() {
   const q = $("#q").value.trim();
   let group = null;
   pick.items.forEach((o, idx) => {
-    if (!q && o.group && o.group !== group) list.append(el("li", "group", o.group));
+    if (!q && o.group && o.group !== group) list.append(el("li", "group", o.group === ROUTING_GROUPS ? t(o.group) : o.group));
     if (!q) group = o.group ?? group;
     const li = el("li", (idx === pick.cursor ? "sel" : "") + (o.value === pick.field.value ? " cur" : "") + (o.custom ? " custom" : "") + (o.reset ? " reset" : ""));
     li.dataset.i = idx;
-    if (hasIcons) li.append(icon(o.icon));
+    if (hasIcons) li.append(optionIcon(o));
     const words = el("span", "option-words");
     words.append(el("span", "v", o.label || o.value));
     let note = o.note && o.note !== (o.label || o.value) ? o.note : "";
@@ -702,6 +705,7 @@ async function commit(value) {
   const { agent, field, anchor } = pick;
   const opt = pick.options.find((o) => o.value === value);
   closePicker();
+  if (field.onPick) return field.onPick(value, opt); // a picker opened for something other than an agent's setting
   if (field.menu) {
     // a tier chosen from the tiers menu: now its model
     const tier = agent.fields.find((f) => f.key === value);
@@ -1117,7 +1121,9 @@ function envSnippet(vars) {
 
 // every exposed model, as the ids agents use
 function gatewayModels() {
-  const out = [];
+  // the routing groups first, as the agents' pickers list them
+  const out = (providers.gateway.groups || []).map((g) => ({ id: g.id, name: g.name, icons: g.icons, group: true,
+    provider: { name: [t("routing group"), g.providers.join(", ")].filter(Boolean).join(" · ") } }));
   for (const p of providers.providers) for (const m of p.models) if (m.on) out.push({ id: `${p.id}/${m.id}`, name: m.name, provider: p });
   return out;
 }
@@ -1244,7 +1250,7 @@ function renderGatewayModels() {
     const row = el("div", "row model" + (m.id === exampleModel ? " selected" : ""));
     const who = el("div", "who");
     who.append(el("div", "name", m.id), el("div", "sub", m.name && m.name !== m.id.split("/")[1] ? `${m.name} · ${m.provider.name}` : m.provider.name));
-    row.append(icon(m.provider.icon || "generic"), who, copyBtn(m.id, t("Model id")));
+    row.append(m.group ? stackIcon(m.icons) : icon(m.provider.icon || "generic"), who, copyBtn(m.id, t("Model id")));
     row.title = t("Use this model in the snippets");
     row.onclick = () => { exampleModel = m.id; localStorage.setItem("magpie.model", m.id); renderConnect(); renderGatewayModels(); };
     list.append(row);
@@ -1557,6 +1563,31 @@ function parses(s) { try { JSON.parse(s); return true; } catch { return false; }
 
 // iconPicker: a custom provider's icon — one of the built-in ones, or a
 // picture of the user's own, which magpie keeps in ~/.config/magpie/icons.
+// A routing group's icon: its providers' icons stacked, the first on top,
+// so which providers a group routes over shows at a glance.
+function stackIcon(icons) {
+  if (!icons || icons.length < 2) return icon(icons?.[0] || "generic");
+  const e = el("span", "ic-stack");
+  for (const n of icons.slice(0, 3)) {
+    const d = el("span", "disc");
+    d.append(icon(n || "generic"));
+    e.append(d);
+  }
+  if (icons.length > 3) e.append(el("span", "disc more", "+" + (icons.length - 3)));
+  return e;
+}
+
+function optionIcon(o) {
+  return o.icons?.length ? stackIcon(o.icons) : icon(o.icon);
+}
+
+// The picker's own section for routing groups (agent.RoutingGroups), and
+// its mark on the rail: one model fanning out to several providers.
+const ROUTING_GROUPS = "Routing groups";
+const dot = (x, y) => `M${x - 1.4} ${y}a1.4 1.4 0 1 0 2.8 0a1.4 1.4 0 1 0 -2.8 0`;
+const FAN = [dot(2.9, 8), dot(13.1, 3.4), dot(13.1, 8), dot(13.1, 12.6),
+  "M4.3 8h7.4", "M4.3 8c2.6 0 3.2-4.6 5.8-4.6h1.6", "M4.3 8c2.6 0 3.2 4.6 5.8 4.6h1.6"].join(" ");
+
 function iconPicker(ed) {
   const box = el("div", "icon-pick");
   const draw = () => {
@@ -3235,16 +3266,59 @@ async function savePrefs(body) {
 
 // ---------- header / footer ----------
 
+// ---------- where the reader is ----------
+// Each view stays scrolled where the reader put it. Only the reader moves it
+// — the wheel or trackpad, a touch, the keys that scroll, Tab, a drag — or
+// code that says so first with scrollOnPurpose(). Anything else that moves
+// it is put back before it's painted: a part of the page redrawn, and
+// measured while it was briefly shorter, pulls the page up to what was left
+// of it (WebKit has no scroll anchoring), and WebKit scrolls a field it
+// focuses to the middle of the view. Never set a view's scrollTop, or
+// scrollIntoView inside one, without scrollOnPurpose().
+let purposeUntil = 0;
+function scrollOnPurpose(ms = 1000) { purposeUntil = Math.max(purposeUntil, performance.now() + ms); }
+const SCROLL_KEYS = new Set(["PageUp", "PageDown", "Home", "End", "ArrowUp", "ArrowDown", " "]);
+addEventListener("wheel", () => scrollOnPurpose(250), { capture: true, passive: true });
+addEventListener("touchmove", () => scrollOnPurpose(250), { capture: true, passive: true });
+addEventListener("pointermove", (e) => { if (e.buttons) scrollOnPurpose(250); }, { capture: true, passive: true });
+addEventListener("keydown", (e) => {
+  const typing = e.target.closest?.("input, textarea, select, [contenteditable]");
+  if (e.key === "Tab" || (!typing && SCROLL_KEYS.has(e.key))) scrollOnPurpose(400);
+}, true);
+const readerAt = new WeakMap();
+function backToReader(v) {
+  if (v.hidden) return;
+  const want = Math.min(readerAt.get(v) || 0, Math.max(0, v.scrollHeight - v.clientHeight));
+  if (Math.abs(v.scrollTop - want) < 1) return;
+  v.scrollTop = want;
+  // a field focused out of sight still comes into view, no further than needed
+  const f = document.activeElement;
+  if (f && f !== document.body && v.contains(f)) {
+    const r = f.getBoundingClientRect(), b = v.getBoundingClientRect();
+    if (r.bottom > b.bottom || r.top < b.top) { scrollOnPurpose(); f.scrollIntoView({ block: "nearest" }); }
+  }
+}
+for (const v of document.querySelectorAll(".view")) {
+  v.addEventListener("scroll", () => {
+    if (v.hidden) return;
+    if (performance.now() < purposeUntil) readerAt.set(v, v.scrollTop);
+    else backToReader(v);
+  }, { passive: true });
+}
+
 function show(v) {
   view = v;
   if (mode === "window") { for (const b of $("#nav").querySelectorAll("button")) b.classList.toggle("on", b.dataset.view === v); slide($("#nav"), "nav"); }
   $("#prefs").classList.toggle("on", v === "settings");
   for (const id of ["agents", "providers", "gateway", "routing", "usage", "settings"]) $("#view-" + id).hidden = v !== id;
+  // back to where the reader was in it, and again once it has what it loads
+  const back = () => backToReader($("#view-" + v));
+  requestAnimationFrame(back);
   closePicker();
   if (v !== "providers" && editing !== null) cancelEdit();
-  if (v === "providers" || v === "gateway" || v === "routing") loadProviders().catch((e) => status(e.message, "err"));
-  if (v === "usage") loadUsage().catch((e) => status(e.message, "err"));
-  if (v === "settings") loadSettings().catch((e) => status(e.message, "err"));
+  if (v === "providers" || v === "gateway" || v === "routing") loadProviders().then(back, (e) => status(e.message, "err"));
+  if (v === "usage") loadUsage().then(back, (e) => status(e.message, "err"));
+  if (v === "settings") loadSettings().then(back, (e) => status(e.message, "err"));
   syncURL();
 }
 

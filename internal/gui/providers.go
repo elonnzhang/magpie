@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -88,6 +89,15 @@ type gatewayJSON struct {
 	Mine    bool           `json:"mine"` // this process serves it
 	Models  int            `json:"models"`
 	Calls   []gateway.Call `json:"calls"`
+	Groups  []gwGroupJSON  `json:"groups"` // the catalog's routing groups, listed before the models
+}
+
+// gwGroupJSON is a routing group as the Gateway view lists it.
+type gwGroupJSON struct {
+	ID        string   `json:"id"` // group/<id>, what a request names
+	Name      string   `json:"name"`
+	Icons     []string `json:"icons"`     // its providers', one each
+	Providers []string `json:"providers"` // their names, in the group's order
 }
 
 type excludedJSON struct {
@@ -204,7 +214,22 @@ func providersState(gw *gateway.Server) providersJSON {
 	for _, pr := range provider.Presets() {
 		s.Presets = append(s.Presets, presetJSON{PresetDef: pr, Added: have[pr.ID]})
 	}
-	s.Gateway = gatewayJSON{URL: gateway.URL(), Models: len(provider.Catalog()), Calls: []gateway.Call{}}
+	cat := provider.Catalog()
+	s.Gateway = gatewayJSON{URL: gateway.URL(), Models: len(cat), Calls: []gateway.Call{}, Groups: []gwGroupJSON{}}
+	for _, e := range cat {
+		if e.Group == "" {
+			continue
+		}
+		g := gwGroupJSON{ID: e.ID, Name: e.Name, Icons: e.Icons}
+		if _, ms, ok := provider.FindGroup(e.ID); ok {
+			for _, m := range ms {
+				if !slices.Contains(g.Providers, m.Provider.Name) {
+					g.Providers = append(g.Providers, m.Provider.Name)
+				}
+			}
+		}
+		s.Gateway.Groups = append(s.Gateway.Groups, g)
+	}
 	if gw != nil {
 		s.Gateway.Running, s.Gateway.Mine = true, true
 		s.Gateway.Calls = gw.Recent()

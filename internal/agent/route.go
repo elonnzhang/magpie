@@ -20,14 +20,14 @@ const magpieID = "magpie"
 // RoutingGroups is the picker's group of routing groups.
 const RoutingGroups = "Routing groups"
 
-// viaMagpie lists the catalog for a picker, one group per provider, and
-// the routing groups in one of their own.
+// viaMagpie lists the catalog for a picker: the routing groups first, in
+// one group of their own, then one group per provider.
 func viaMagpie(prefix string) []Option {
-	var out []Option
+	var out, groups []Option
 	for _, e := range provider.Catalog() {
 		if e.Group != "" {
-			out = append(out, Option{Value: prefix + e.ID, Label: e.Name, Note: "routing group · via magpie",
-				Icon: e.Provider.Icon, Group: RoutingGroups, Ref: e.ID})
+			groups = append(groups, Option{Value: prefix + e.ID, Label: e.Name, Note: "routing group · via magpie",
+				Icon: e.Provider.Icon, Icons: e.Icons, Group: RoutingGroups, Ref: e.ID})
 			continue
 		}
 		note := e.Provider.Name + " · via magpie"
@@ -37,7 +37,7 @@ func viaMagpie(prefix string) []Option {
 		out = append(out, Option{Value: prefix + e.ID, Label: e.Name, Note: note,
 			Icon: e.Provider.Icon, Group: e.Provider.Name, Ref: e.ID})
 	}
-	return out
+	return append(groups, out...)
 }
 
 // viaMagpieFor is viaMagpie without the agent's own account: Codex CLI going

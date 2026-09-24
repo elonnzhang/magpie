@@ -48,6 +48,9 @@ type poolJSON struct {
 	Who      []string `json:"who"`
 	Routing  string   `json:"routing"`
 	Affinity string   `json:"affinity"`
+	// Protocol: the one its keys are made for, when the provider's keys are
+	// made for more than one — each protocol's keys are a pool of their own
+	Protocol provider.Protocol `json:"protocol,omitempty"`
 }
 
 // onOf is who a provider's requests spread over: its accounts, or keys.
@@ -67,6 +70,31 @@ func onOf(p provider.Provider) (kind string, who []string) {
 		who = append(who, n)
 	}
 	return "key", who
+}
+
+// keyPools is a provider's keys by the protocol they're made for, as the
+// gateway routes over them: keys made for different protocols are not one
+// pool (gateway.perKeyOf).
+func keyPools(p provider.Provider) []poolJSON {
+	var out []poolJSON
+	at := map[provider.Protocol]int{}
+	for _, k := range p.KeysOn() {
+		if len(p.WithKey(k).Speaks()) == 0 {
+			continue // made for a protocol this provider has no endpoint for
+		}
+		i, ok := at[k.Protocol]
+		if !ok {
+			i = len(out)
+			at[k.Protocol] = i
+			out = append(out, poolJSON{Protocol: k.Protocol})
+		}
+		n := k.Name
+		if n == "" {
+			n = provider.Mask(k.Key)
+		}
+		out[i].Who = append(out[i].Who, n)
+	}
+	return out
 }
 
 func groupsState() groupsJSON {
@@ -93,8 +121,19 @@ func groupsState() groupsJSON {
 		if !p.Ready() {
 			continue
 		}
-		if kind, who := onOf(p); len(who) > 1 {
+		if kind, who := onOf(p); kind == "account" && len(who) > 1 {
 			out.Pools = append(out.Pools, poolJSON{Provider: p.ID, Name: p.Name, Icon: p.Icon, Kind: kind, Who: who, Routing: p.Routing, Affinity: p.Affinity})
+			continue
+		}
+		pools := keyPools(p)
+		for _, kp := range pools {
+			if len(kp.Who) > 1 {
+				kp.Provider, kp.Name, kp.Icon, kp.Kind, kp.Routing, kp.Affinity = p.ID, p.Name, p.Icon, "key", p.Routing, p.Affinity
+				if len(pools) == 1 {
+					kp.Protocol = ""
+				}
+				out.Pools = append(out.Pools, kp)
+			}
 		}
 	}
 	return out

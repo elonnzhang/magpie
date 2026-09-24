@@ -83,16 +83,13 @@ func groupsIn(entries []Entry) []Group {
 }
 
 // autoGroups are the models more than one ready provider serves under the
-// same name — the vendor's own prefix aside ("anthropic/claude-sonnet-5"
-// is claude-sonnet-5) — in the order the providers were added.
+// same name — however each vendor spells it (see sameModel) — in the order
+// the providers were added.
 func autoGroups(entries []Entry) []Group {
 	var order []string
 	by := map[string][]Entry{}
 	for _, e := range entries {
-		k := strings.ToLower(e.Model)
-		if i := strings.LastIndex(k, "/"); i >= 0 {
-			k = k[i+1:]
-		}
+		k := sameModel(e.Model)
 		if !slices.ContainsFunc(by[k], func(o Entry) bool { return o.Provider.ID == e.Provider.ID }) {
 			if by[k] == nil {
 				order = append(order, k)
@@ -109,11 +106,39 @@ func autoGroups(entries []Entry) []Group {
 		g := Group{ID: "auto-" + Slug(k), Name: es[0].Name, Auto: true}
 		for _, e := range es {
 			g.Members = append(g.Members, e.ID)
+			if g.Name == es[0].Model && e.Name != e.Model {
+				g.Name = e.Name // a vendor that names it, over one that only lists its id
+			}
 		}
 		out = append(out, g)
 	}
 	return out
 }
+
+// sameModel is a model's name as vendors agree on it: lowercase, without
+// the vendor's own prefix ("anthropic/claude-sonnet-5" is claude-sonnet-5),
+// with a version's dot as Anthropic writes it ("claude-opus-5.5" is
+// claude-opus-5-5) and without the snapshot date some add
+// ("claude-opus-5-5-20260801"). A variant after ":" (":batch") stays apart.
+func sameModel(id string) string {
+	k := strings.ToLower(id)
+	if i := strings.LastIndex(k, "/"); i >= 0 {
+		k = k[i+1:]
+	}
+	b := []byte(k)
+	for i := 1; i+1 < len(b); i++ {
+		if b[i] == '.' && isDigit(b[i-1]) && isDigit(b[i+1]) {
+			b[i] = '-'
+		}
+	}
+	k = string(b)
+	if i := strings.LastIndex(k, "-"); i > 0 && len(k)-i-1 == 8 && strings.HasPrefix(k[i+1:], "20") && strings.Trim(k[i+1:], "0123456789") == "" {
+		k = k[:i]
+	}
+	return k
+}
+
+func isDigit(c byte) bool { return c >= '0' && c <= '9' }
 
 // FindGroup looks a group up by its catalog id ("group/<id>") and resolves
 // its members; one not ready now is left out.
@@ -164,6 +189,9 @@ func groupEntries(entries []Entry) []Entry {
 		}
 		e := Entry{ID: GroupPrefix + g.ID, Model: ms[0].Model, Name: g.Name, Provider: ms[0].Provider, Group: g.ID}
 		for i, m := range ms {
+			if !slices.ContainsFunc(ms[:i], func(o Member) bool { return o.Provider.ID == m.Provider.ID }) {
+				e.Icons = append(e.Icons, m.Provider.Icon) // each provider once, "" for one without
+			}
 			var efforts []string
 			for _, x := range entries {
 				if x.Provider.ID == m.Provider.ID && x.Model == m.Model {

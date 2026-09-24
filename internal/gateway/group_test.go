@@ -204,3 +204,34 @@ func TestAffinity(t *testing.T) {
 		t.Fatalf("new session: %+v", r.Affinity)
 	}
 }
+
+// Keys made for different protocols are not one pool: in turn goes round
+// the keys made for the protocol that suits the request, and a key made for
+// another is tried only after them.
+func TestKeyPoolsByProtocol(t *testing.T) {
+	fresh(t)
+	v := &keyed{}
+	up := httptest.NewServer(v)
+	t.Cleanup(up.Close)
+	p := provider.Provider{ID: "mix", Name: "MIX", Key: "k1", KeyProtocol: provider.Chat, Models: []string{"m"}, Chat: up.URL + "/v1",
+		Keys: []provider.KeyAccount{{Key: "k2"}, {Key: "k3", Protocol: provider.Chat}}, Routing: provider.Rotate}
+	if err := provider.Save(p); err != nil {
+		t.Fatal(err)
+	}
+	s := New()
+	for range 4 {
+		postAs(t, s, "", `{"model":"mix/m","messages":[{"role":"user","content":"hi"}]}`)
+	}
+	if got := strings.Join(v.tried, ","); got != "k1,k3,k1,k3" {
+		t.Fatalf("in turn went %s", got)
+	}
+	r := s.trace.routes[len(s.trace.routes)-1]
+	if last := r.Order[len(r.Order)-1]; !last.Aside || last.Who == "" || r.Order[0].Aside {
+		t.Fatalf("trace: %+v", r.Order)
+	}
+	v.tried, v.fail = nil, map[string]int{"k1": 429, "k3": 429}
+	code, body := postAs(t, s, "", `{"model":"mix/m","messages":[{"role":"user","content":"hi"}]}`)
+	if code != 200 || !strings.Contains(body, "from k2") {
+		t.Fatalf("aside key: %d %s, tried %v", code, body, v.tried)
+	}
+}

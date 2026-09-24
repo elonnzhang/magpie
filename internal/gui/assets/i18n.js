@@ -453,6 +453,40 @@ const I18N = {
     // Gateway: routing, live
     "live, as the gateway decides": "实时 · 网关正在做的决定",
     "Hide emails": "邮箱打码",
+    "Add a model": "添加模型",
+    "Add another model": "再添加一个模型",
+    "{api} only · after the others": "仅 {api} · 排在其他之后",
+    "any API": "任意 API",
+    "{who} is made for {api}, not {other} as the keys routed over are, so it isn't one of them: it's tried after them.": "{who} 是为 {api} 准备的，和参与路由的 {other} 密钥不同，所以不算其中一员：排在它们之后才试。",
+    "{n} keys for {api}": "{n} 个 {api} 密钥",
+    "New group": "新建组",
+    "models agents pick as one": "Agent 当作一个模型来选",
+    "No group yet. A model two of your providers serve becomes one on its own; New group makes one of any models you like.": "还没有路由组。两个供应商都提供的同一个模型会自动成组；点「新建组」可以把任意模型组到一起。",
+    "Removed:": "已移除：",
+    "Bring it back": "恢复",
+    "{name} is back": "{name} 已恢复",
+    "found by magpie": "magpie 自动发现",
+    "no member ready": "没有可用成员",
+    "Edit": "编辑",
+    "found by magpie — saving a change makes it yours": "magpie 自动发现的——保存修改后就归你管理",
+    "e.g. Opus anywhere": "例如：Opus 多家备份",
+    "Agents pick it as {id}": "Agent 里选 {id}",
+    "The first answers for what the model can do. In order, they are tried top first.": "排第一的模型决定这个组对外的能力；按顺序模式下从上往下依次尝试。",
+    "Stays": "会话保持",
+    "Session": "整个会话",
+    "Within a turn": "一轮之内",
+    "A group needs a model in it": "组里至少要有一个模型",
+    "Several accounts or keys": "多账号 / 多 Key",
+    "each provider routes over its own": "各供应商在自己的账号或 Key 间路由",
+    "{n} accounts": "{n} 个账号",
+    "A conversation stays with the account or key that answered it while what the vendor cached of it is worth keeping — within a turn always, across turns while it's fresh.": "会话留在回答过它的账号或 Key 上，只要厂商为它缓存的内容还值得保留——一轮之内总是保持，跨轮则在缓存还新鲜时保持。",
+    "A conversation stays with the account or key that answered it for the whole session, while it can answer.": "整个会话都留在回答过它的账号或 Key 上，只要它还能回答。",
+    "A conversation stays put within a turn, while the agent sends tool results back; when you speak again, routing decides afresh.": "一轮之内（Agent 回传工具结果时）不换；你再次发言时，路由重新决定。",
+    "Every request is routed afresh, whoever answered its conversation before.": "每个请求都重新路由，不管之前是谁回答的这个会话。",
+    "Smart, over every member's accounts and keys together: of the subscriptions with quota to spare, the one whose allowance renews soonest goes first; one resting after a failure goes last.": "智能：把所有成员的账号和 Key 放在一起排——还有余量的订阅里，额度最先重置的排第一；失败后在休息的排最后。",
+    "In order: the first model until it can't answer, then the next — each over its own accounts or keys as its provider routes them.": "按顺序：先用第一个模型，它答不了再换下一个——每个成员按其供应商的路由在自己的账号或 Key 间分配。",
+    "In turn: each conversation's next turn goes to the next member's account or key, spreading the load.": "轮流：会话的每一轮交给下一个成员的账号或 Key，均摊负载。",
+    "Least used first: the account or key with the most of its allowance left goes first.": "最少使用优先：剩余额度最多的账号或 Key 排第一。",
     "Mask the email addresses on this page, for a screenshot to share": "给本页的邮箱地址打码，方便截图分享",
     "Least used": "最少使用",
     "requests": "请求",
@@ -586,7 +620,10 @@ let locale = "en";
 function setLocale(pref) {
   const p = params.get("locale") || pref || "system";
   locale = p === "system" ? ((navigator.language || "").toLowerCase().startsWith("zh") ? "zh" : "en") : p;
-  document.documentElement.lang = locale === "zh" ? "zh-CN" : "en";
+  // set only when it changes: settings come back on every refresh, and a
+  // view that redraws for a new language shouldn't redraw for the same one
+  const lang = locale === "zh" ? "zh-CN" : "en";
+  if (document.documentElement.lang !== lang) document.documentElement.lang = lang;
   translateStatic();
 }
 

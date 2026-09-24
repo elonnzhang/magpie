@@ -238,6 +238,7 @@ type Entry struct {
 	Efforts  []string `json:"efforts,omitempty"`
 	Provider Provider `json:"-"`               // a group's: its first member's
 	Group    string   `json:"group,omitempty"` // set on a routing group (group.go)
+	Icons    []string `json:"-"`               // a group's: its providers' icons, one per provider
 }
 
 // Catalog lists every exposed model of every ready provider, then the

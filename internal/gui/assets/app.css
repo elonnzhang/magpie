@@ -105,10 +105,25 @@ input { font: inherit; color: var(--fg); }
 code { font: 11.5px var(--code); }
 
 /* ---- brand icons: colour ones are images, mono ones take the text colour --- */
-.ic { display: inline-flex; flex: none; align-items: center; justify-content: center; }
+/* a box of its own by default: a mask icon has no size to fall back on, and
+   one placed where nothing sizes it would otherwise not show at all */
+.ic { display: inline-flex; flex: none; align-items: center; justify-content: center; width: 16px; height: 16px; }
 .ic img { width: 100%; height: 100%; object-fit: contain; display: block; }
 .ic .mask { width: 100%; height: 100%; background: currentColor; -webkit-mask: var(--i) center / contain no-repeat; mask: var(--i) center / contain no-repeat; }
 .ic.generic { color: var(--muted); }
+/* a routing group's providers, overlapping discs with the first on top */
+.ic-stack { display: inline-flex; flex: none; align-items: center; }
+.ic-stack .disc { position: relative; width: 20px; height: 20px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; background: var(--card); box-shadow: 0 0 0 1px var(--line); }
+.ic-stack .disc + .disc { margin-left: -4px; }
+.ic-stack .disc:nth-child(1) { z-index: 3; }
+.ic-stack .disc:nth-child(2) { z-index: 2; }
+.ic-stack .disc:nth-child(3) { z-index: 1; }
+/* the stack sizes its own icons, whatever sizes the icons around it */
+.ic-stack .disc > .ic { width: 13px !important; height: 13px !important; }
+.ic-stack .more { font-size: 8.5px; font-weight: 600; color: var(--muted); font-variant-numeric: tabular-nums; }
+.row .field .ic-stack .disc { width: 17px; height: 17px; }
+.row .field .ic-stack .disc > .ic { width: 11px !important; height: 11px !important; }
+.row .field .ic-stack .disc + .disc { margin-left: -4px; }
 .ic.generic svg { width: 100%; height: 100%; }
 
 /* ---- header --------------------------------------------------------------- */
