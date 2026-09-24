@@ -37,6 +37,8 @@ type Windows interface {
 	Quit()
 	// OpenURL hands a link to the system browser.
 	OpenURL(url string)
+	// OpenFolder shows a folder in the system file manager.
+	OpenFolder(path string)
 	// FitPanel asks for the panel to be tall enough for its content.
 	FitPanel(height int)
 }
@@ -74,7 +76,6 @@ type settingsJSON struct {
 	settings.Settings
 	Version string `json:"version"`
 	Dir     string `json:"dir"`     // where magpie keeps its files, as shown
-	Path    string `json:"path"`    // the same, absolute, for opening it
 	Gateway string `json:"gateway"` // the local endpoint
 	// the proxy vendor requests go through now, and where it came from:
 	// settings, environment, system, off or none
@@ -83,7 +84,7 @@ type settingsJSON struct {
 }
 
 func settingsState() settingsJSON {
-	s := settingsJSON{Settings: settings.Load(), Version: Version, Dir: tilde(settings.Dir()), Path: settings.Dir(), Gateway: gateway.URL()}
+	s := settingsJSON{Settings: settings.Load(), Version: Version, Dir: tilde(settings.Dir()), Gateway: gateway.URL()}
 	s.ProxyNow, s.ProxySource = netproxy.Describe()
 	return s
 }
@@ -187,6 +188,11 @@ func Handler(w Windows, gw *gateway.Server) http.Handler {
 			return
 		}
 		writeJSON(rw, settingsState())
+	})
+	// the config folder only: the page names no path, so it can't open others
+	mux.HandleFunc("POST /api/settings/reveal", func(rw http.ResponseWriter, r *http.Request) {
+		w.OpenFolder(settings.Dir())
+		rw.WriteHeader(http.StatusNoContent)
 	})
 	mux.HandleFunc("POST /api/window/{action}", func(rw http.ResponseWriter, r *http.Request) {
 		switch r.PathValue("action") {

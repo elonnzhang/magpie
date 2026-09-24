@@ -68,8 +68,9 @@ func (h *host) Import(link string) {
 		h.main.Focus()
 	})
 }
-func (h *host) Quit()              { h.app.Quit() }
-func (h *host) OpenURL(url string) { _ = h.app.Browser.OpenURL(url) }
+func (h *host) Quit()                  { h.app.Quit() }
+func (h *host) OpenURL(url string)     { _ = h.app.Browser.OpenURL(url) }
+func (h *host) OpenFolder(path string) { _ = h.app.Env.OpenFileManager(path, false) }
 
 const panelWidth, panelMin, panelMax = 440, 220, 720
 

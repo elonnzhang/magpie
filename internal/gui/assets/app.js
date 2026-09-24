@@ -2894,7 +2894,7 @@ function renderSettings() {
   };
   renderUpdate(row(t("Version"), "", s.version));
   const open = el("button", "text", t("Open"));
-  open.onclick = () => api("open", { url: "file://" + s.path });
+  open.onclick = () => api("settings/reveal", {}).catch(() => {});
   row(t("Config folder"), t("providers, profiles and these settings"), s.dir, copyBtn(s.dir, t("Path")), open);
   row(t("Gateway URL"), t("the address every agent is pointed at"), s.gateway, copyBtn(s.gateway, t("Gateway URL")));
 }
