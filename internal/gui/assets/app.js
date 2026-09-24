@@ -176,9 +176,14 @@ function renderAgents() {
       const b = el("button", "field " + (sorted.length === 1 ? "solo" : wide(f) ? "main" : "side"));
       const opt = optionFor(f, f.value);
       b.title = t("{label}: {value}", { label: t(f.label), value: f.value || t("agent default") }) + (opt?.note ? ` · ${opt.note}` : "");
+      const effort = f.key === "effort" || f.label === "effort" || f.label === "thinking";
       if (opt?.icon) b.append(icon(opt.icon));
+      // a field with no logo of its own still leads with an icon: how much
+      // effort, or the agent's own for its default, as the picker shows it
+      else if (effort) b.append(effortIcon(f));
+      else if (!f.value && !f.menu && a.icon) b.append(icon(a.icon));
       else if (!wide(f) || !f.value) b.append(el("span", "k", t(f.label)));
-      const shown = f.menu ? f.summary : (f.key === "effort" || f.label === "effort" || f.label === "thinking") ? effortName(opt || { value: f.value }) : (opt?.label || f.value || t("default"));
+      const shown = f.menu ? f.summary : effort ? effortName(opt || { value: f.value }) : (opt?.label || f.value || t("default"));
       if (f.menu) b.title = f.options.map((o) => `${o.label}: ${o.note}`).join("\n");
       b.append(el("span", "v" + (f.value || f.custom ? "" : " empty"), shown));
       const c = el("span", "chev");
@@ -484,6 +489,21 @@ function openPicker(agent, field, anchor, ev, only) {
 function effortName(option) {
   if (!option?.value) return t("default");
   return t(option.label || option.value);
+}
+
+// An effort level as four bars filled up to it: none for the default or
+// off, all four for the highest the agent offers.
+function effortIcon(f) {
+  const levels = (f.options || []).filter((o) => o.value && o.value !== "off");
+  const at = levels.findIndex((o) => o.value === f.value);
+  const lit = at < 0 ? 0 : Math.max(1, Math.round(((at + 1) / levels.length) * 4));
+  const e = el("span", "ic effort-ic");
+  const s = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  s.setAttribute("viewBox", "0 0 16 16");
+  s.innerHTML = [4, 7, 10, 13].map((h, i) =>
+    `<rect x="${1.25 + i * 3.6}" y="${14.5 - h}" width="2.6" height="${h}" rx="1" fill="currentColor" opacity="${i < lit ? 1 : 0.28}"/>`).join("");
+  e.append(s);
+  return e;
 }
 
 function renderEffortPicker() {
