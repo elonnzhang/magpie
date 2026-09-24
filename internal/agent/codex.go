@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 
 	"github.com/yetone/magpie/internal/catalog"
 	"github.com/yetone/magpie/internal/edit"
@@ -206,10 +207,13 @@ func codexCatalog(ms []catalog.Model) []byte {
 		Tools      []string `json:"experimental_supported_tools"`
 		Modalities []string `json:"input_modalities"`
 	}
-	var out struct {
-		Models []model `json:"models"`
-	}
+	own := codexCacheEntries()
+	var entries []any
 	for i, m := range ms {
+		if raw, ok := own[strings.TrimPrefix(m.ID, "codex/")]; ok && strings.HasPrefix(m.ID, "codex/") {
+			entries = append(entries, codexOwnEntry(raw, m.ID, m.Name, i+1))
+			continue
+		}
 		e := model{
 			Slug: m.ID, DisplayName: m.Name, Description: m.Name + " via magpie",
 			Instructions: codexPrompt, Efforts: []level{},
@@ -224,10 +228,57 @@ func codexCatalog(ms []catalog.Model) []byte {
 			d := defaultEffort(m.Efforts)
 			e.DefaultEffort = &d
 		}
-		out.Models = append(out.Models, e)
+		entries = append(entries, e)
+	}
+	out := struct {
+		Models []any `json:"models"`
+	}{Models: entries}
+	if out.Models == nil {
+		out.Models = []any{}
 	}
 	b, _ := json.MarshalIndent(out, "", " ")
 	return b
+}
+
+// codexCacheEntries is Codex's own models, as models_cache.json describes
+// them for the ChatGPT account it last asked with, by slug.
+func codexCacheEntries() map[string]map[string]any {
+	home, _ := os.UserHomeDir()
+	b, err := os.ReadFile(filepath.Join(home, ".codex", "models_cache.json"))
+	if err != nil {
+		return nil
+	}
+	var cache struct {
+		Models []map[string]any `json:"models"`
+	}
+	if json.Unmarshal(b, &cache) != nil {
+		return nil
+	}
+	out := map[string]map[string]any{}
+	for _, m := range cache.Models {
+		if slug, _ := m["slug"].(string); slug != "" {
+			out[slug] = m
+		}
+	}
+	return out
+}
+
+// codexOwnEntry is one of Codex's own models, reached through magpie with
+// the ChatGPT sign-in: its entry as Codex has it (images, context window,
+// tools, instructions), under magpie's id. The start-up notice and the
+// upgrade prompt are left out; they name slugs the catalog does not have.
+func codexOwnEntry(raw map[string]any, id, name string, priority int) map[string]any {
+	e := make(map[string]any, len(raw))
+	for k, v := range raw {
+		e[k] = v
+	}
+	delete(e, "availability_nux")
+	delete(e, "upgrade")
+	e["slug"], e["display_name"], e["priority"], e["visibility"] = id, name, priority, "list"
+	if s, _ := e["base_instructions"].(string); s == "" {
+		e["base_instructions"] = codexPrompt
+	}
+	return e
 }
 
 // ownCodex is Codex's own models, narrowed to the ones ticked on its ChatGPT
