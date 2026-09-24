@@ -542,6 +542,7 @@ function renderEffortPicker() {
       value.textContent = effortName(option);
       value.classList.toggle("empty", !option.value);
     }
+    opened.anchor.querySelector(".effort-ic")?.replaceWith(effortIcon(opened.field));
     // Persist every settled slider value, but keep the compact control open so
     // the user can compare adjacent levels. Queue writes to preserve ordering
     // when keyboard input changes several stops quickly.
