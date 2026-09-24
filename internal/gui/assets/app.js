@@ -852,7 +852,8 @@ function renderProviders() {
     const uses = el("div", "uses");
     for (const a of using) {
       const b = el("button", "use");
-      b.title = t("{name} · {model} — click to change", { name: a.name, model: a.model });
+      b.title = a.group ? t("{name} · {model}, through the routing group {group} — click to change", { name: a.name, model: a.model, group: a.group })
+        : t("{name} · {model} — click to change", { name: a.name, model: a.model });
       b.append(icon(a.icon));
       b.onclick = (ev) => pickForAgent(a, p, b, ev);
       uses.append(b);
@@ -1339,6 +1340,9 @@ function pickForAgent(a, p, btn, ev) {
   const agent = state.agents.find((x) => x.id === a.id);
   const field = modelField(a);
   if (!field) return;
+  // on a routing group: the whole picker, the group first, not only this
+  // provider's models — picking one would take the agent off the group
+  if (a.group) return openPicker(agent, field, btn, ev);
   const pre = ofProvider(p);
   if (!field.options.some((o) => pre.test(o.value))) {
     ev.stopPropagation();
@@ -1726,8 +1730,9 @@ function renderEditor(p, presetID) {
       const chips = el("div", "achips");
       for (const a of on) {
         const c = el("button", "achip on");
-        c.append(icon(a.icon), el("span", "n", a.name), el("span", "m", a.model));
-        c.title = t("{agent} is on {model} — click to change", { agent: a.name, model: a.model });
+        c.append(icon(a.icon), el("span", "n", a.name), el("span", "m", a.group || a.model));
+        c.title = a.group ? t("{agent} is on the routing group {group}, {model} here among its members — click to change", { agent: a.name, group: a.group, model: a.model })
+          : t("{agent} is on {model} — click to change", { agent: a.name, model: a.model });
         c.onclick = (ev) => pickForAgent(a, p, c, ev);
         chips.append(c);
       }

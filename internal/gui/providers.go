@@ -76,6 +76,7 @@ type providerAgent struct {
 	Icon    string `json:"icon"`
 	Current bool   `json:"current"` // this agent is on one of this provider's models now
 	Model   string `json:"model,omitempty"`
+	Group   string `json:"group,omitempty"` // through this routing group, one of whose members it is
 }
 
 type presetJSON struct {
@@ -114,11 +115,16 @@ type providersJSON struct {
 }
 
 // currentProvider reads which provider (and model) an agent is routed to now.
-func currentProvider(a *agent.Agent) (string, string) {
+// agentModel is the model an agent is on, as magpie's catalog names it.
+func agentModel(a *agent.Agent) string {
 	if len(a.Fields) == 0 {
-		return "", ""
+		return ""
 	}
-	v := strings.TrimPrefix(a.Fields[0].Get(), "magpie/")
+	return strings.TrimPrefix(a.Fields[0].Get(), "magpie/")
+}
+
+func currentProvider(a *agent.Agent) (string, string) {
+	v := agentModel(a)
 	if strings.HasPrefix(v, provider.GroupPrefix) {
 		return "", "" // a routing group: no one provider
 	}
@@ -191,7 +197,16 @@ func providerInfo(p provider.Provider, agents []*agent.Agent) providerJSON {
 	}
 	for _, a := range agents {
 		pid, model := currentProvider(a)
-		out.Agents = append(out.Agents, providerAgent{ID: a.ID, Name: a.Name, Icon: a.Icon, Current: pid == p.ID, Model: model})
+		pa := providerAgent{ID: a.ID, Name: a.Name, Icon: a.Icon, Current: pid == p.ID, Model: model}
+		if g, ms, ok := provider.FindGroup(agentModel(a)); ok {
+			for _, m := range ms {
+				if m.Provider.ID == p.ID {
+					pa.Current, pa.Model, pa.Group = true, m.Model, g.Name
+					break
+				}
+			}
+		}
+		out.Agents = append(out.Agents, pa)
 	}
 	return out
 }
