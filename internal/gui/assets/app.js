@@ -3152,6 +3152,28 @@ function wag() {
 document.querySelector(".brand")?.addEventListener("mouseenter", wag);
 setTimeout(wag, 250);
 
+// A narrow window has no room for the whole header: the name goes, leaving
+// the magpie, and Update becomes its arrow; narrower still, the tabs stop
+// centring and take the room between.
+function fitTop() {
+  const top = $(".top"), nav = $("#nav"), brand = $(".brand"), actions = $(".actions");
+  const fits = () => {
+    const a = actions.getBoundingClientRect();
+    const left = brand.offsetParent ? brand.getBoundingClientRect().right
+      : top.getBoundingClientRect().left + parseFloat(getComputedStyle(top).paddingLeft);
+    if (!nav?.offsetParent) return left + 8 <= a.left;
+    const n = nav.getBoundingClientRect();
+    return left + 8 <= n.left && n.right + 8 <= a.left;
+  };
+  top.classList.remove("tight", "cramped");
+  if (fits()) return;
+  top.classList.add("tight");
+  if (!fits()) top.classList.add("cramped");
+}
+const topFit = new ResizeObserver(fitTop);
+for (const e of [".top", ".brand", ".actions"]) topFit.observe($(e));
+document.fonts?.ready.then(fitTop);
+
 document.addEventListener("visibilitychange", () => { if (!document.hidden) { load(); wag(); } });
 window.addEventListener("focus", load);
 setInterval(renderUpdateBadge, 15 * 60 * 1000); // a window left open still hears of a new version

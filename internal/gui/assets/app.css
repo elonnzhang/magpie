@@ -183,6 +183,12 @@ body.panel .seg { display: none; }
 .update:hover { background: var(--accent); color: var(--accent-fg); }
 .update:active { transform: scale(.96); }
 .update.busy { pointer-events: none; opacity: .6; }
+/* a narrow header (fitTop): the magpie without its name, Update as its arrow,
+   and at the narrowest the tabs in the row rather than over it */
+.top.tight .brand > span:not(.logo), .top.tight .update span { display: none; }
+.top.tight .update { width: 22px; padding: 0; justify-content: center; margin-right: 4px; }
+.top.cramped .seg { position: static; transform: none; margin: 0 auto; }
+.top.cramped .seg button { padding: 0 8px; }
 @keyframes update-in { from { opacity: 0; transform: translateY(-3px) scale(.94); } }
 @keyframes spin { to { transform: rotate(360deg); } }
 
