@@ -741,6 +741,7 @@ func TestOpenCodeGetsConversationSession(t *testing.T) {
 // A translation goes to Chat Completions first, but an OpenAI model on
 // OpenAI's or Copilot's API goes to Responses first; either falls back.
 func TestUsableOrder(t *testing.T) {
+	fresh(t) // not this machine's cached model lists, which say where each model is served
 	s := New()
 	openai := provider.Provider{ID: "openai", Chat: "https://api.openai.com/v1", Responses: "https://api.openai.com/v1"}
 	copilot := provider.Provider{ID: "copilot", Chat: "https://api.githubcopilot.com", Responses: "https://api.githubcopilot.com"}
