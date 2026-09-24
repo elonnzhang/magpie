@@ -156,3 +156,32 @@ func ids(as []*Agent) []string {
 	sort.Strings(s)
 	return s
 }
+
+// Spell puts a value typed for field key the way this agent spells it: a
+// catalog model is "copilot/gpt-6" in some agents and "magpie/copilot/gpt-6"
+// in others, and either is taken in both. A value the picker offers as is
+// stays, and so does one it doesn't know (a model the agent reaches on its
+// own that isn't listed); a "magpie/…" value the catalog doesn't have is an
+// error rather than a model the agent would ask its own vendor for.
+func (a *Agent) Spell(key, v string) (string, error) {
+	f := a.Field(key)
+	if f == nil || f.Options == nil || v == "" {
+		return v, nil
+	}
+	opts := f.Options(a.Values())
+	for _, o := range opts {
+		if o.Value == v {
+			return v, nil
+		}
+	}
+	ref, prefixed := strings.CutPrefix(v, magpieID+"/")
+	for _, o := range opts {
+		if o.Ref != "" && o.Ref == ref {
+			return o.Value, nil
+		}
+	}
+	if prefixed {
+		return "", fmt.Errorf("%s isn't a model in magpie's catalog (magpie models lists them)", ref)
+	}
+	return v, nil
+}

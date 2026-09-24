@@ -192,6 +192,10 @@ func set(a *agent.Agent, key, value string) error {
 		}
 		return fmt.Errorf("%s has no field %q (fields: %s)", a.Name, key, strings.Join(keys, ", "))
 	}
+	value, err := a.Spell(f.Key, value)
+	if err != nil {
+		return err
+	}
 	if err := f.Set(value); err != nil {
 		return err
 	}
