@@ -205,8 +205,9 @@ function renderAgents() {
     fold.addEventListener("transitionend", (e) => { if (e.target === fold) settled(); });
     more.onclick = () => {
       showAllAgents = !showAllAgents;
-      // opening: the panel makes room first, so nothing unrolls out of sight
-      if (showAllAgents) fit(inner.scrollHeight);
+      // the panel's edge moves with the scroll, on the same beat and curve
+      const room = inner.scrollHeight;
+      fit(showAllAgents ? room : -room, showAllAgents ? UNROLL : ROLLUP);
       clearTimeout(settle);
       settle = setTimeout(settled, 900);
       fold.classList.add("moving");
@@ -260,11 +261,20 @@ function tierMenu(a) {
 }
 
 // The tray panel has no scrollbars to speak of, so it grows to fit instead.
-// extra is room about to be taken, e.g. by agents unrolling.
-function fit(extra = 0) {
+// The agents' scroll unrolls and rolls up on these, in app.css as in the
+// panel's own height.
+const UNROLL = { ms: 620, ease: ".22,1,.36,1" };
+const ROLLUP = { ms: 420, ease: ".4,0,.2,1" };
+
+// extra is room about to be taken (or given back), e.g. by agents unrolling;
+// glide moves the panel's edge there over time instead of at once.
+function fit(extra = 0, glide) {
   if (mode !== "panel") return;
   const h = $(".top").offsetHeight + $("#agents").offsetHeight + $(".profiles").offsetHeight + $(".foot").offsetHeight + 4 + extra;
-  if (h !== fit.last) { fit.last = h; api("window/fit?h=" + h, {}); }
+  if (h === fit.last) return;
+  fit.last = h;
+  const still = !glide || matchMedia("(prefers-reduced-motion: reduce)").matches;
+  api("window/fit?h=" + h + (still ? "" : "&ms=" + glide.ms + "&ease=" + glide.ease), {});
 }
 
 async function load() {

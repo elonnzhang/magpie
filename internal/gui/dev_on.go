@@ -142,8 +142,10 @@ func devBackend(handler func(Windows) http.Handler) error {
 // remoteWindows are the shell's windows, seen from the backend.
 type remoteWindows string // the shell's control address
 
-func (c remoteWindows) do(op, arg string) {
-	res, err := backendClient.PostForm("http://"+string(c)+"/"+op, url.Values{"arg": {arg}})
+func (c remoteWindows) do(op, arg string) { c.post(op, url.Values{"arg": {arg}}) }
+
+func (c remoteWindows) post(op string, form url.Values) {
+	res, err := backendClient.PostForm("http://"+string(c)+"/"+op, form)
 	if err != nil {
 		log.Println("dev shell:", err)
 		return
@@ -156,7 +158,10 @@ func (c remoteWindows) ShowMain(view string)   { c.do("main", view) }
 func (c remoteWindows) Quit()                  { c.do("quit", "") }
 func (c remoteWindows) OpenURL(u string)       { c.do("open", u) }
 func (c remoteWindows) OpenFolder(path string) { c.do("reveal", path) }
-func (c remoteWindows) FitPanel(height int)    { c.do("fit", strconv.Itoa(height)) }
+// The glide rides beside the height, so a shell from before it still sizes.
+func (c remoteWindows) FitPanel(height int, g Glide) {
+	c.post("fit", url.Values{"arg": {strconv.Itoa(height)}, "ms": {strconv.Itoa(g.MS)}, "ease": {g.ease()}})
+}
 
 // backendClient waits out a backend's restart: a request made while the old
 // one is gone connects to the new one once it listens.
@@ -200,8 +205,9 @@ func devShell(h *host) http.Handler {
 		case "reveal":
 			h.OpenFolder(arg)
 		case "fit":
-			if n, err := strconv.Atoi(arg); err == nil {
-				h.FitPanel(n)
+			q := url.Values{"h": {arg}, "ms": {r.FormValue("ms")}, "ease": {r.FormValue("ease")}}
+			if n, g, ok := parseFit(q); ok {
+				h.FitPanel(n, g)
 			}
 		}
 		rw.WriteHeader(http.StatusNoContent)

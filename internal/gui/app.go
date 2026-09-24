@@ -10,6 +10,7 @@ import (
 	"os"
 	"runtime"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
@@ -35,6 +36,7 @@ type host struct {
 	tray  *application.SystemTray
 
 	panelHeight int
+	glides      atomic.Int64 // the newest panel glide; older ones stop
 	query       string // what the windows' URLs carry (a forced theme)
 
 	ready     chan struct{} // closed once the main window can be shown
@@ -76,13 +78,17 @@ func (h *host) OpenFolder(path string) { _ = h.app.Env.OpenFileManager(path, fal
 const panelWidth, panelMin, panelMax = 440, 220, 720
 
 // FitPanel grows or shrinks the panel to its content and keeps it anchored
-// under the tray icon.
-func (h *host) FitPanel(height int) {
+// under the tray icon; a shown panel glides there when g says how.
+func (h *host) FitPanel(height int, g Glide) {
 	height = max(panelMin, min(panelMax, height))
 	if h.panelHeight == height {
 		return
 	}
 	h.panelHeight = height
+	if h.panel.IsVisible() && h.glidePanel(height, g) {
+		return
+	}
+	h.glides.Add(1)
 	h.panel.SetSize(panelWidth, height)
 	if h.panel.IsVisible() {
 		_ = h.tray.PositionWindow(h.panel, 6)

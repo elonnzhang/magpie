@@ -10,7 +10,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"os"
-	"strconv"
 	"strings"
 	"time"
 
@@ -40,7 +39,7 @@ type Windows interface {
 	// OpenFolder shows a folder in the system file manager.
 	OpenFolder(path string)
 	// FitPanel asks for the panel to be tall enough for its content.
-	FitPanel(height int)
+	FitPanel(height int, g Glide)
 }
 
 type fieldJSON struct {
@@ -203,8 +202,8 @@ func Handler(w Windows, gw *gateway.Server) http.Handler {
 		case "quit":
 			w.Quit()
 		case "fit":
-			if h, err := strconv.Atoi(r.URL.Query().Get("h")); err == nil {
-				w.FitPanel(h)
+			if h, g, ok := parseFit(r.URL.Query()); ok {
+				w.FitPanel(h, g)
 			}
 		}
 		rw.WriteHeader(http.StatusNoContent)
