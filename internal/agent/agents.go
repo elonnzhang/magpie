@@ -61,6 +61,7 @@ func All() []*Agent {
 		dsh(home),
 		commandCode(home),
 		omp(home),
+		devin(home, cfg),
 	}
 }
 
