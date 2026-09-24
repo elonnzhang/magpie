@@ -23,6 +23,7 @@ let editing = null; // provider id being edited; { preset } or { custom: true } 
 let draft = null; // the editor's working copy
 let adding = false; // the preset sheet is open
 let importing = null; // a magpie://import link waiting for a yes: { provider, error, replaces }
+let importingApps = null; // the Import from other apps dialog: { sources, picks }
 // the gateway tab's choices, kept per machine
 let flavor = params.get("flavor") || localStorage.getItem("magpie.flavor") || "openai"; // which API the snippets speak
 let lang = params.get("lang") || localStorage.getItem("magpie.lang") || "shell";        // which snippet
@@ -545,7 +546,7 @@ $("#q").addEventListener("keydown", (e) => {
 document.addEventListener("mousedown", (e) => { if (pick && !$("#pop").contains(e.target)) closePicker(); });
 document.addEventListener("keydown", (e) => {
   if (e.key !== "Escape" || pick) return;
-  if (editing !== null) cancelEdit();
+  if (editing !== null || importingApps) cancelEdit();
   else if (mode === "panel") api("window/hide", {});
 });
 
@@ -643,6 +644,7 @@ function renderProviders() {
   renderExcluded();
   dialog = renderAdd() || dialog;
   if (importing) dialog = renderImport(importing);
+  if (importingApps) dialog = renderImportApps(importingApps);
   if (dialog) openModal(dialog); else closeModal();
   view.scrollTop = top;
 }
@@ -1120,6 +1122,10 @@ function renderAdd() {
   q.className = "find";
   q.oninput = () => { presetQuery = q.value; drawTiles(); };
   head.append(q);
+  const imp = el("button", "text", t("Import…"));
+  imp.title = t("Bring over providers set up in CC Switch or Alma");
+  imp.onclick = openImportApps;
+  head.append(imp);
   if (providers.providers.length) {
     const x = el("button", "text", t("Close"));
     x.onclick = () => { adding = false; editing = null; draft = null; presetQuery = ""; renderProviders(); };
@@ -1225,7 +1231,7 @@ function input(value, placeholder, type = "text") {
   i.onkeydown = (e) => { e.stopPropagation(); if (e.key === "Escape") cancelEdit(); };
   return i;
 }
-function cancelEdit() { editing = null; draft = null; importing = null; renderProviders(); }
+function cancelEdit() { editing = null; draft = null; importing = null; importingApps = null; renderProviders(); }
 
 // Custom request headers: the draft keeps them as an ordered [name, value,
 // json?] list so a half-typed row (and its open JSON editor) survives a
@@ -1654,6 +1660,141 @@ function fetchImportIcon(p, head, ed) {
 // renderImport: what a magpie://import link would add, for the user to
 // check. Nothing is saved until they press Add; the key stays hidden unless
 // they ask to see it.
+// Providers other apps (CC Switch, Alma) have set up, for the user to pick
+// from. magpie only reads those apps; the keys stay on the server side and
+// the dialog sees them masked.
+async function openImportApps() {
+  importingApps = { loading: true, sources: [], picks: {} };
+  renderProviders();
+  try {
+    const sources = await api("importapps");
+    const picks = {};
+    for (const s of sources) for (const it of s.items) {
+      if (it.skip || it.status === "same") continue;
+      picks[s.id + "\n" + it.ref] = { on: !it.off && (it.status !== "taken" || !!it.keyOf), mode: it.keyOf ? "key" : "add" };
+    }
+    if (!importingApps) return;
+    importingApps = { sources, picks };
+  } catch (e) {
+    if (!importingApps) return;
+    importingApps = { error: e.message, sources: [], picks: {} };
+  }
+  renderProviders();
+}
+
+function renderImportApps(ia) {
+  const ed = el("div", "editor new importapps");
+  ed.onclick = (e) => e.stopPropagation();
+  const h = el("div", "ehead");
+  h.append(el("b", "", t("Import from other apps")));
+  ed.append(h);
+  const bar = el("div", "bar");
+  const count = el("span", "note grow");
+  const cancel = el("button", "text", t("Cancel"));
+  cancel.onclick = cancelEdit;
+  const go = el("button", "text primary", t("Import"));
+  const recount = () => {
+    const n = Object.values(ia.picks).filter((x) => x.on).length;
+    count.textContent = n ? t("{n} selected", { n }) : "";
+    go.disabled = !n;
+  };
+  bar.append(count, cancel, go);
+  if (ia.loading) {
+    ed.append(el("div", "appnote", t("Reading CC Switch and Alma…")), bar);
+    go.disabled = true;
+    return ed;
+  }
+  if (ia.error) {
+    ed.append(el("div", "warnbox", ia.error), bar);
+    go.disabled = true;
+    return ed;
+  }
+  ed.append(el("div", "appnote", t("magpie reads these apps' settings and changes nothing in them. Pick the providers to bring over.")));
+  const list = el("div", "applist");
+  for (const s of ia.sources) {
+    const sec = el("div", "appsrc");
+    const sh = el("div", "apphead");
+    sh.append(el("b", "", s.name), el("code", "", s.path.replace(/^\/Users\/[^/]+|^\/home\/[^/]+/, "~")));
+    sec.append(sh);
+    if (!s.found) sec.append(el("div", "appempty", t("Not found on this computer")));
+    else if (s.error) sec.append(el("div", "appempty", s.error));
+    else if (!s.items.length) sec.append(el("div", "appempty", t("No providers in it")));
+    for (const it of s.items) sec.append(importAppRow(ia, s, it, recount));
+    list.append(sec);
+  }
+  ed.append(list);
+  go.onclick = async () => {
+    const picks = [];
+    for (const [k, v] of Object.entries(ia.picks)) {
+      if (!v.on) continue;
+      const [source, ref] = k.split("\n");
+      picks.push({ source, ref, mode: v.mode });
+    }
+    go.classList.add("busy");
+    try {
+      const r = await api("importapps", { picks });
+      providers = r.state;
+      importingApps = null;
+      adding = false;
+      editing = null;
+      draft = null;
+      renderProviders();
+      state = await api("state");
+      renderAgents();
+      status(t("Imported {n}: {names}", { n: r.added.length, names: r.added.join(", ") }), "ok");
+    } catch (e) {
+      go.classList.remove("busy");
+      if (!editorError(e.message, "err")) status(e.message, "err");
+    }
+  };
+  ed.append(bar);
+  recount();
+  return ed;
+}
+
+function importAppRow(ia, s, it, recount) {
+  const p = it.provider;
+  const pick = ia.picks[s.id + "\n" + it.ref];
+  const row = el("label", "approw" + (pick ? "" : " dim"));
+  const box = el("input");
+  box.type = "checkbox";
+  box.checked = !!pick?.on;
+  box.disabled = !pick;
+  box.onchange = () => { pick.on = box.checked; recount(); };
+  const who = el("div", "appwho");
+  const name = el("div", "name");
+  name.append(el("span", "", p.name || it.ref));
+  if (it.from) name.append(el("span", "from", it.from));
+  who.append(name);
+  const bits = [];
+  const host = hostOf(p.anthropic || p.chat || p.responses || "");
+  if (it.skip) bits.push(t(it.skip));
+  else {
+    if (host) bits.push(host);
+    if (p.key) bits.push(p.key);
+    if (p.models?.length) bits.push(t(p.models.length === 1 ? "1 model" : "{n} models", { n: p.models.length }));
+  }
+  who.append(el("div", "sub", bits.join(" · ")));
+  if (pick && it.off) who.append(el("div", "sub", t(it.off)));
+  if (pick && (it.keyOf || it.status === "taken")) {
+    const opts = [];
+    if (it.keyOf) opts.push(["key", t("Add as another key of {name}", { name: it.existing })]);
+    opts.push(["add", t(it.status === "taken" ? "Keep both" : "Add as a new provider")]);
+    if (it.status === "taken") opts.push(["replace", t("Replace {name}", { name: it.existing })]);
+    const sg = segs(opts, pick.mode, (m) => { pick.mode = m; if (!pick.on) { pick.on = box.checked = true; recount(); } });
+    sg.onclick = (e) => e.preventDefault(); // a click on a choice is not a click on the checkbox
+    who.append(sg);
+  }
+  let tag = null;
+  if (it.status === "same") tag = el("span", "apptag", t("Already added"));
+  else if (it.skip) tag = el("span", "apptag", t("Can't import"));
+  else if (it.status === "taken") tag = el("span", "apptag", t("Name in use"));
+  else if (it.keyOf) tag = el("span", "apptag", t("Same vendor"));
+  row.append(box, icon(p.icon || "generic"), who);
+  if (tag) row.append(tag);
+  return row;
+}
+
 function renderImport(im) {
   const ed = el("div", "editor new import");
   ed.onclick = (e) => e.stopPropagation();
