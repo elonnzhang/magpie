@@ -36,6 +36,7 @@ type providerJSON struct {
 	Catalog   string `json:"catalog"`
 	Website   string `json:"website"`
 	KeysURL   string `json:"keysUrl"`
+	Headers   map[string]string `json:"headers,omitempty"`
 	Key       struct {
 		Set      bool   `json:"set"`
 		Masked   string `json:"masked"`
@@ -111,6 +112,7 @@ func providerInfo(p provider.Provider, agents []*agent.Agent) providerJSON {
 		ID: p.ID, Name: p.Name, Icon: p.Icon, Preset: p.Preset, Host: p.Host(),
 		Chat: p.Chat, Responses: p.Responses, Anthropic: p.Anthropic,
 		Catalog: p.Catalog, Website: p.Website, KeysURL: p.KeysURL,
+		Headers: p.Headers,
 		Ready: p.Ready(), Chosen: p.Models, Models: []modelJSON{}, Agents: []providerAgent{},
 	}
 	if out.Chosen == nil {
