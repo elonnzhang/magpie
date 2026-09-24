@@ -72,6 +72,7 @@ and there is a terminal version (`magpie tui`) and a plain CLI.
 | Copilot CLI  | `~/.copilot/settings.json`        | model           |
 | Crush        | `~/.config/crush/crush.json`      | large, small    |
 | DeepSeek Harness (dsh) | `~/.dsh/config.yaml` (`$DSH_HOME`) | model |
+| Command Code | `~/.commandcode/settings.json` (+ `providers.json`) | model |
 
 Provider-scoped agents (OpenCode, Pi, Goose, Crush) take `provider/model`.
 Only agents that are installed or configured are shown.
