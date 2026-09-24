@@ -606,6 +606,8 @@ async function loadProviders() {
   if (view === "gateway") renderGatewayLoading();
   else if (!providers) renderProvidersLoading();
   providers = await api("providers");
+  // a reload's provider may be gone since
+  if (typeof editing === "string" && !providers.providers.some((p) => p.id === editing)) editing = null;
   if (!providers.providers.length && editing === null) adding = true;
   if (view === "gateway") renderGatewayView();
   else renderProviders();
@@ -640,6 +642,7 @@ function renderProviders() {
   view.classList.remove("loading");
   view.removeAttribute("aria-busy");
   closeProtoMenu();
+  syncURL();
   const list = $("#providers");
   list.replaceChildren();
   list.hidden = !providers.providers.length;
@@ -3042,6 +3045,18 @@ function show(v) {
   if (v === "providers" || v === "gateway") loadProviders().catch((e) => status(e.message, "err"));
   if (v === "usage") loadUsage().catch((e) => status(e.message, "err"));
   if (v === "settings") loadSettings().catch((e) => status(e.message, "err"));
+  syncURL();
+}
+
+// The tab, and the provider open in it, are kept in the address so a
+// reload comes back to them.
+function syncURL() {
+  if (mode !== "window") return;
+  const q = new URLSearchParams(location.search);
+  if (view === "agents") q.delete("view"); else q.set("view", view);
+  if (view === "providers" && typeof editing === "string") q.set("edit", editing); else q.delete("edit");
+  const s = q.size ? "?" + q : location.pathname;
+  if (s !== location.search) history.replaceState(null, "", s);
 }
 if (mode === "window") for (const b of $("#nav").querySelectorAll("button")) b.onclick = () => { show(b.dataset.view); b.blur(); };
 $("#prefs").onclick = () => { if (mode === "window") show("settings"); else api("window/main?view=settings", {}); $("#prefs").blur(); };
@@ -3086,6 +3101,7 @@ if (mode === "window" && params.get("import")) {
     if (providers && view === "providers") renderProviders();
   }).catch(() => {});
 }
+if (mode === "window" && params.get("view") === "providers" && params.get("edit")) editing = params.get("edit");
 if (mode === "window" && ["providers", "gateway", "usage", "settings"].includes(params.get("view"))) show(params.get("view"));
 else if (mode === "window") slide($("#nav"), "nav");
 load();
