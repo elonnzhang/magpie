@@ -273,7 +273,7 @@ func providerRoutes(mux *http.ServeMux, w Windows, gw *gateway.Server) {
 				// the other keys are kept apart, in the Accounts list
 				in.Keys = old.Keys
 				if in.Key == old.Key {
-					in.KeyName = old.KeyName
+					in.KeyName, in.KeyProtocol = old.KeyName, old.KeyProtocol
 				}
 			}
 			if in.Icon == "" && old != nil && in.Preset == "" {
@@ -375,7 +375,10 @@ func providerRoutes(mux *http.ServeMux, w Windows, gw *gateway.Server) {
 	})
 	// A provider's several keys: add one, put one in use, name or remove it.
 	mux.HandleFunc("POST /api/keys/{action}", func(rw http.ResponseWriter, r *http.Request) {
-		var in struct{ ID, Key, Name, Ref string }
+		var in struct {
+			ID, Key, Name, Ref string
+			Protocol           provider.Protocol
+		}
 		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
 			fail(rw, err)
 			return
@@ -383,7 +386,9 @@ func providerRoutes(mux *http.ServeMux, w Windows, gw *gateway.Server) {
 		var err error
 		switch r.PathValue("action") {
 		case "add":
-			err = provider.AddKey(in.ID, in.Name, in.Key)
+			err = provider.AddKey(in.ID, in.Name, in.Key, in.Protocol)
+		case "protocol":
+			err = provider.SetKeyProtocol(in.ID, in.Ref, in.Protocol)
 		case "use":
 			err = provider.UseKey(in.ID, in.Ref)
 		case "remove":
