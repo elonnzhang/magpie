@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -135,4 +136,12 @@ func FromPresetKey(t *testing.T, id, key string) Provider {
 	}
 	p.Key = key
 	return p
+}
+
+func TestImportAppsByName(t *testing.T) {
+	for i := 1; i < len(appReaders); i++ {
+		if strings.ToLower(appReaders[i-1].name) > strings.ToLower(appReaders[i].name) {
+			t.Fatalf("%s listed before %s", appReaders[i-1].name, appReaders[i].name)
+		}
+	}
 }

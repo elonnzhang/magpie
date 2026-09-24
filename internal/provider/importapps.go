@@ -57,14 +57,14 @@ type AppPick struct {
 	Mode   string `json:"mode,omitempty"`
 }
 
-// appReaders are the apps magpie knows, in the order the picker shows them.
+// appReaders are the apps magpie knows, by name as the picker lists them.
 var appReaders = []struct {
 	id, name string
 	path     func() string
 	read     func(path string) ([]AppImport, error)
 }{
-	{"cc-switch", "CC Switch", ccSwitchPath, readCCSwitch},
 	{"alma", "Alma", almaPath, readAlma},
+	{"cc-switch", "CC Switch", ccSwitchPath, readCCSwitch},
 }
 
 // ImportSources reads every app magpie can import from.

@@ -1123,7 +1123,7 @@ function renderAdd() {
   q.oninput = () => { presetQuery = q.value; drawTiles(); };
   head.append(q);
   const imp = el("button", "text", t("Import…"));
-  imp.title = t("Bring over providers set up in CC Switch or Alma");
+  imp.title = t("Bring over providers set up in Alma or CC Switch");
   imp.onclick = openImportApps;
   head.append(imp);
   if (providers.providers.length) {
@@ -1700,7 +1700,7 @@ function renderImportApps(ia) {
   };
   bar.append(count, cancel, go);
   if (ia.loading) {
-    ed.append(el("div", "appnote", t("Reading CC Switch and Alma…")), bar);
+    ed.append(el("div", "appnote", t("Reading Alma and CC Switch…")), bar);
     go.disabled = true;
     return ed;
   }
@@ -1714,12 +1714,38 @@ function renderImportApps(ia) {
   for (const s of ia.sources) {
     const sec = el("div", "appsrc");
     const sh = el("div", "apphead");
-    sh.append(el("b", "", s.name), el("code", "", s.path.replace(/^\/Users\/[^/]+|^\/home\/[^/]+/, "~")));
+    const logo = el("img", "applogo");
+    logo.src = `icons/app-${s.id}.png`;
+    logo.alt = "";
+    logo.draggable = false;
+    sh.append(logo, el("b", "", s.name), el("code", "", s.path.replace(/^\/Users\/[^/]+|^\/home\/[^/]+/, "~")));
     sec.append(sh);
     if (!s.found) sec.append(el("div", "appempty", t("Not found on this computer")));
     else if (s.error) sec.append(el("div", "appempty", s.error));
     else if (!s.items.length) sec.append(el("div", "appempty", t("No providers in it")));
-    for (const it of s.items) sec.append(importAppRow(ia, s, it, recount));
+    // everything this app has that can come over, on or off at once
+    const mine = s.items.map((it) => ia.picks[s.id + "\n" + it.ref]).filter(Boolean);
+    const boxes = [];
+    const all = el("input");
+    all.type = "checkbox";
+    const allState = () => {
+      const n = mine.filter((x) => x.on).length;
+      all.checked = n > 0 && n === mine.length;
+      all.indeterminate = n > 0 && n < mine.length;
+    };
+    const tick = () => { allState(); recount(); };
+    for (const it of s.items) sec.append(importAppRow(ia, s, it, tick, boxes));
+    if (mine.length) {
+      const lab = el("label", "appall");
+      all.onchange = () => {
+        for (const x of mine) x.on = all.checked;
+        for (const b of boxes) b.checked = all.checked;
+        tick();
+      };
+      lab.append(all, el("span", "", t("Select all")));
+      sh.append(lab);
+      allState();
+    }
     list.append(sec);
   }
   ed.append(list);
@@ -1752,7 +1778,7 @@ function renderImportApps(ia) {
   return ed;
 }
 
-function importAppRow(ia, s, it, recount) {
+function importAppRow(ia, s, it, recount, boxes) {
   const p = it.provider;
   const pick = ia.picks[s.id + "\n" + it.ref];
   const row = el("label", "approw" + (pick ? "" : " dim"));
@@ -1761,6 +1787,7 @@ function importAppRow(ia, s, it, recount) {
   box.checked = !!pick?.on;
   box.disabled = !pick;
   box.onchange = () => { pick.on = box.checked; recount(); };
+  if (pick) boxes.push(box);
   const who = el("div", "appwho");
   const name = el("div", "name");
   name.append(el("span", "", p.name || it.ref));
@@ -1778,9 +1805,10 @@ function importAppRow(ia, s, it, recount) {
   if (pick && it.off) who.append(el("div", "sub", t(it.off)));
   if (pick && (it.keyOf || it.status === "taken")) {
     const opts = [];
-    if (it.keyOf) opts.push(["key", t("Add as another key of {name}", { name: it.existing })]);
+    if (it.keyOf) opts.push(["key", t("Add as another key")]);
     opts.push(["add", t(it.status === "taken" ? "Keep both" : "Add as a new provider")]);
-    if (it.status === "taken") opts.push(["replace", t("Replace {name}", { name: it.existing })]);
+    if (it.status === "taken") opts.push(["replace", t("Replace it")]);
+    who.append(el("div", "sub", t("magpie has {name} already", { name: it.existing })));
     const sg = segs(opts, pick.mode, (m) => { pick.mode = m; if (!pick.on) { pick.on = box.checked = true; recount(); } });
     sg.onclick = (e) => e.preventDefault(); // a click on a choice is not a click on the checkbox
     who.append(sg);

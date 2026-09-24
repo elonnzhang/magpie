@@ -847,6 +847,10 @@ body.panel .modal { padding: 16px 12px; }
 .editor.importapps .applist { display: flex; flex-direction: column; gap: 14px; max-height: min(56vh, 460px); overflow-y: auto; margin: 0 -4px; padding: 0 4px; }
 .editor.importapps .apphead { display: flex; align-items: baseline; gap: 8px; padding-bottom: 4px; }
 .editor.importapps .apphead b { font-weight: 600; font-size: 13px; flex: none; }
+.editor.importapps .apphead { align-items: center; }
+.editor.importapps .applogo { width: 18px; height: 18px; flex: none; border-radius: 4px; }
+.editor.importapps .appall { flex: none; display: flex; align-items: center; gap: 5px; font-size: 11.5px; font-weight: 400; color: var(--muted); text-align: left; cursor: pointer; padding-right: 6px; }
+.editor.importapps .appall input { margin: 0; accent-color: var(--fg); }
 .editor.importapps .apphead code { flex: 1; min-width: 0; font: 11px var(--code); color: var(--faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .editor.importapps .appempty { font-size: 12px; color: var(--muted); padding: 2px 0 4px; }
 .editor.importapps .approw { text-align: left; font-weight: 400; color: var(--fg); display: flex; align-items: flex-start; gap: 10px; padding: 8px 6px; border-radius: 8px; cursor: pointer; }
@@ -858,6 +862,7 @@ body.panel .modal { padding: 16px 12px; }
 .editor.importapps .approw .name { display: flex; align-items: baseline; gap: 6px; font-size: 13px; }
 .editor.importapps .approw .name .from { font-size: 11px; color: var(--muted); }
 .editor.importapps .approw .sub { font-size: 11.5px; color: var(--muted); overflow-wrap: anywhere; }
-.editor.importapps .approw .segs { margin-top: 3px; }
+.editor.importapps .approw .segs { margin-top: 3px; max-width: 100%; overflow-x: auto; }
+.editor.importapps .approw .segs .opt { white-space: nowrap; flex: none; }
 .editor.importapps .apptag { flex: none; font-size: 11px; color: var(--fg-2); background: var(--pill); border-radius: 5px; padding: 1px 6px; margin-top: 1px; }
 .editor.importapps .bar .note { font-size: 12px; color: var(--muted); }
