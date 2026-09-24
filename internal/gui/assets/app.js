@@ -600,7 +600,7 @@ function renderProviders() {
       key = el("span", "key acct", accountPlan(p.account));
       key.title = t("{agent} is signed in; its models are here for every other agent", { agent: p.account.agentName });
     } else {
-      key = el("span", "key " + (p.key.set ? "on" : p.ready ? "free" : "none"), p.key.set ? p.key.masked : p.ready ? t("no key") : t("needs a key"));
+      key = el("span", "key " + (p.key.set ? "on" : p.ready ? "free" : "none"), p.key.set ? (p.keyList?.find((k) => k.active)?.name || p.key.masked) : p.ready ? t("no key") : t("needs a key"));
       key.title = p.key.set ? t("API key {masked}", { masked: p.key.masked }) : p.ready ? t("Local servers need no key") : t("Open the row and paste an API key");
     }
     const chev = el("span", "chev");
@@ -1480,7 +1480,8 @@ function renderEditor(p, presetID) {
   if (keysUrl) { const b = el("button", "link", t("Get a key ↗")); b.onclick = () => api("open", { url: keysUrl }); side.append(b); }
   const keyWrap = el("div", "pair");
   keyWrap.append(key, side);
-  ed.append(...field(t("API key"), keyWrap, isNew ? t("Kept in ~/.config/magpie/providers.json, readable by you alone. Nothing is read from your shell.") : ""));
+  if (p?.keyList?.length) ed.append(...field(t("Accounts"), renderKeyAccounts(p), t("Requests go out with the key in use. Keep several — personal and team, paid and free — and switch any time.")));
+  else ed.append(...field(t("API key"), keyWrap, isNew ? t("Kept in ~/.config/magpie/providers.json, readable by you alone. Nothing is read from your shell.") : ""));
 
   // A user-defined provider can have its own picture; presets keep theirs.
   if (custom) ed.append(...field(t("Icon"), iconPicker(ed), ""));
@@ -1911,10 +1912,10 @@ function renderAccounts(a) {
     } else {
       const forget = el("button", "text quiet", t("Remove"));
       forget.title = t("magpie forgets this account's sign-in; the account itself is untouched");
-      forget.onclick = () => providerAction("forget", { agent: a.agent, user: l.user }, t("{user} removed", { user: l.user }), "login/");
+      forget.onclick = () => accountAction("login/forget", { agent: a.agent, user: l.user }, t("{user} removed", { user: l.user }));
       const use = el("button", "text", t("Use"));
       use.title = t("Sign {agent} in to this account", { agent: a.agentName });
-      use.onclick = () => { use.classList.add("busy"); providerAction("switch", { agent: a.agent, user: l.user }, t("{agent} is now signed in as {user}", { agent: a.agentName, user: l.user }), "login/"); };
+      use.onclick = () => { use.classList.add("busy"); accountAction("login/switch", { agent: a.agent, user: l.user }, t("{agent} is now signed in as {user}", { agent: a.agentName, user: l.user })); };
       row.append(forget, use);
     }
     list.append(row);
@@ -1929,6 +1930,104 @@ function renderAccounts(a) {
     list.append(add);
   }
   return list;
+}
+
+// accountAction changes which account a provider uses, or which it has,
+// and leaves its editor open on the result.
+async function accountAction(path, body, okMsg) {
+  try {
+    providers = await api(path, body);
+    renderProviders();
+    state = await api("state");
+    renderAgents();
+    if (okMsg) status(okMsg, "ok");
+    return true;
+  } catch (e) {
+    if (!editorError(e.message, "err")) status(e.message, "err");
+    document.querySelector(".editor .busy")?.classList.remove("busy");
+    return false;
+  }
+}
+
+// renderKeyAccounts: a key provider's accounts, one per key, the same list
+// a subscription has. addingKey holds the half-typed new one.
+let addingKey = null;
+function renderKeyAccounts(p) {
+  const list = el("div", "accts");
+  for (const k of p.keyList) {
+    const row = el("div", "acc" + (k.active ? " in-use" : "") + (k.id === justAdded ? " new" : ""));
+    const dot = el("span", "dot");
+    if (k.active) dot.append(svg(CHECK, 10, 2.2));
+    const name = el("button", "n rename" + (k.name ? "" : " mono"), k.name || k.masked);
+    name.title = t("Rename");
+    name.onclick = () => {
+      const i = input(k.name, t("Name, e.g. Personal or Team"));
+      i.className = "rename-in";
+      const done = (save) => {
+        if (save && i.value.trim() !== (k.name || "")) accountAction("keys/rename", { id: p.id, ref: k.id, name: i.value });
+        else renderProviders();
+      };
+      i.onkeydown = (e) => { e.stopPropagation(); if (e.key === "Enter") done(true); else if (e.key === "Escape") done(false); };
+      i.onblur = () => done(true);
+      name.replaceWith(i);
+      i.focus();
+    };
+    row.append(dot, name);
+    if (k.name) row.append(el("span", "plan mono", k.masked));
+    row.append(el("span", "grow"));
+    if (k.active) row.append(el("span", "using", t("In use")));
+    else {
+      const rm = el("button", "text quiet", t("Remove"));
+      rm.onclick = () => accountAction("keys/remove", { id: p.id, ref: k.id }, t("Key removed"));
+      const use = el("button", "text", t("Use"));
+      use.onclick = () => { use.classList.add("busy"); accountAction("keys/use", { id: p.id, ref: k.id }, t("{name} now uses {key}", { name: p.name, key: k.name || k.masked })); };
+      row.append(rm, use);
+    }
+    list.append(row);
+  }
+  if (addingKey?.id === p.id) {
+    const box = el("div", "acc adding");
+    const name = input(addingKey.name, t("Name, e.g. Team"));
+    name.oninput = () => { addingKey.name = name.value; };
+    const key = input(addingKey.key, t("paste an API key"), "password");
+    key.oninput = () => { addingKey.key = key.value; };
+    const add = el("button", "text primary", t("Add"));
+    const go = async () => {
+      add.classList.add("busy");
+      const id = await keyFingerprint(key.value.trim());
+      if (await accountAction("keys/add", { id: p.id, name: name.value, key: key.value }, t("Key added — switch to it any time"))) {
+        addingKey = null; justAdded = id; renderProviders(); setTimeout(() => { justAdded = ""; }, 2000);
+      }
+    };
+    add.onclick = go;
+    for (const i of [name, key]) i.onkeydown = (e) => { e.stopPropagation(); if (e.key === "Enter") go(); else if (e.key === "Escape") { addingKey = null; renderProviders(); } };
+    const x = el("button", "text", t("Cancel"));
+    x.onclick = () => { addingKey = null; renderProviders(); };
+    const fields = el("div", "kf");
+    fields.append(name, key);
+    const bar = el("div", "kb");
+    if (p.keysUrl) { const g = el("button", "link", t("Get a key ↗")); g.onclick = () => api("open", { url: p.keysUrl }); bar.append(g); }
+    bar.append(el("span", "grow"), x, add);
+    box.append(fields, bar);
+    list.append(box);
+    queueMicrotask(() => (addingKey.name ? key : name).focus());
+  } else {
+    const add = el("button", "acc add");
+    const ic = el("span", "dot");
+    ic.append(svg(PLUS, 10, 1.8));
+    add.append(ic, el("span", "n", t("Add another key")));
+    add.onclick = () => { addingKey = { id: p.id, name: "", key: "" }; renderProviders(); };
+    list.append(add);
+  }
+  return list;
+}
+
+// keyFingerprint is the id the backend gives a key, to greet a new one.
+async function keyFingerprint(key) {
+  try {
+    const h = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(key)));
+    return [...h.slice(0, 5)].map((b) => b.toString(16).padStart(2, "0")).join("");
+  } catch { return ""; }
 }
 
 async function providerAction(action, body, okMsg, base = "provider/") {
