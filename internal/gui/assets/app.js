@@ -605,14 +605,19 @@ function renderProviders() {
 }
 
 // Sign-ins magpie found but leaves alone, so nobody wonders why an agent that
-// is clearly logged in is not in the list. Empty today.
+// is clearly logged in is not in the list: the ones the user removed.
 function renderExcluded() {
   const box = $("#excluded");
   box.replaceChildren();
   for (const x of providers.excluded) {
     const r = el("div", "excluded");
     r.append(icon(x.agentIcon), el("span", "", ""));
-    r.lastChild.append(el("b", "", t("{agent} is signed in, but stays out of this list. ", { agent: x.agentName })), x.why);
+    r.lastChild.append(el("b", "", t("{agent} is signed in, but stays out of this list. ", { agent: x.agentName })), t(x.why));
+    if (x.provider) {
+      const back = el("button", "link", t("Add it back"));
+      back.onclick = () => providerAction("save", { id: x.provider }, t("{name} added back", { name: x.agentName }));
+      r.lastChild.append(" ", back);
+    }
     box.append(r);
   }
 }
@@ -1246,7 +1251,11 @@ function renderEditor(p, presetID) {
     ed.append(...field(t("Models"), renderModels(p), ""));
     ed.append(...field(t("Endpoints"), renderEndpoints(p, p)));
     const bar = el("div", "bar");
-    bar.append(el("span", "grow"));
+    // removing only hides it from magpie; the agent stays signed in
+    const del = el("button", "text danger", t("Remove"));
+    del.title = t("{agent} stays signed in; magpie just stops offering it", { agent: a.agentName });
+    del.onclick = () => providerAction("delete", { id: p.id }, t("{name} removed", { name: p.name }));
+    bar.append(del, el("span", "grow"));
     const cancel = el("button", "text", t("Cancel"));
     cancel.onclick = cancelEdit;
     const saveBtn = el("button", "text primary", t("Save"));
