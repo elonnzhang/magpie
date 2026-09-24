@@ -131,7 +131,7 @@ func Run(version string, showMain bool, link string) error {
 		Windows:        application.WindowsOptions{DisableQuitOnLastWindowClosed: true},
 		// A version downloaded but not restarted into is installed on the
 		// way out, so the next launch is the new one.
-		OnShutdown: func() { updates.install() },
+		OnShutdown: func() { updates.install(false) },
 		// Wails exits on some webview errors; say why before it does.
 		ErrorHandler: func(err error) { log.Println("magpie:", err) },
 	})

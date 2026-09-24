@@ -232,20 +232,59 @@ async function load() {
 // downloaded (a click restarts into it) or, where magpie can't replace
 // itself, out (a click opens the release page).
 async function renderUpdateBadge() {
-  const b = $("#update");
+  const b = $("#update"), label = b.querySelector("span");
   const u = await api("update").catch(() => null);
-  const on = !!u && (u.state === "ready" || u.state === "available");
+  // pulling: a click is downloading it again, and restarts once it's in
+  const pulling = !!u && !!b.dataset.pulling && ["checking", "downloading", "ready"].includes(u.state);
+  if (b.dataset.pulling && !pulling) {
+    delete b.dataset.pulling;
+    b.classList.remove("busy");
+  }
+  const on = pulling || (!!u && (u.state === "ready" || u.state === "available" || (u.state === "error" && u.retry)));
   if (b.hidden !== !on) b.hidden = !on;
-  if (!on || b.classList.contains("busy")) return;
-  b.querySelector("span").textContent = t("Update");
-  b.title = u.state === "ready" ? t("Restart to update to {v}", { v: u.latest }) : t("{v} is out", { v: u.latest });
-  b.onclick = () => {
-    if (u.state === "ready") {
-      b.classList.add("busy");
-      b.querySelector("span").textContent = t("Restarting…");
+  if (!on) return;
+  const restart = async () => {
+    b.classList.add("busy");
+    label.textContent = t("Restarting…");
+    // an answer means it didn't: the password prompt dismissed, or the swap failed
+    if (await api("update/install", {}).catch(() => ({}))) {
+      b.classList.remove("busy");
+      renderUpdateBadge();
     }
-    api("update/install", {}).catch(() => b.classList.remove("busy"));
   };
+  if (pulling) {
+    if (u.state === "ready") {
+      delete b.dataset.pulling;
+      return restart();
+    }
+    label.textContent = u.total ? t("Downloading… {p}%", { p: Math.floor((u.done / u.total) * 100) }) : t("Downloading…");
+    setTimeout(renderUpdateBadge, 700);
+    return;
+  }
+  if (b.classList.contains("busy")) return;
+  label.textContent = t("Update");
+  b.title = u.state === "ready" ? t("Restart to update to {v}", { v: u.latest })
+    : u.state === "error" ? t("Couldn't download {v}", { v: u.latest }) + " · " + t("Click to try again")
+    : u.stuck ? updateStuck(u) + " " + t("Click to open the download page.")
+    : t("{v} is out", { v: u.latest });
+  if (u.error) b.title += "\n" + u.error;
+  b.onclick = () => {
+    if (u.state === "ready") return restart();
+    if (u.state === "error") {
+      b.dataset.pulling = "1";
+      b.classList.add("busy");
+      label.textContent = t("Downloading…");
+      return api("update/install", {}).then(renderUpdateBadge, renderUpdateBadge);
+    }
+    api("update/install", {}).catch(() => {});
+  };
+}
+
+// updateStuck says why this magpie can't replace itself where it is.
+function updateStuck(u) {
+  return u.stuck === "translocated"
+    ? t("macOS is running magpie from a temporary copy, so it can't update itself; move magpie to Applications and open it from there.")
+    : t("magpie is running from its disk image, so it can't update itself; drag it to Applications and open it from there.");
 }
 
 // ---------- picker ----------
@@ -3001,11 +3040,13 @@ async function renderUpdate(r, u) {
   };
   switch (u.state) {
     case "ready":
-      sub.textContent = t("{v} is downloaded", { v: u.latest });
-      btn(t("Restart to update"), () => api("update/install", {}));
+      sub.textContent = t("{v} is downloaded", { v: u.latest }) + (u.error ? " · " + u.error : "");
+      // back with an answer only when it didn't restart
+      btn(t("Restart to update"), async () => renderUpdate(r, await api("update/install", {}).catch(() => null) || undefined));
       break;
     case "available":
       sub.textContent = t("{v} is out", { v: u.latest });
+      if (u.stuck) sub.textContent += " · " + updateStuck(u);
       btn(t("Download"), () => api("update/install", {}));
       break;
     case "downloading":
