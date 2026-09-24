@@ -196,7 +196,9 @@ async function load() {
     state = await api("state");
     applyPrefs(state.settings);
     renderAgents();
-    if (view === "providers" || view === "gateway") await loadProviders();
+    // an open provider editor is someone typing: coming back to the window
+    // must not rebuild it under them
+    if ((view === "providers" || view === "gateway") && !(editing || adding)) await loadProviders();
     if (view === "usage") await loadUsage();
     if (view === "settings") await loadSettings();
   } catch (e) {
@@ -1355,7 +1357,7 @@ function renderEditor(p, presetID) {
     return ed;
   }
 
-  const key = input("", p?.key.set ? t("{masked} · paste a new key to replace it", { masked: p.key.masked }) : t(pr?.noKey || p?.key.optional ? "optional for local servers" : "paste an API key"), "password");
+  const key = input(draft.key || "", p?.key.set ? t("{masked} · paste a new key to replace it", { masked: p.key.masked }) : t(pr?.noKey || p?.key.optional ? "optional for local servers" : "paste an API key"), "password");
   key.oninput = () => { draft.key = key.value; };
   key.onkeydown = (e) => { e.stopPropagation(); if (e.key === "Enter" && isNew) save(); else if (e.key === "Escape") cancelEdit(); };
   const side = el("div", "side");
@@ -1410,7 +1412,7 @@ function renderEditor(p, presetID) {
 
   if (p) ed.append(...field(t("Models"), renderModels(p), ""));
   else if (custom) {
-    const ex = input("", t("model ids, comma separated · e.g. gpt-5.5, claude-sonnet-5"));
+    const ex = input(draft.extra.join(", "), t("model ids, comma separated · e.g. gpt-5.5, claude-sonnet-5"));
     ex.oninput = () => { draft.extra = ex.value.split(/[,\s]+/).filter(Boolean); };
     ed.append(...field(t("Models"), ex, t("Optional: magpie asks the vendor for its list after saving.")));
   }
@@ -1458,8 +1460,9 @@ function renderEditor(p, presetID) {
   const save = () => {
     const body = { id: draft.id, name: draft.name, preset: draft.preset, key: draft.key || "", chat: draft.chat, responses: draft.responses, anthropic: draft.anthropic, catalog: draft.catalog, models: p ? draft.chosen : draft.extra };
     if (custom) body.headers = headersOf(draft.headers);
-    if (isNew && custom && !body.name) { name.focus(); return status(t("Give it a name"), "warn"); }
-    if (isNew && custom && !body.chat && !body.anthropic) { url.focus(); return status(t("A base URL is needed"), "warn"); }
+    if (isNew && custom && !body.name) { name.focus(); return editorError(t("Give it a name"), "warn"); }
+    if (isNew && custom && !body.chat && !body.anthropic) { url.focus(); return editorError(t("A base URL is needed"), "warn"); }
+    editorError("");
     saveBtn.classList.add("busy");
     providerAction("save", body, t(isNew ? "{name} added" : "{name} saved", { name: draft.name || draft.id }));
   };
@@ -1644,9 +1647,29 @@ async function providerAction(action, body, okMsg) {
     renderAgents();
     if (okMsg) status(okMsg, "ok");
   } catch (e) {
-    status(e.message, "err");
+    if (!editorError(e.message, "err")) status(e.message, "err");
     document.querySelector(".editor .busy")?.classList.remove("busy");
   }
+}
+
+// editorError shows what went wrong inside the open provider editor, by its
+// buttons, until the next edit or try; the page's status line sits behind
+// the dialog. False when no editor is open.
+function editorError(msg, kind = "err") {
+  const ed = document.querySelector(".editor");
+  if (!ed) return false;
+  let box = ed.querySelector(".editor-error");
+  if (!msg) { box?.remove(); return true; }
+  if (!box) {
+    box = el("div", "editor-error");
+    box.setAttribute("role", "alert");
+    const bar = ed.querySelector(":scope > .bar");
+    bar ? bar.before(box) : ed.append(box);
+    ed.addEventListener("input", () => box.remove(), { once: true });
+  }
+  box.className = "editor-error " + kind;
+  box.textContent = msg;
+  return true;
 }
 
 function slug(s) { return s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, ""); }

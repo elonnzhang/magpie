@@ -601,6 +601,8 @@ body.window .foot { padding-left: 18px; }
 .editor.import .mchips .mchip { cursor: default; }
 .editor .bar { grid-column: 1 / -1; display: flex; align-items: center; gap: 4px; padding-top: 10px; border-top: 1px solid var(--line-2); margin-top: 2px; }
 .editor .bar .danger { margin-left: -7px; }
+.editor .editor-error { grid-column: 1 / -1; font-size: 12px; line-height: 1.45; color: var(--red); white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; -webkit-user-select: text; }
+.editor .editor-error.warn { color: var(--amber); }
 .busy { opacity: .55; pointer-events: none; }
 
 /* agent chips: who is on this provider, click one to pick it a model */
