@@ -55,6 +55,24 @@ type Account struct {
 	fetch  func(ctx context.Context) ([]catalog.Model, error)
 }
 
+// APIs lists the APIs model is served on, as the provider's last model
+// list said: Copilot serves its GPT models on Responses alone and its
+// Claude models on Chat and Anthropic's. nil is not known, and every API
+// the provider speaks may be tried.
+func (p Provider) APIs(model string) []Protocol {
+	ms, _, _ := catalog.Live(p.ID)
+	for _, m := range ms {
+		if m.ID == model && len(m.APIs) > 0 {
+			out := make([]Protocol, len(m.APIs))
+			for i, a := range m.APIs {
+				out[i] = Protocol(a)
+			}
+			return out
+		}
+	}
+	return nil
+}
+
 // Sign authenticates a request to the provider, refreshing what needs it.
 // Plain providers get their key; accounts get the agent's tokens.
 func (p Provider) Sign(ctx context.Context, req *http.Request, proto Protocol, body []byte) error {
@@ -877,7 +895,7 @@ func copilotProvider(app copilotApp, plan string) Provider {
 		if lastRole(body) == "user" {
 			req.Header.Set("X-Initiator", "user")
 		}
-		if bytes.Contains(body, []byte(`"image_url"`)) {
+		if bytes.Contains(body, []byte(`"image_url"`)) || bytes.Contains(body, []byte(`"input_image"`)) || bytes.Contains(body, []byte(`"type":"image"`)) {
 			req.Header.Set("Copilot-Vision-Request", "true")
 		}
 		return nil
@@ -889,17 +907,20 @@ func copilotProvider(app copilotApp, plan string) Provider {
 		}
 		return ms, catalog.SaveLive("copilot", copilotBase, ms)
 	}
-	// the newest GPT models are served only on /responses and Claude's only
-	// on /chat/completions; the gateway learns which from Copilot's answer
-	return Provider{ID: "copilot", Name: "Copilot", Icon: "githubcopilot", Chat: copilotBase, Responses: copilotBase, Website: "https://github.com/features/copilot", Account: acct}
+	// each model is served on some of these: the newest GPT models on
+	// /responses alone, Claude's on /v1/messages and /chat/completions (its
+	// model list says; see Provider.APIs)
+	return Provider{ID: "copilot", Name: "Copilot", Icon: "githubcopilot", Chat: copilotBase, Responses: copilotBase, Anthropic: copilotBase, Website: "https://github.com/features/copilot", Account: acct}
 }
 
-// lastRole is the role of the last message in a chat or Responses request;
-// a Responses tool result has none.
+// lastRole is the role of the last message in a chat, Anthropic or
+// Responses request. Tool results are "tool" in Anthropic's, where they
+// ride in a user message, and have none in Responses.
 func lastRole(body []byte) string {
 	var v struct {
 		Messages []struct {
-			Role string `json:"role"`
+			Role    string          `json:"role"`
+			Content json.RawMessage `json:"content"`
 		} `json:"messages"`
 		Input json.RawMessage `json:"input"`
 	}
@@ -907,7 +928,22 @@ func lastRole(body []byte) string {
 		return ""
 	}
 	if len(v.Messages) > 0 {
-		return v.Messages[len(v.Messages)-1].Role
+		last := v.Messages[len(v.Messages)-1]
+		var blocks []struct {
+			Type string `json:"type"`
+		}
+		if last.Role == "user" && json.Unmarshal(last.Content, &blocks) == nil && len(blocks) > 0 {
+			results := 0
+			for _, b := range blocks {
+				if b.Type == "tool_result" {
+					results++
+				}
+			}
+			if results == len(blocks) {
+				return "tool"
+			}
+		}
+		return last.Role
 	}
 	var text string
 	if json.Unmarshal(v.Input, &text) == nil {
@@ -951,6 +987,23 @@ func copilotToken(ctx context.Context, github string) (copilotSession, error) {
 	return s, nil
 }
 
+// copilotAPIs names the APIs of Copilot's supported_endpoints; the
+// websocket one is left out, as is anything magpie doesn't speak.
+func copilotAPIs(endpoints []string) []string {
+	var out []string
+	for _, e := range endpoints {
+		switch e {
+		case "/chat/completions":
+			out = append(out, string(Chat))
+		case "/responses":
+			out = append(out, string(Responses))
+		case "/v1/messages":
+			out = append(out, string(Anthropic))
+		}
+	}
+	return out
+}
+
 // internal is a Copilot model id nobody picks by hand.
 var copilotInternal = regexp.MustCompile(`^(copilot-search|exec-agent|trajectory)|-(secondary|tertiary|4th|free-auto)$`)
 
@@ -980,9 +1033,10 @@ func copilotModels(ctx context.Context, app copilotApp) ([]catalog.Model, error)
 	b, _ := io.ReadAll(io.LimitReader(res.Body, 4<<20))
 	var v struct {
 		Data []struct {
-			ID           string `json:"id"`
-			Name         string `json:"name"`
-			Picker       bool   `json:"model_picker_enabled"`
+			ID           string   `json:"id"`
+			Name         string   `json:"name"`
+			Picker       bool     `json:"model_picker_enabled"`
+			Endpoints    []string `json:"supported_endpoints"`
 			Capabilities struct {
 				Type     string `json:"type"`
 				Supports struct {
@@ -1006,7 +1060,7 @@ func copilotModels(ctx context.Context, app copilotApp) ([]catalog.Model, error)
 		if !m.Picker && (m.Policy == nil || m.Policy.State != "enabled") {
 			continue
 		}
-		out = append(out, catalog.Model{ID: m.ID, Name: m.Name, Efforts: m.Capabilities.Supports.Efforts})
+		out = append(out, catalog.Model{ID: m.ID, Name: m.Name, Efforts: m.Capabilities.Supports.Efforts, APIs: copilotAPIs(m.Endpoints)})
 	}
 	if len(out) == 0 {
 		return nil, errors.New("Copilot lists no chat model for this account")

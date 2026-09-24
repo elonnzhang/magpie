@@ -14,6 +14,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -237,7 +238,7 @@ func (s *Server) countTokens(w http.ResponseWriter, r *http.Request) {
 		}
 		p = q
 	}
-	if ok && p.Anthropic != "" {
+	if ok && p.Anthropic != "" && slices.Contains(s.usable(p, model), provider.Anthropic) {
 		res, err := s.forward(r.Context(), p, provider.Anthropic, "/v1/messages/count_tokens", rewriteModel(body, model), r.Header)
 		if err == nil {
 			defer res.Body.Close()
@@ -473,7 +474,7 @@ func (s *Server) attempt(w http.ResponseWriter, r *http.Request, from provider.P
 	}
 	// a backend that only streams gets a non-streaming request translated
 	// (the provider is always streamed on that path) rather than relayed
-	relay := p.Base(from) != "" && s.fits(p.ID, model, from) && (p.Account == nil || !p.Account.Stream || streamOf(body))
+	relay := slices.Contains(s.usable(p, model), from) && (p.Account == nil || !p.Account.Stream || streamOf(body))
 	if relay {
 		call.To = from
 		if status, msg, done := s.passthrough(w, r, p, from, model, body, &call.Usage); done {
@@ -616,14 +617,16 @@ func (s *Server) markUnfit(providerID, model string, proto provider.Protocol) {
 	s.mu.Unlock()
 }
 
-// usable lists the protocols p speaks that model hasn't been turned away
-// from, preferred first: Chat Completions, which every OpenAI-compatible
-// vendor serves alike, except for OpenAI's own models where their makers
-// serve them, whose newest are Responses-first (and some Responses-only).
+// usable lists the protocols p speaks that model is served on, as far as
+// the provider says and hasn't turned it away, preferred first: Chat
+// Completions, which every OpenAI-compatible vendor serves alike, except
+// for OpenAI's own models where their makers serve them, whose newest are
+// Responses-first (and some Responses-only).
 func (s *Server) usable(p provider.Provider, model string) []provider.Protocol {
+	apis := p.APIs(model)
 	var out []provider.Protocol
 	for _, proto := range p.Speaks() {
-		if s.fits(p.ID, model, proto) {
+		if s.fits(p.ID, model, proto) && (apis == nil || slices.Contains(apis, proto)) {
 			out = append(out, proto)
 		}
 	}

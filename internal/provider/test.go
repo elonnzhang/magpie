@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -81,7 +82,12 @@ func (p Provider) testModel(q Provider, proto Protocol) string {
 	}
 	pools = append(pools, p.Available())
 	for _, want := range []func(string) bool{
-		func(id string) bool { return proto != Anthropic || isClaude(id) },
+		func(id string) bool {
+			if apis := p.APIs(id); apis != nil {
+				return slices.Contains(apis, proto)
+			}
+			return proto != Anthropic || isClaude(id)
+		},
 		func(string) bool { return true },
 	} {
 		for _, pool := range pools {

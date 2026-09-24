@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/yetone/magpie/internal/catalog"
 	"github.com/yetone/magpie/internal/provider"
 )
 
@@ -766,5 +767,63 @@ func TestUsableOrder(t *testing.T) {
 	s.markUnfit("copilot", "gpt-6-sol", provider.Responses)
 	if got := s.usable(copilot, "gpt-6-sol"); len(got) != 1 || got[0] != provider.Chat {
 		t.Errorf("after /responses turned it away: %v", got)
+	}
+}
+
+// A provider whose model list says which APIs each model is served on
+// (Copilot's does) has each request sent straight to one of them: nothing
+// is tried on an API the model isn't served on.
+func TestModelListSaysWhichAPI(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	paths := map[string]int{}
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		io.ReadAll(r.Body)
+		paths[r.URL.Path]++
+		w.Header().Set("Content-Type", "text/event-stream")
+		switch r.URL.Path {
+		case "/v1/responses":
+			io.WriteString(w, sse(
+				`event: response.created`+"\n"+`data: {"type":"response.created","response":{"id":"r1","model":"gpt-x","usage":{"input_tokens":0,"output_tokens":0}}}`,
+				`event: response.output_text.delta`+"\n"+`data: {"type":"response.output_text.delta","delta":"ok"}`,
+				`event: response.completed`+"\n"+`data: {"type":"response.completed","response":{"id":"r1","model":"gpt-x","status":"completed","usage":{"input_tokens":1,"output_tokens":1}}}`))
+		case "/v1/chat/completions":
+			io.WriteString(w, sse(
+				`data: {"id":"c1","model":"claude-x","choices":[{"delta":{"role":"assistant","content":"ok"}}]}`,
+				`data: {"id":"c1","choices":[{"delta":{},"finish_reason":"stop"}]}`,
+				`data: [DONE]`))
+		default:
+			w.WriteHeader(http.StatusBadRequest)
+			io.WriteString(w, `{"error":{"message":"unexpected"}}`)
+		}
+	}))
+	t.Cleanup(up.Close)
+	if err := provider.Save(provider.Provider{ID: "fake", Name: "Fake", Key: "k", Models: []string{"gpt-x", "claude-x"},
+		Chat: up.URL + "/v1", Responses: up.URL + "/v1", Anthropic: up.URL}); err != nil {
+		t.Fatal(err)
+	}
+	if err := catalog.SaveLive("fake", up.URL+"/v1", []catalog.Model{
+		{ID: "gpt-x", APIs: []string{"responses"}},
+		{ID: "claude-x", APIs: []string{"chat"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	handler := New().Handler()
+	for _, tc := range []struct{ path, body, want string }{
+		// an Anthropic client, and the model on Responses alone
+		{"/v1/messages", `{"model":"gpt-x","max_tokens":10,"messages":[{"role":"user","content":"hi"}]}`, "/v1/responses"},
+		// a Chat client, likewise: not relayed
+		{"/v1/chat/completions", `{"model":"gpt-x","messages":[{"role":"user","content":"hi"}]}`, "/v1/responses"},
+		// a Responses client, and the model on Chat alone
+		{"/v1/responses", `{"model":"claude-x","input":"hi","stream":true}`, "/v1/chat/completions"},
+		// an Anthropic client the provider speaks to, but not for this model
+		{"/v1/messages", `{"model":"claude-x","max_tokens":10,"messages":[{"role":"user","content":"hi"}]}`, "/v1/chat/completions"},
+	} {
+		clear(paths)
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, httptest.NewRequest("POST", tc.path, strings.NewReader(tc.body)))
+		if rec.Code != 200 || len(paths) != 1 || paths[tc.want] != 1 {
+			t.Errorf("%s %s: status %d, upstream %v, want only %s: %s", tc.path, tc.body, rec.Code, paths, tc.want, rec.Body.String())
+		}
 	}
 }
