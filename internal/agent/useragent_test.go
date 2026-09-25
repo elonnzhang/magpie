@@ -19,6 +19,7 @@ func TestAgentOf(t *testing.T) {
 		"deepseek-harness/0.3.1":                   "dsh",
 		"dsh":                                      "dsh", // a record kept by an id already
 		"pi":                                       "pi",
+		"grok-pager/0.2.1":                         "grok",
 		"":                                         "other",
 	}
 	for ua, want := range cases {

@@ -93,7 +93,7 @@ func grok(home string) *Agent {
 	}
 	return &Agent{
 		ID: "grok", Name: "Grok Build", Icon: "xai", Aliases: []string{"grok-build", "grok-cli"},
-		UA:  []string{"grok-shell", "xai-grok-build"},
+		UA:  []string{"grok-shell", "grok-pager", "xai-grok-build"}, // grok-pager: its terminal front end
 		Dir: dir, Path: path,
 		Sync: func() error {
 			if !wired() {
