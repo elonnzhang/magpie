@@ -44,6 +44,16 @@ func commandCode(home string) *Agent {
 			}
 			return strings.Join(notes, " ")
 		},
+		Check: func() string {
+			if !usesMagpie(get("model")) {
+				return ""
+			}
+			if p := get("modelProvider"); p != magpieID {
+				return "Command Code's modelProvider (settings.json) is " + orDefault(p) + ", so it no longer asks magpie"
+			}
+			return wiringOff("Command Code", providers, func(k string) (string, bool) { return edit.GetJSON(providers, "provider."+magpieID+"."+k) },
+				"baseURL", gatewayV1())
+		},
 		Fields: []Field{{
 			Key: "model", Label: "model",
 			Get: func() string { return get("model") },

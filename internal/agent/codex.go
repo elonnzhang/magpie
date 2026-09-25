@@ -257,7 +257,7 @@ func codex(home string) *Agent {
 			return ""
 		},
 		// every prompt typed into Codex goes into history.jsonl
-		LastUsed: func() time.Time { return lastJSONLTime(filepath.Join(dir, "history.jsonl"), "ts") },
+		LastUsed: func() time.Time { return lastJSONLTime(filepath.Join(dir, "history.jsonl"), "ts", "text") },
 		// the app-server behind the Codex app (and every codex TUI) builds
 		// its model list once, at start-up.
 		Notice: func() string {

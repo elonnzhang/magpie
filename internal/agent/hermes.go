@@ -59,6 +59,13 @@ func hermes(home string) *Agent {
 			}
 			return ""
 		},
+		Check: func() string {
+			if !onMagpie() {
+				return ""
+			}
+			return wiringOff("Hermes", path, func(k string) (string, bool) { return edit.GetYAML(path, "providers."+magpieID+"."+k) },
+				"base_url", gatewayV1(), "api_key", gateway.Token)
+		},
 		Fields: []Field{{
 			Key: "model", Label: "model",
 			Get: func() string {

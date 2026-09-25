@@ -112,6 +112,18 @@ func grok(home string) *Agent {
 			}
 			return ""
 		},
+		Check: func() string {
+			v := get("default")
+			if !usesMagpie(v) {
+				return ""
+			}
+			t := edit.GetTOMLTable(path, "model."+strconv.Quote(v))
+			if t == nil {
+				return "Grok Build's [model." + strconv.Quote(v) + "] (config.toml) is gone, so it no longer reaches magpie"
+			}
+			return wiringOff("Grok Build", path, func(k string) (string, bool) { v, ok := t[k]; return v, ok },
+				"base_url", gatewayV1(), "api_key", gateway.Token)
+		},
 		Fields: []Field{
 			{
 				Key: "model", Label: "model",

@@ -3,7 +3,9 @@ package agent
 import (
 	"fmt"
 	"path/filepath"
+	"runtime"
 	"strings"
+	"time"
 
 	"github.com/yetone/magpie/internal/catalog"
 	"github.com/yetone/magpie/internal/edit"
@@ -195,5 +197,32 @@ func claude(home string) *Agent {
 		UA:  []string{"claude-cli", "claude-code"},
 		Bin: "claude", Dir: filepath.Dir(path), Path: path,
 		Fields: fields,
+		Check: func() string {
+			if !isMagpie(get()) {
+				return ""
+			}
+			// an administrator's settings win over the user's
+			if u, _ := edit.GetJSON(claudeManaged(), "env.ANTHROPIC_BASE_URL"); u != "" && u != gateway.URL() {
+				return "Claude Code's managed settings (" + claudeManaged() + ") set ANTHROPIC_BASE_URL to " + u + ", which wins over magpie's"
+			}
+			return wiringOff("Claude Code", path, func(k string) (string, bool) { return edit.GetJSON(path, "env."+k) },
+				"ANTHROPIC_BASE_URL", gateway.URL(), "ANTHROPIC_AUTH_TOKEN", gateway.Token)
+		},
+		// every prompt typed into Claude Code goes into history.jsonl
+		LastUsed: func() time.Time {
+			return lastJSONLTime(filepath.Join(filepath.Dir(path), "history.jsonl"), "timestamp", "display")
+		},
 	}
+}
+
+// claudeManaged is where an administrator's Claude Code settings live; a var
+// so tests can point it elsewhere.
+var claudeManaged = func() string {
+	switch runtime.GOOS {
+	case "darwin":
+		return "/Library/Application Support/ClaudeCode/managed-settings.json"
+	case "windows":
+		return `C:\ProgramData\ClaudeCode\managed-settings.json`
+	}
+	return "/etc/claude-code/managed-settings.json"
 }

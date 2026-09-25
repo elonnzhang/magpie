@@ -66,6 +66,14 @@ func omp(home string) *Agent {
 			}
 			return ""
 		},
+		Check: func() string {
+			if !usesMagpie(get()) {
+				return ""
+			}
+			models := pick("models")
+			return wiringOff("omp", models, func(k string) (string, bool) { return edit.GetYAML(models, "providers."+magpieID+"."+k) },
+				"baseUrl", gatewayV1())
+		},
 		Fields: []Field{{
 			Key: "model", Label: "model",
 			Get: get,

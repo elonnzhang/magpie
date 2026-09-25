@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -115,14 +116,22 @@ func (a *Agent) Drift() *Drift {
 	if len(a.Fields) == 0 {
 		return nil
 	}
+	vals := a.Values()
+	// the field on one of magpie's models: where drift shows, and what
+	// setting it again sets
+	on, onMagpie := a.Fields[0], false
+	for _, f := range a.Fields {
+		if magpieValue(a, f, vals[f.Key], vals) {
+			on, onMagpie = f, true
+			break
+		}
+	}
 	if a.Check != nil {
 		if d := a.Check(); d != "" {
-			v := a.Fields[0].Get()
-			return &Drift{Kind: "unwired", Field: a.Fields[0].Key, Now: v, Want: v, Detail: d}
+			return &Drift{Kind: "unwired", Field: on.Key, Now: vals[on.Key], Want: vals[on.Key], Detail: d}
 		}
 	}
 	rec := appliedOf(a.ID)
-	vals := a.Values()
 	for _, f := range a.Fields {
 		want, ok := rec.Fields[f.Key]
 		if !ok || vals[f.Key] == want || !magpieValue(a, f, want, vals) || magpieValue(a, f, vals[f.Key], vals) {
@@ -131,9 +140,9 @@ func (a *Agent) Drift() *Drift {
 		return &Drift{Kind: "replaced", Field: f.Key, Now: vals[f.Key], Want: want,
 			Detail: a.Name + "'s config was changed outside magpie: " + f.Label + " is " + orDefault(vals[f.Key]) + ", not " + want + " as magpie set it"}
 	}
-	if f := a.Fields[0]; a.LastUsed != nil && magpieValue(a, f, vals[f.Key], vals) {
+	if a.LastUsed != nil && onMagpie {
 		if used := a.LastUsed(); bypassed(used, rec.At, usage.LastSeen(a.ID)) {
-			return &Drift{Kind: "bypassed", Field: f.Key, Now: vals[f.Key], Want: vals[f.Key],
+			return &Drift{Kind: "bypassed", Field: on.Key, Now: vals[on.Key], Want: vals[on.Key],
 				Detail: a.Name + " was used at " + used.Format("15:04") + " but none of its requests reached magpie — one started before magpie set it up still runs on its old config: restart it"}
 		}
 	}
@@ -220,9 +229,11 @@ func (a *Agent) Keep() {
 	appliedSave(m)
 }
 
-// lastJSONLTime reads the newest Unix-seconds timestamp under key in the
-// last lines of a JSON-lines log. Zero if there is none.
-func lastJSONLTime(path, key string) time.Time {
+// lastJSONLTime reads the newest Unix timestamp (seconds or milliseconds)
+// under key in the last lines of a prompt log, passing over the lines whose
+// text (under textKey) is a slash command: those an agent answers itself.
+// Zero if there is none.
+func lastJSONLTime(path, key, textKey string) time.Time {
 	f, err := os.Open(path)
 	if err != nil {
 		return time.Time{}
@@ -240,12 +251,44 @@ func lastJSONLTime(path, key string) time.Time {
 		if json.Unmarshal(sc.Bytes(), &m) != nil {
 			continue
 		}
-		if n, err := strconv.ParseInt(string(m[key]), 10, 64); err == nil && n > last {
-			last = n
+		var text string
+		if json.Unmarshal(m[textKey], &text) == nil && strings.HasPrefix(strings.TrimSpace(text), "/") {
+			continue
 		}
+		n, err := strconv.ParseInt(string(m[key]), 10, 64)
+		if err != nil {
+			continue
+		}
+		if n > 1e12 {
+			n /= 1000
+		}
+		last = max(last, n)
 	}
 	if last == 0 {
 		return time.Time{}
 	}
 	return time.Unix(last, 0)
+}
+
+// wiringOff checks what magpie wrote into an agent's config to reach the
+// gateway — pairs of key and value, read with get — and says which no longer
+// holds, "" when all do. A URL is quoted; a key's value never is.
+func wiringOff(name, file string, get func(string) (string, bool), kvs ...string) string {
+	for i := 0; i+1 < len(kvs); i += 2 {
+		k, want := kvs[i], kvs[i+1]
+		v, _ := get(k)
+		if v == want {
+			continue
+		}
+		where := name + "'s " + k + " (" + filepath.Base(file) + ")"
+		switch {
+		case v == "":
+			return where + " is gone, so it no longer reaches magpie"
+		case strings.Contains(strings.ToLower(k), "url"):
+			return where + " is " + v + ", not magpie's gateway at " + want
+		default:
+			return where + " was changed, so magpie's gateway won't take its requests"
+		}
+	}
+	return ""
 }

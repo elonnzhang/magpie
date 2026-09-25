@@ -66,6 +66,7 @@ func dsh(home string) *Agent {
 			}
 			return strings.Join(notes, " ")
 		},
+		Check: func() string { return dshCheck(dir) },
 		Fields: []Field{{
 			Key: "model", Label: "model",
 			Get: func() string { return dshGet(dir) },
@@ -186,6 +187,39 @@ func dshGet(dir string) string {
 		return magpieID + "/" + model
 	}
 	return model
+}
+
+// dshCheck says what keeps a dsh on one of magpie's models from reaching
+// the gateway: its llm-deepseek entry pointed elsewhere, or — since 0.1.5 —
+// the key it names gone from .env.
+func dshCheck(dir string) string {
+	if !usesMagpie(dshGet(dir)) {
+		return ""
+	}
+	files := dshProfiles(dir)
+	path := filepath.Join(dir, "config.yaml")
+	if len(files) > 0 {
+		path = files[0]
+	}
+	_, items, _ := dshRead(path)
+	base := ""
+	if i := dshFind(items, "llm-deepseek"); i >= 0 {
+		for _, l := range items[i].lines {
+			if k, v, ok := strings.Cut(strings.TrimSpace(l), ":"); ok && k == "baseURL" {
+				base = yamlScalar(strings.TrimSpace(v))
+			}
+		}
+	}
+	get := func(string) (string, bool) { return base, base != "" }
+	if off := wiringOff("DeepSeek Harness", path, get, "baseURL", gatewayV1()); off != "" {
+		return off
+	}
+	if len(files) > 0 {
+		env := filepath.Join(dir, ".env")
+		return wiringOff("DeepSeek Harness", env, func(k string) (string, bool) { return edit.GetEnvFile(env, k) },
+			dshKeyRef, gateway.Token)
+	}
+	return ""
 }
 
 // yamlScalar reads a plain or quoted YAML scalar.

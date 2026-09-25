@@ -289,6 +289,13 @@ func opencode(home, cfg string) *Agent {
 		ID: "opencode", Name: "OpenCode", Icon: "opencode", Aliases: []string{"oc"},
 		UA:  []string{"opencode"},
 		Bin: "opencode", Dir: dir, Path: path,
+		Check: func() string {
+			if !usesMagpie(get("model"), get("small_model")) {
+				return ""
+			}
+			return wiringOff("OpenCode", path, func(k string) (string, bool) { return edit.GetJSON(path, "provider."+magpieID+".options."+k) },
+				"baseURL", gatewayV1(), "apiKey", gateway.Token)
+		},
 		Sync: func() error {
 			return syncJSON(path, "provider."+magpieID, func() any { return magpieProviderJSON("opencode") })
 		},
@@ -313,6 +320,13 @@ func pi(home string) *Agent {
 	return &Agent{
 		ID: "pi", Name: "Pi", Icon: "pi", Bin: "pi", Dir: dir, Path: path,
 		UA: []string{"pi-"},
+		Check: func() string {
+			if p, _ := get("defaultProvider"); p != magpieID {
+				return ""
+			}
+			return wiringOff("Pi", modelsPath, func(k string) (string, bool) { return edit.GetJSON(modelsPath, "providers."+magpieID+"."+k) },
+				"baseUrl", gatewayV1(), "apiKey", gateway.Token)
+		},
 		Sync: func() error {
 			return syncJSON(modelsPath, "providers."+magpieID, func() any { return magpieProviderJSON("pi") })
 		},
@@ -495,6 +509,15 @@ func crush(home, cfg string) *Agent {
 	return &Agent{
 		ID: "crush", Name: "Crush", Icon: "crush", Bin: "crush", Dir: filepath.Dir(path), Path: path,
 		UA: []string{"crush"},
+		Check: func() string {
+			large, _ := get("models.large.provider")
+			small, _ := get("models.small.provider")
+			if large != magpieID && small != magpieID {
+				return ""
+			}
+			return wiringOff("Crush", path, func(k string) (string, bool) { return get("providers." + magpieID + "." + k) },
+				"base_url", gatewayV1(), "api_key", gateway.Token)
+		},
 		Sync: func() error {
 			return syncJSON(path, "providers."+magpieID, func() any { return magpieProviderJSON("crush") })
 		},
