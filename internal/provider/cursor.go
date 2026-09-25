@@ -86,7 +86,7 @@ func askCursorIdentity() (user, plan string, ok bool) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	out, _ := exec.CommandContext(ctx, path, "about", "--format", "json").Output()
+	out, _ := agentCommand(ctx, path, "about", "--format", "json").Output()
 	var about struct {
 		SubscriptionTier string `json:"subscriptionTier"`
 		UserEmail        string `json:"userEmail"`
@@ -128,7 +128,7 @@ func cursorModels(ctx context.Context) ([]catalog.Model, error) {
 	}
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, path, "models").Output()
+	out, err := agentCommand(ctx, path, "models").Output()
 	if err != nil {
 		return nil, errorf("cursor-agent models: %v", err)
 	}

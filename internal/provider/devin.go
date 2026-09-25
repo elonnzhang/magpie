@@ -94,7 +94,7 @@ func askDevinIdentity() (user, plan string, ok bool) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, path, "auth", "status").Output()
+	out, err := agentCommand(ctx, path, "auth", "status").Output()
 	if err != nil {
 		return "", "", false
 	}
@@ -216,7 +216,7 @@ func askDevinFamilies(ctx context.Context) ([]DevinFamily, error) {
 	}
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, path, "models", "list", "--format", "json").Output()
+	out, err := agentCommand(ctx, path, "models", "list", "--format", "json").Output()
 	if err != nil {
 		return nil, errorf("devin models list: %v", err)
 	}

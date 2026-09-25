@@ -30,6 +30,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/yetone/magpie/internal/netproxy"
 	"github.com/yetone/magpie/internal/provider"
 )
 
@@ -83,7 +84,7 @@ func (b *subscriptionBridge) startGrok(ctx context.Context, req *Request, model,
 		"-m", model, "--tools", "search_tool,use_tool", "--disable-web-search", "--no-subagents", "--no-plan"}
 	cmd := exec.CommandContext(context.Background(), binary, args...)
 	cmd.Dir = ws
-	cmd.Env = append(grokEnv(os.Environ(), home, auth), "MAGPIE_MCP_CALLBACK="+callback, "MAGPIE_MCP_TOOLS="+toolsPath)
+	cmd.Env = netproxy.Env(append(grokEnv(os.Environ(), home, auth), "MAGPIE_MCP_CALLBACK="+callback, "MAGPIE_MCP_TOOLS="+toolsPath))
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		cleanup()
@@ -173,7 +174,7 @@ func grokHome(exe, binary, auth, userHome string) (string, error) {
 	defer cancel()
 	cmd := exec.CommandContext(ctx, binary, "login")
 	cmd.Dir = home
-	cmd.Env = grokEnv(os.Environ(), home, auth)
+	cmd.Env = netproxy.Env(grokEnv(os.Environ(), home, auth))
 	out, err := cmd.CombinedOutput()
 	if _, ok := provider.GrokUser(dir); !ok {
 		msg := strings.TrimSpace(string(out))

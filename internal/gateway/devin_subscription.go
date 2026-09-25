@@ -31,6 +31,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/yetone/magpie/internal/netproxy"
 	"github.com/yetone/magpie/internal/provider"
 )
 
@@ -82,7 +83,7 @@ func (b *subscriptionBridge) startDevin(ctx context.Context, req *Request, model
 
 	cmd := exec.CommandContext(context.Background(), binary, "acp", "--model", model)
 	cmd.Dir = ws
-	cmd.Env = devinEnv(os.Environ(), home)
+	cmd.Env = netproxy.Env(devinEnv(os.Environ(), home))
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		cleanup()

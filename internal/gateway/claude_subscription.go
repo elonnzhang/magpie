@@ -37,6 +37,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/yetone/magpie/internal/netproxy"
 	"github.com/yetone/magpie/internal/provider"
 )
 
@@ -173,7 +174,7 @@ func (b *subscriptionBridge) start(ctx context.Context, req *Request, model, oau
 	args := claudeCLIArgs(model, string(mcpConfig), req.Effort)
 	cmd := exec.CommandContext(context.Background(), binary, args...)
 	cmd.Dir = tmp
-	cmd.Env = cleanClaudeEnv(os.Environ())
+	cmd.Env = netproxy.Env(cleanClaudeEnv(os.Environ()))
 	if oauth != "" {
 		// a saved account in use beside the one Claude Code is signed in to
 		cmd.Env = append(cmd.Env, "CLAUDE_CODE_OAUTH_TOKEN="+oauth)

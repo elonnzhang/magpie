@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/url"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -91,6 +92,45 @@ func TestFor(t *testing.T) {
 	}
 	if settings.Save(settings.Settings{Proxy: "127.0.0.1:7890"}) != nil || filepath.Dir(settings.Path()) != filepath.Join(dir, "magpie") {
 		t.Fatal("host:port proxy refused")
+	}
+}
+
+func TestEnv(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	sysCache.at, sysCache.p = farFuture, Proxy{URL: "http://127.0.0.1:7890", Bypass: []string{"*.corp", "<local>"}}
+	t.Cleanup(func() { sysCache.at = zero })
+	get := func(env []string, k string) string {
+		v := ""
+		for _, e := range env {
+			if key, val, _ := strings.Cut(e, "="); key == k {
+				v = val
+			}
+		}
+		return v
+	}
+
+	// the system's proxy, where the environment names none
+	env := Env([]string{"PATH=/bin", "HOME=/h"})
+	if get(env, "HTTPS_PROXY") != "http://127.0.0.1:7890" || get(env, "all_proxy") != "http://127.0.0.1:7890" ||
+		get(env, "NO_PROXY") != "localhost,127.0.0.1,::1,.corp" || get(env, "PATH") != "/bin" {
+		t.Fatalf("system: %v", env)
+	}
+	// one the environment names is kept
+	env = Env([]string{"https_proxy=http://10.0.0.1:1", "NO_PROXY=x"})
+	if len(env) != 2 || get(env, "https_proxy") != "http://10.0.0.1:1" {
+		t.Fatalf("environment: %v", env)
+	}
+	// magpie's own replaces the environment's
+	settings.Save(settings.Settings{Proxy: "127.0.0.1:6152"})
+	env = Env([]string{"HTTPS_PROXY=http://10.0.0.1:1", "PATH=/bin"})
+	if get(env, "HTTPS_PROXY") != "http://127.0.0.1:6152" || get(env, "http_proxy") != "http://127.0.0.1:6152" ||
+		get(env, "NO_PROXY") != "localhost,127.0.0.1,::1" || len(env) != 9 {
+		t.Fatalf("setting: %v", env)
+	}
+	// and "direct" leaves none
+	settings.Save(settings.Settings{Proxy: "direct"})
+	if env = Env([]string{"HTTPS_PROXY=http://10.0.0.1:1", "PATH=/bin"}); len(env) != 1 {
+		t.Fatalf("direct: %v", env)
 	}
 }
 

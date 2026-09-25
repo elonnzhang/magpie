@@ -12,6 +12,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -52,6 +53,78 @@ func For(u *url.URL) (*url.URL, error) {
 		return nil, nil
 	}
 	return Parse(sys.URL)
+}
+
+// Env is env (the process's own when nil) for an agent's CLI that magpie
+// starts — a sign-in, or a subscription's run — told to use the proxy
+// magpie's own requests would: the CLI reads only *_PROXY, which an app
+// started from the Dock or the Start menu doesn't have, so a proxy set in
+// magpie or the system's alone left it trying the vendor directly. A
+// proxy set in magpie replaces any in env and "direct" drops them; the
+// system's is only added where env names none. Loopback never goes
+// through it, since a CLI calls back to magpie there.
+func Env(env []string) []string {
+	if env == nil {
+		env = os.Environ()
+	}
+	var p string
+	var bypass []string
+	switch s := strings.TrimSpace(settings.Load().Proxy); s {
+	case "direct":
+		return withProxy(env, "", nil)
+	case "":
+		for _, e := range env {
+			k, v, _ := strings.Cut(e, "=")
+			if proxyVar(k) && !strings.EqualFold(k, "NO_PROXY") && strings.TrimSpace(v) != "" {
+				return env
+			}
+		}
+		sys := System()
+		if sys.URL == "" {
+			return env
+		}
+		p, bypass = sys.URL, sys.Bypass
+	default:
+		u, err := Parse(s)
+		if err != nil {
+			return env
+		}
+		p = u.String()
+	}
+	return withProxy(env, p, bypass)
+}
+
+func proxyVar(k string) bool {
+	switch strings.ToUpper(k) {
+	case "HTTPS_PROXY", "HTTP_PROXY", "ALL_PROXY", "NO_PROXY":
+		return true
+	}
+	return false
+}
+
+// withProxy is env with its *_PROXY replaced by p ("" for none), and
+// NO_PROXY naming loopback and bypass.
+func withProxy(env []string, p string, bypass []string) []string {
+	out := make([]string, 0, len(env)+8)
+	for _, e := range env {
+		if k, _, _ := strings.Cut(e, "="); !proxyVar(k) {
+			out = append(out, e)
+		}
+	}
+	if p == "" {
+		return out
+	}
+	no := []string{"localhost", "127.0.0.1", "::1"}
+	for _, b := range bypass {
+		switch b = strings.TrimPrefix(strings.TrimSpace(b), "*"); b {
+		case "", "<local>":
+		default:
+			no = append(no, b)
+		}
+	}
+	nos := strings.Join(no, ",")
+	return append(out, "HTTPS_PROXY="+p, "https_proxy="+p, "HTTP_PROXY="+p, "http_proxy="+p,
+		"ALL_PROXY="+p, "all_proxy="+p, "NO_PROXY="+nos, "no_proxy="+nos)
 }
 
 // Parse reads a proxy address; a bare host:port is an HTTP proxy.

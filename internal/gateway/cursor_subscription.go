@@ -28,6 +28,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/yetone/magpie/internal/netproxy"
 	"github.com/yetone/magpie/internal/provider"
 )
 
@@ -93,7 +94,7 @@ func (b *subscriptionBridge) startCursor(ctx context.Context, req *Request, mode
 	}
 	cmd := exec.CommandContext(context.Background(), binary, args...)
 	cmd.Dir = ws
-	cmd.Env = cursorEnv(os.Environ(), home)
+	cmd.Env = netproxy.Env(cursorEnv(os.Environ(), home))
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		cleanup()
