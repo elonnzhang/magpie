@@ -123,16 +123,33 @@ func parseAnthropic(body []byte) (*Request, error) {
 			r.Parallel = &f
 		}
 	}
+	// output_config's effort sets how hard the model thinks only when it
+	// was asked to think: Claude Code's title requests carry effort but no
+	// thinking, and reasoning_effort would turn it on upstream
 	if th := a.Thinking; th != nil && (th.Type == "enabled" || th.Type == "adaptive") {
 		r.Thinking = true
 		r.Effort = effortOfBudget(th.BudgetTokens)
-	}
-	if oc := a.OutputConfig; oc != nil {
-		if e := effortOf(oc.Effort); e != "" {
-			r.Effort = e
+		if oc := a.OutputConfig; oc != nil {
+			if e := effortOf(oc.Effort); e != "" {
+				r.Effort = e
+			}
 		}
 	}
 	return r, nil
+}
+
+// thinkingOffUnlessAsked says thinking is off when the request doesn't
+// mention it. That is what Anthropic's API assumes, but DeepSeek and other
+// vendors' Anthropic endpoints think by default, so Claude Code's requests
+// for a session title, sent without thinking, spent their tokens thinking.
+func thinkingOffUnlessAsked(body []byte) []byte {
+	var v struct {
+		Thinking json.RawMessage `json:"thinking"`
+	}
+	if json.Unmarshal(body, &v) != nil || v.Thinking != nil {
+		return body
+	}
+	return withFields(body, map[string]any{"thinking": map[string]any{"type": "disabled"}})
 }
 
 // buildAnthropic renders a request for an Anthropic-style upstream.

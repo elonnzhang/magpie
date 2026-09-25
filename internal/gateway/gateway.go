@@ -599,8 +599,11 @@ func (s *Server) forward(ctx context.Context, p provider.Provider, to provider.P
 // but not this one.
 func (s *Server) passthrough(w http.ResponseWriter, r *http.Request, p provider.Provider, proto provider.Protocol, model string, body []byte, u *Usage) (status int, msg string, done bool) {
 	body = rewriteModel(body, model)
-	if proto == provider.Chat {
+	switch proto {
+	case provider.Chat:
 		body = developerAsSystem(body)
+	case provider.Anthropic:
+		body = thinkingOffUnlessAsked(body)
 	}
 	res, err := s.forward(r.Context(), p, proto, pathOf(proto), p.Prepare(body), r.Header)
 	if err != nil {

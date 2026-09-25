@@ -460,6 +460,43 @@ func TestChatPassthroughSendsDeveloperAsSystem(t *testing.T) {
 	}
 }
 
+// Claude Code asks for a session title without thinking; DeepSeek's
+// Anthropic endpoint thinks unless told not to
+func TestAnthropicPassthroughTurnsThinkingOffUnlessAsked(t *testing.T) {
+	f := &fake{t: t, ctype: "application/json", reply: `{"id":"msg","type":"message","content":[]}`}
+	setup(t, provider.Anthropic, f)
+	for _, c := range []struct{ req, want string }{
+		{`{"model":"m1","max_tokens":5,"messages":[],"output_config":{"effort":"high"}}`, `"thinking":{"type":"disabled"}`},
+		{`{"model":"m1","max_tokens":5,"messages":[],"thinking":{"type":"adaptive"}}`, `"thinking":{"type":"adaptive"}`},
+		{`{"model":"m1","max_tokens":5,"messages":[],"thinking":{"type":"enabled","budget_tokens":2048}}`, `"thinking":{"budget_tokens":2048,"type":"enabled"}`},
+	} {
+		if code, body := post(t, "/v1/messages", c.req); code != 200 {
+			t.Fatalf("%d %s", code, body)
+		}
+		if !bytes.Contains(f.got, []byte(c.want)) {
+			t.Errorf("%s forwarded as %s", c.req, f.got)
+		}
+	}
+}
+
+// effort without thinking asks for no reasoning on a Chat upstream
+func TestAnthropicEffortWithoutThinking(t *testing.T) {
+	f := &fake{t: t, reply: sse(`data: {"id":"c1","choices":[{"delta":{"content":"T"},"finish_reason":"stop"}]}`, `data: [DONE]`)}
+	setup(t, provider.Chat, f)
+	if code, body := post(t, "/v1/messages", `{"model":"m1","max_tokens":5,"stream":true,"messages":[{"role":"user","content":"title?"}],"output_config":{"effort":"high"}}`); code != 200 {
+		t.Fatalf("%d %s", code, body)
+	}
+	if bytes.Contains(f.got, []byte("reasoning_effort")) {
+		t.Errorf("upstream asked to reason: %s", f.got)
+	}
+	if code, body := post(t, "/v1/messages", `{"model":"m1","max_tokens":5,"stream":true,"messages":[{"role":"user","content":"hi"}],"thinking":{"type":"adaptive"},"output_config":{"effort":"high"}}`); code != 200 {
+		t.Fatalf("%d %s", code, body)
+	}
+	if !bytes.Contains(f.got, []byte(`"reasoning_effort":"high"`)) {
+		t.Errorf("adaptive thinking lost its effort: %s", f.got)
+	}
+}
+
 func TestErrorsAndUnknownModel(t *testing.T) {
 	f := &fake{t: t, ctype: "application/json", code: 402, reply: `{"error":{"message":"Insufficient Balance","type":"x"}}`}
 	setup(t, provider.Chat, f)
