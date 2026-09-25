@@ -365,6 +365,8 @@ const I18N = {
     "Auto": "自动",
     "Global": "国际",
     "China Mainland": "中国大陆",
+    "Plan": "套餐",
+    "Pay as you go": "按量付费",
     "which endpoint {p} is reached through": "通过哪个入口访问 {p}",
     "{what} copied": "已复制{what}",
     "Connect": "接入",

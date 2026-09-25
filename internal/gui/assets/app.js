@@ -2162,8 +2162,8 @@ function renderEditor(p, presetID) {
     ed.append(...field(t("Headers"), headerEditor(pr?.headerHints || []), t("Optional headers sent with every request to {p}, applied after auth.", { p: pr?.name || p?.name })));
   }
 
-  // a relay that offers several regional endpoints: one selector, and the
-  // provider's base URLs follow it
+  // a relay that offers several regional endpoints, or a vendor whose plans
+  // are served at their own: one selector, and the provider's base URLs follow it
   let refreshEndpoints = () => {};
   if (pr?.regions?.length) {
     const seg = el("div", "segs");
@@ -2179,7 +2179,7 @@ function renderEditor(p, presetID) {
       seg.append(b);
     }
     queueMicrotask(() => slide(seg, "regions"));
-    ed.append(...field(t("Region"), seg, t("which endpoint {p} is reached through", { p: pr.name })));
+    ed.append(...field(t(pr.regionLabel || "Region"), seg, t("which endpoint {p} is reached through", { p: pr.name })));
   }
 
   if (p) ed.append(...field(t("Models"), renderModels(p), ""));
