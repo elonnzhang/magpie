@@ -1,7 +1,7 @@
 package provider
 
 // What is left on an API key, as the vendor's own balance endpoint tells
-// it: DeepSeek, Kimi, OpenRouter and SiliconFlow are known by their hosts;
+// it: DeepSeek, Kimi, OpenRouter, SiliconFlow and AiHubMix are known by their hosts;
 // any other provider can name an endpoint and where the amount sits in its
 // reply (BalanceURL, BalancePath), the way a relay's own usage query does.
 
@@ -47,6 +47,8 @@ func balanceSourceOf(p Provider) (balanceSource, bool) {
 			return balanceSource{"https://api.siliconflow.cn/v1/user/info", readSiliconFlow("¥")}, true
 		case "api.siliconflow.com":
 			return balanceSource{"https://api.siliconflow.com/v1/user/info", readSiliconFlow("$")}, true
+		case "aihubmix.com":
+			return balanceSource{"https://aihubmix.com/dashboard/billing/remain", readAiHubMix}, true
 		}
 	}
 	return balanceSource{}, false
@@ -162,6 +164,27 @@ func readSiliconFlow(sign string) func([]byte) (string, error) {
 		}
 		return money(sign, v), nil
 	}
+}
+
+// readAiHubMix: {"object":"list","total_usage":12.5}, what is left on the
+// key in dollars, despite the name. A key without a limit answers -1 of
+// AiHubMix's units ($1 is 500000 of them): it has no balance of its own, and
+// the account's is told only to the account's access token, not to a key.
+func readAiHubMix(b []byte) (string, error) {
+	var r struct {
+		Remain any `json:"total_usage"`
+	}
+	if err := json.Unmarshal(b, &r); err != nil {
+		return "", err
+	}
+	v, ok := number(r.Remain)
+	if !ok {
+		return "", errors.New("no balance in the reply")
+	}
+	if v < 0 {
+		return "", errors.New("this key has no limit, and AiHubMix tells a key only what is left on it; give the key a limit in AiHubMix's console to see it here")
+	}
+	return money("$", v), nil
 }
 
 // readBalancePath picks the amount out of a reply by a dotted path, array
