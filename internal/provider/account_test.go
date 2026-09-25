@@ -319,27 +319,6 @@ func TestClaudeRefreshesToken(t *testing.T) {
 	}
 }
 
-func TestCodexSignAndBody(t *testing.T) {
-	signIn(t)
-	p, _ := find(All(), "codex")
-	req, _ := http.NewRequest("POST", p.Responses+"/responses", nil)
-	if err := p.Sign(context.Background(), req, Responses, nil); err != nil {
-		t.Fatal(err)
-	}
-	if !strings.HasPrefix(req.Header.Get("Authorization"), "Bearer h.") || req.Header.Get("chatgpt-account-id") != "acct-1" || req.Header.Get("originator") != "magpie" {
-		t.Fatalf("headers: %v", req.Header)
-	}
-	out := p.Prepare([]byte(`{"model":"gpt-5.5","input":"hi","max_output_tokens":5,"temperature":0.1,"stream":false,"store":true,"reasoning":{"effort":"low"}}`))
-	var m map[string]any
-	json.Unmarshal(out, &m)
-	if _, ok := m["max_output_tokens"]; ok || m["temperature"] != nil || m["stream"] != true || m["store"] != false || m["reasoning"] == nil {
-		t.Fatalf("body: %s", out)
-	}
-	if in := m["input"].([]any)[0].(map[string]any); in["role"] != "user" || in["content"].([]any)[0].(map[string]any)["text"] != "hi" {
-		t.Fatalf("input: %s", out)
-	}
-}
-
 func TestCopilotSignAndModels(t *testing.T) {
 	signIn(t)
 	var api *httptest.Server

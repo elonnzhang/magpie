@@ -48,6 +48,7 @@ func codexModels(ctx context.Context, sign func(context.Context, *http.Request, 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("ChatGPT models: %s", resp.Status)
 	}
+	saveCodexPrompts(b)
 	ms := parseCodexModels(b)
 	if len(ms) == 0 {
 		return nil, errors.New("ChatGPT listed no Codex models")

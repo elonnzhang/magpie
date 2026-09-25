@@ -668,10 +668,11 @@ func TestCodexAccountUpstream(t *testing.T) {
 			if err := json.Unmarshal(f.got, &request); err != nil {
 				t.Fatal(err)
 			}
-			if request.Instructions != "Top-level instructions" || len(request.Input) != 3 {
+			// Codex's instructions go as Codex CLI sends them, the client's first in the input
+			if !strings.HasPrefix(request.Instructions, "You are Codex") || len(request.Input) != 4 {
 				t.Fatalf("instructions lost or reordered: %s", f.got)
 			}
-			for i, want := range []struct{ role, text string }{{"developer", "First instruction"}, {"user", "ping"}, {"developer", "Later instruction"}} {
+			for i, want := range []struct{ role, text string }{{"developer", "Top-level instructions"}, {"developer", "First instruction"}, {"user", "ping"}, {"developer", "Later instruction"}} {
 				item := request.Input[i]
 				if item.Role != want.role || stringOrText(item.Content) != want.text {
 					t.Errorf("input[%d]: role=%q content=%s, want %s %q", i, item.Role, item.Content, want.role, want.text)

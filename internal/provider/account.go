@@ -673,24 +673,6 @@ func codexAccount(home string) (Provider, bool) {
 	return Provider{ID: "codex", Name: "Codex", Icon: "codex-color", Responses: CodexBase, Website: "https://chatgpt.com/codex", Account: acct}, true
 }
 
-// codexSign authenticates a request to the ChatGPT backend with the
-// tokens token hands out.
-func codexSign(token func(context.Context) (tok, accountID string, err error)) func(context.Context, *http.Request, []byte) error {
-	return func(ctx context.Context, req *http.Request, _ []byte) error {
-		tok, accountID, err := token(ctx)
-		if err != nil {
-			return err
-		}
-		req.Header.Set("Authorization", "Bearer "+tok)
-		if accountID != "" {
-			req.Header.Set("chatgpt-account-id", accountID)
-		}
-		req.Header.Set("OpenAI-Beta", "responses=experimental")
-		req.Header.Set("originator", "magpie")
-		return nil
-	}
-}
-
 // codexToken returns a usable access token, refreshing it through OpenAI
 // when it is about to expire. A refresh rotates the tokens, so the new
 // ones go back into auth.json for Codex CLI to find.
@@ -762,42 +744,6 @@ func codexRefresh(ctx context.Context, raw map[string]any) (string, error) {
 	raw["tokens"] = toks
 	raw["last_refresh"] = time.Now().UTC().Format(time.RFC3339Nano)
 	return fresh.AccessToken, nil
-}
-
-// codexBody makes a Responses request acceptable to the ChatGPT backend:
-// it streams only, keeps nothing, wants a list of input items, and
-// rejects the sampling knobs.
-func codexBody(body []byte) []byte {
-	dec := json.NewDecoder(bytes.NewReader(body))
-	dec.UseNumber()
-	var m map[string]any
-	if dec.Decode(&m) != nil || m == nil {
-		return body
-	}
-	for _, k := range []string{"max_output_tokens", "max_completion_tokens", "temperature", "top_p", "previous_response_id", "user", "safety_identifier", "service_tier"} {
-		delete(m, k)
-	}
-	m["store"] = false
-	m["stream"] = true
-	if s, ok := m["input"].(string); ok {
-		m["input"] = []any{map[string]any{"type": "message", "role": "user",
-			"content": []any{map[string]any{"type": "input_text", "text": s}}}}
-	}
-	// Codex rejects system messages in input; developer preserves their
-	// instruction role without moving them out of conversation order.
-	if input, ok := m["input"].([]any); ok {
-		for _, item := range input {
-			msg, ok := item.(map[string]any)
-			if ok && msg["role"] == "system" && (msg["type"] == nil || msg["type"] == "message") {
-				msg["role"] = "developer"
-			}
-		}
-	}
-	out, err := json.Marshal(m)
-	if err != nil {
-		return body
-	}
-	return out
 }
 
 // ---- Copilot: a GitHub account -------------------------------------------------
