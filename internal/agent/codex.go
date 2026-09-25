@@ -203,12 +203,22 @@ func codex(home string) *Agent {
 			switch {
 			case asProvider() && get("model_catalog_json") == catalogPath:
 				b := codexcat.Catalog(magpieModels())
-				if cur, _ := edit.Read(catalogPath); string(cur) == string(b) {
-					return nil
+				if cur, _ := edit.Read(catalogPath); string(cur) != string(b) {
+					if err := edit.WriteAtomic(catalogPath, b); err != nil {
+						return err
+					}
 				}
-				return edit.WriteAtomic(catalogPath, b)
 			case viaBase():
-				return codexStaleCache(filepath.Join(dir, "models_cache.json"), codexcat.Tag(provider.CodexListed()))
+				if err := codexStaleCache(filepath.Join(dir, "models_cache.json"), codexcat.Tag(provider.CodexListed())); err != nil {
+					return err
+				}
+			default:
+				return nil
+			}
+			// a model that now has levels it had none of before (models.dev
+			// synced, a vendor's list fetched) keeps an effort it takes
+			if isMagpie(get("model")) {
+				return settle()
 			}
 			return nil
 		},
@@ -229,7 +239,19 @@ func codex(home string) *Agent {
 			},
 			{
 				Key: "effort", Label: "effort",
-				Get: func() string { return get("model_reasoning_effort") },
+				// unset, Codex takes the model's default, as the catalog
+				// magpie wrote says it — shown as such rather than as none
+				Get: func() string {
+					if e := get("model_reasoning_effort"); e != "" {
+						return e
+					}
+					if m := get("model"); isMagpie(m) {
+						if e := catalog.Efforts(models(), m); len(e) > 0 {
+							return codexcat.DefaultEffort(e)
+						}
+					}
+					return ""
+				},
 				Set: func(v string) error {
 					if v == "" {
 						return edit.DelTOMLTop(path, "model_reasoning_effort")

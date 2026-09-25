@@ -688,6 +688,12 @@ func responsesFirst(p provider.Provider, model string) bool {
 // served on this one, the request is built again for the next endpoint it
 // speaks, and the model is remembered there.
 func (s *Server) forwardTranslated(ctx context.Context, p provider.Provider, to provider.Protocol, req *Request, model string, in http.Header) (*http.Response, provider.Protocol, error) {
+	if req.Effort != "" {
+		if e := fitEffort(req.Effort, p.Efforts(model)); e != req.Effort {
+			r := *req
+			r.Effort, req = e, &r
+		}
+	}
 	for {
 		body := build(to, req, model, p.Host(), p.RejectsTemperature(model))
 		res, err := s.forward(ctx, p, to, pathOf(to), p.Prepare(body), in)

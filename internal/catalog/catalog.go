@@ -82,6 +82,17 @@ type mdModel struct {
 	} `json:"limit"`
 }
 
+// efforts are the reasoning levels models.dev says the model takes.
+func (m mdModel) efforts() []string {
+	var out []string
+	for _, r := range m.Reasoning {
+		if r.Type == "effort" {
+			out = r.Values
+		}
+	}
+	return out
+}
+
 // window is the tokens a prompt to m may hold: the input limit where
 // models.dev gives one (gpt-5's 272K of its 400K), else the whole context.
 func (m mdModel) window() int {
@@ -102,6 +113,9 @@ var (
 	// windows are the models' context windows, by bare id, as most of the
 	// providers serving them give it
 	windows map[string]int
+	// efforts are the models' reasoning levels, by bare id, as most of the
+	// providers that give any for them give them
+	efforts map[string][]string
 
 	syncMu sync.Mutex
 )
@@ -142,8 +156,15 @@ func load() map[string]mdProvider {
 				mdev = m
 				votes := map[string]int{}
 				sizes := map[string]map[int]int{}
+				levels := map[string]map[string]int{}
 				for _, p := range m {
 					for id, x := range p.Models {
+						if e := x.efforts(); len(e) > 0 {
+							if levels[bareID(id)] == nil {
+								levels[bareID(id)] = map[string]int{}
+							}
+							levels[bareID(id)][strings.Join(e, ",")]++
+						}
 						if slices.Contains(x.Modalities.Input, "image") {
 							votes[bareID(id)]++
 						} else {
@@ -161,6 +182,10 @@ func load() map[string]mdProvider {
 				for id, by := range sizes {
 					windows[id] = mostGiven(by)
 				}
+				efforts = map[string][]string{}
+				for id, by := range levels {
+					efforts[id] = strings.Split(mostListed(by), ",")
+				}
 				images = map[string]bool{}
 				for id, v := range votes {
 					if v > 0 {
@@ -177,7 +202,7 @@ func load() map[string]mdProvider {
 // Reset forgets the loaded catalog so the next call re-reads the cache.
 func Reset() {
 	once = sync.Once{}
-	mdev, images, windows = nil, nil, nil
+	mdev, images, windows, efforts = nil, nil, nil, nil
 }
 
 // Sync downloads the models.dev catalog into CachePath. It serializes with
@@ -272,11 +297,7 @@ func Provider(id string) []Model {
 		}
 		mm := Model{ID: m.ID, Name: m.Name, Provider: id, Released: m.ReleaseDate, Price: m.Cost, Temperature: m.Temperature,
 			Images: slices.Contains(m.Modalities.Input, "image"), Context: m.window()}
-		for _, r := range m.Reasoning {
-			if r.Type == "effort" {
-				mm.Efforts = r.Values
-			}
-		}
+		mm.Efforts = m.efforts()
 		out = append(out, mm)
 	}
 	sort.SliceStable(out, func(i, j int) bool {
@@ -325,6 +346,42 @@ func ContextOf(id string) int {
 		return windows[b[:i]]
 	}
 	return 0
+}
+
+// EffortsOf is the reasoning levels models.dev gives a model of this id, as
+// most of the providers giving any for it do, or nil when none does. Like
+// ContextOf it reaches a vendor models.dev doesn't list: a custom provider
+// serving "glm-5.3-flash" takes the levels Z.ai and the others serving it
+// say it does, where it would otherwise be taken for a model that doesn't
+// reason, and an agent offer no levels for it.
+func EffortsOf(id string) []string {
+	load()
+	b := bareID(id)
+	if e, ok := efforts[b]; ok {
+		return slices.Clone(e)
+	}
+	if i := strings.IndexByte(b, '('); i > 0 && strings.HasSuffix(b, ")") {
+		b = b[:i]
+		if e, ok := efforts[b]; ok {
+			return slices.Clone(e)
+		}
+	}
+	if i := strings.IndexByte(b, ':'); i > 0 { // ":free", ":thinking"
+		return slices.Clone(efforts[b[:i]])
+	}
+	return nil
+}
+
+// mostListed is the list most providers give; a tie goes to the shorter,
+// then the first in order, so the answer doesn't change from run to run.
+func mostListed(by map[string]int) string {
+	best, n := "", 0
+	for l, c := range by {
+		if c > n || c == n && (strings.Count(l, ",") < strings.Count(best, ",") || strings.Count(l, ",") == strings.Count(best, ",") && l < best) {
+			best, n = l, c
+		}
+	}
+	return best
 }
 
 // mostGiven is the size most providers give; a tie goes to the smaller,

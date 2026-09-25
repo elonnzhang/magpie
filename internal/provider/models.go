@@ -214,6 +214,28 @@ func (p Provider) RejectsTemperature(model string) bool {
 	return false
 }
 
+// Efforts are the reasoning levels the model takes, when known.
+func (p Provider) Efforts(model string) []string {
+	for _, m := range p.Available() {
+		if m.ID == model {
+			return effortsOf(m)
+		}
+	}
+	return catalog.EffortsOf(model)
+}
+
+// effortsOf is a model's reasoning levels: its vendor's, as models.dev
+// lists them, or — for a vendor models.dev doesn't list the model under (a
+// custom provider, a proxy) — the ones the others serving it give. A model
+// models.dev lists for this vendor without levels takes none: the vendor
+// says it has none to pick from.
+func effortsOf(m catalog.Model) []string {
+	if len(m.Efforts) > 0 || m.Provider != "" {
+		return m.Efforts
+	}
+	return catalog.EffortsOf(m.ID)
+}
+
 // Chosen reports whether a model is exposed.
 func (p Provider) Chosen(id string) bool {
 	for _, m := range p.Exposed() {
@@ -266,7 +288,7 @@ func providerEntries() []Entry {
 			if ctx == 0 {
 				ctx = catalog.ContextOf(m.ID)
 			}
-			out = append(out, Entry{ID: p.ID + "/" + m.ID, Model: m.ID, Name: m.Name, Efforts: m.Efforts, Provider: p,
+			out = append(out, Entry{ID: p.ID + "/" + m.ID, Model: m.ID, Name: m.Name, Efforts: effortsOf(m), Provider: p,
 				Images: m.Images || catalog.SeesImages(m.ID), Context: ctx})
 		}
 	}

@@ -7,6 +7,7 @@ package gateway
 
 import (
 	"encoding/json"
+	"slices"
 	"strings"
 )
 
@@ -305,6 +306,39 @@ func effortOf(s string) string {
 		return strings.ToLower(s)
 	}
 	return ""
+}
+
+// effortRank orders the reasoning levels agents and vendors name.
+var effortRank = []string{"none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"}
+
+// fitEffort is the level of the model's own nearest the one asked for — a
+// tie goes up — or the one asked for when the model's aren't known. Codex
+// asks "medium" of a model it was given no levels for, and an agent's
+// setting can outlive the model it was picked for; GLM-5.3 takes low, high
+// and max only.
+func fitEffort(want string, levels []string) string {
+	if len(levels) == 0 || slices.Contains(levels, want) {
+		return want
+	}
+	at := slices.Index(effortRank, want)
+	if at < 0 {
+		return want
+	}
+	best, dist := want, len(effortRank)
+	for _, l := range levels {
+		i := slices.Index(effortRank, l)
+		if i < 0 || l == "none" {
+			continue
+		}
+		d := i - at
+		if d < 0 {
+			d = -d
+		}
+		if d < dist || d == dist && i > at {
+			best, dist = l, d
+		}
+	}
+	return best
 }
 
 // budgetOf is the Anthropic thinking budget for an effort level.

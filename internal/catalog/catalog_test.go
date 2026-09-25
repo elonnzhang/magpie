@@ -3,6 +3,7 @@ package catalog
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -123,5 +124,32 @@ func TestContextOf(t *testing.T) {
 	}
 	if out := Decorate([]Model{{ID: "gpt-5.5"}}, Provider("openai")); out[0].Context != 922000 {
 		t.Errorf("Decorate: %+v", out[0])
+	}
+}
+
+// A vendor models.dev doesn't list takes the levels the providers serving
+// the model give; one that gives none (a toggle, nothing) doesn't vote.
+func TestEffortsOf(t *testing.T) {
+	writeCatalog(t, `{
+	  "zai": {"models": {"glm-5.3-flash": {"id":"glm-5.3-flash","reasoning_options":[{"type":"effort","values":["low","high","max"]}]}}},
+	  "a": {"models": {"z-ai/glm-5.3-flash": {"id":"z-ai/glm-5.3-flash","reasoning_options":[{"type":"effort","values":["low","high","max"]}]}}},
+	  "b": {"models": {"glm-5.3-flash": {"id":"glm-5.3-flash","reasoning_options":[{"type":"effort","values":["none","low","medium","high"]}]},
+	                   "glm-5": {"id":"glm-5","reasoning_options":[{"type":"toggle"}]},
+	                   "deepseek-chat": {"id":"deepseek-chat"}}},
+	  "c": {"models": {"glm-5.3-flash": {"id":"glm-5.3-flash","reasoning_options":[{"type":"toggle"}]}}}
+	}`)
+	for id, want := range map[string]string{
+		"glm-5.3-flash":       "low,high,max",
+		"GLM-5.3-Flash":       "low,high,max",
+		"volc/glm-5.3-flash":  "low,high,max",
+		"glm-5.3-flash:free":  "low,high,max",
+		"glm-5.3-flash(high)": "low,high,max",
+		"glm-5":               "",
+		"deepseek-chat":       "",
+		"unknown-model":       "",
+	} {
+		if got := strings.Join(EffortsOf(id), ","); got != want {
+			t.Errorf("EffortsOf(%q) = %q, want %q", id, got, want)
+		}
 	}
 }
