@@ -78,6 +78,8 @@ const I18N = {
     "＋ Save current": "＋ 保存当前",
     "none yet · save the setup to switch back in one click": "还没有 · 保存当前设置，之后一键切回",
     "Delete profile": "删除方案",
+    "Update to the current setup": "用当前配置更新",
+    "Updated {name} to the current setup": "已用当前配置更新 {name}",
     "Profile name": "方案名称",
     "{name} applied · {n} setting changed": "已应用 {name} · 更改了 {n} 项设置",
     "{name} applied · {n} settings changed": "已应用 {name} · 更改了 {n} 项设置",

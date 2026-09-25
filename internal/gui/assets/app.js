@@ -286,10 +286,14 @@ function renderAgents() {
     c.title = [p.summary, lib].filter(Boolean).join("\n");
     c.append(el("span", "", p.name));
     if (lib) c.append(el("span", "lib"));
+    // the setup as it is now, saved over this profile
+    const u = el("span", "x", "↻");
+    u.title = t("Update to the current setup");
+    u.onclick = (ev) => { ev.stopPropagation(); profileAction("save", p.name, true); };
     const x = el("span", "x", "×");
     x.title = t("Delete profile");
     x.onclick = (ev) => { ev.stopPropagation(); profileAction("delete", p.name); };
-    c.append(x);
+    c.append(u, x);
     c.onclick = () => profileAction("use", p.name);
     chips.append(c);
   }
@@ -1046,7 +1050,7 @@ function profileLibrary(l) {
   return parts.length ? t("+ Library: {what}", { what: parts.join(t(", ")) }) : t("+ Library: nothing on");
 }
 
-async function profileAction(action, name) {
+async function profileAction(action, name, update) {
   try {
     const data = await api("profile/" + action, { name });
     state = data;
@@ -1058,7 +1062,7 @@ async function profileAction(action, name) {
       if (lib?.problems?.length) status(msg + " · " + t("some of the Library couldn't be given; see Library"), "err", 6000);
       else status(msg, "ok", lib?.missing?.length ? 6000 : 3500);
     }
-    else if (action === "save") status(t("Saved {name}", { name }), "ok");
+    else if (action === "save") status(t(update ? "Updated {name} to the current setup" : "Saved {name}", { name }), "ok");
     else status(t("Deleted {name}", { name }));
   } catch (e) {
     status(e.message, "err");
