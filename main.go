@@ -51,6 +51,9 @@ const usage = `magpie — one place to pick every agent's model
   magpie provider fallback <id> <provider/model>…   use these when it's out of quota or down
   magpie import [-y] <link>       add the provider a magpie://import?… link describes
   magpie models                   every model agents can pick, as provider/model
+  magpie groups                   routing groups: several models agents pick as one, group/<id>
+  magpie group add <name> models=<m1>,<m2> [routing=smart|order|rotate|usage] [stays=auto|session|turn|off]
+  magpie group <id> | set <id> k=v… | rm <id>   show, change or remove one (magpie group help for more)
   magpie accounts [agent] [--json]  every subscription magpie knows, with each one's allowance used and when it resets
   magpie accounts add <agent>     sign in to one more Claude or ChatGPT subscription
   magpie accounts switch <agent> <email>   sign the agent in to another of them
@@ -144,6 +147,10 @@ func run(args []string) error {
 		return providerCmd(args)
 	case "models":
 		return models()
+	case "groups":
+		return groups()
+	case "group":
+		return groupCmd(args)
 	case "serve":
 		return serve()
 	case "accounts", "account":

@@ -109,6 +109,33 @@ separate Responses endpoint, `catalog=` to borrow a models.dev list, and
 `models=` to name the models to expose. Anything a preset does not know can
 be overridden the same way.
 
+### Routing groups
+
+A routing group is several models, from one provider or many, that an agent
+picks as one: `group/<id>`. The gateway routes each request over every
+member's keys and accounts together. A model two of your providers serve
+under the same name becomes a group on its own; the Routing view in the app
+and `magpie group` make any other:
+
+```sh
+magpie groups                           # yours, then those magpie found
+magpie group add "Opus anywhere" models=claude/claude-opus-5-5,copilot/claude-opus-5.5 routing=order stays=session
+magpie group opus-anywhere              # one group, its models in order
+magpie group set opus-anywhere models+=openrouter/anthropic/claude-opus-5.5 routing=usage
+magpie group set opus-anywhere models-=copilot/claude-opus-5.5
+magpie group rm opus-anywhere           # one magpie found is hidden; magpie group restore <id> brings it back
+magpie claude group/opus-anywhere       # use it
+```
+
+`routing=` is `smart` (the default: of the subscriptions with quota to
+spare, the one whose allowance renews soonest first), `order` (the first
+model until it can't answer, then the next), `rotate` (each turn to the next
+member) or `usage` (least used first). `stays=` is how long a conversation
+stays with the key or account that answered it: `auto` (the default, while
+the vendor's cache of it is worth keeping), `session`, `turn` or `off`.
+`models=` replaces the whole list, in order; a bare model id works when only
+one provider serves it.
+
 The app's Import from other apps dialog can copy providers from Claude Code's
 `settings.json` (`CLAUDE_CONFIG_DIR` when set) and Codex's `config.toml`
 (`CODEX_HOME` when set) into magpie. Codex imports custom

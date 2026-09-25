@@ -570,6 +570,10 @@ magpie claude moonshot/kimi-k3
 magpie gemini zhipu/glm-5.3
 magpie opencode claude/claude-sonnet-5 <span class="c"># your Claude plan, in OpenCode</span>
 
+<span class="c"># one model over several providers</span>
+magpie group add opus models=claude/claude-opus-5-5,copilot/claude-opus-5.5 routing=order
+magpie claude group/opus
+
 magpie ls                              <span class="c"># every agent and its model</span>
 magpie save work &amp;&amp; magpie use work    <span class="c"># profiles</span>
 magpie tui                             <span class="c"># the whole app, in the terminal</span></pre>
