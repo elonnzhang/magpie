@@ -87,6 +87,12 @@
     <h2 id="providers"><a class="anchor" href="#providers">1 · Add your providers</a></h2>
     <p>Open the <span class="ui">Providers</span> tab and press <span class="ui">＋ Add provider</span>. Pick a tile, or type a vendor’s name to find it.</p>
 
+    <figure class="figure">
+      <img class="for-light" src="/img/add-light.png" width="2080" height="1250" loading="lazy" alt="The Add provider sheet: subscriptions, vendors, relays, what’s on this machine, and custom URLs">
+      <img class="for-dark" src="/img/add-dark.png" width="2080" height="1250" loading="lazy" alt="The Add provider sheet: subscriptions, vendors, relays, what’s on this machine, and custom URLs">
+      <figcaption>Add provider: sign in to a subscription, pick a vendor, or point at any compatible URL.</figcaption>
+    </figure>
+
     <h3>Subscriptions · sign in, no key</h3>
     <p>Claude (Pro, Max, Team), ChatGPT (Plus, Pro, Business), Cursor, Grok, Copilot and Devin. Click the tile and magpie opens the vendor’s own sign-in page in your browser; the account shows up as soon as you finish (Copilot gives you a code to enter on GitHub’s page). Subscriptions are added here, in magpie, not by logging in inside another agent.</p>
     <ul>
@@ -109,6 +115,12 @@
 
     <h2 id="agents"><a class="anchor" href="#agents">2 · Pick a model for each agent</a></h2>
     <p>The <span class="ui">Agents</span> tab has a row for each agent installed or configured on this machine. magpie knows Claude Code, Codex, Gemini CLI, OpenCode, Pi, Goose, Cursor, Copilot CLI, Crush, DeepSeek Harness, Command Code, omp, Devin and Hermes Agent.</p>
+
+    <figure class="figure">
+      <img class="for-light" src="/img/agents-light.png" width="2080" height="1058" loading="lazy" alt="The Agents tab: one row per agent with the model it uses, and saved profiles at the bottom">
+      <img class="for-dark" src="/img/agents-dark.png" width="2080" height="1058" loading="lazy" alt="The Agents tab: one row per agent with the model it uses, and saved profiles at the bottom">
+      <figcaption>One row per agent. Pick a model from any provider; profiles switch everything at once.</figcaption>
+    </figure>
     <ul>
       <li><b>Click the model</b> to open the picker. Models are grouped: the agent’s own, your routing groups, then each provider you added. Type to filter, or type any model id that is not listed.</li>
       <li><b>Reasoning effort</b>, where the agent has it (Codex’s <em>effort</em>, Pi’s <em>thinking</em>), is a slider under the list.</li>
@@ -127,6 +139,12 @@
 
     <h2 id="routing"><a class="anchor" href="#routing">3 · Optional: routing groups</a></h2>
     <p>With one account per provider you can skip this. It matters once you have several: two ChatGPT accounts, or the same model from a subscription and from a key.</p>
+
+    <figure class="figure">
+      <img class="for-light" src="/img/routing-light.png" width="2080" height="1132" loading="lazy" alt="The Routing tab: the live gateway card and two routing groups with their members">
+      <img class="for-dark" src="/img/routing-dark.png" width="2080" height="1132" loading="lazy" alt="The Routing tab: the live gateway card and two routing groups with their members">
+      <figcaption>Routing groups: several models or accounts behind one name, with smart or ordered fallback.</figcaption>
+    </figure>
 
     <h3>Several accounts or keys in one provider</h3>
     <p>Open the provider’s row and tick every account or key to use. <span class="ui">Routing</span> says how requests spread over them: <span class="ui">Smart</span> (the default), <span class="ui">In order</span>, <span class="ui">In turn</span> or <span class="ui">Least used first</span>. <span class="ui">Fallback</span> lists models to use instead when the provider is out of quota, rate limited or down.</p>
@@ -161,6 +179,12 @@ magpie claude group/opus-anywhere    <span class="c"># use it</span></pre>
 
     <h2 id="usage"><a class="anchor" href="#usage">Usage and profiles</a></h2>
     <p><b>Usage.</b> The <span class="ui">Usage</span> tab counts tokens, cache hits and cost for each agent and model, from every call through the gateway, for <span class="ui">Today</span>, <span class="ui">7 days</span>, <span class="ui">30 days</span> or <span class="ui">All</span>; your subscriptions’ allowance used, and when it resets, sits on top. Calls an agent makes to its own vendor directly don’t pass through magpie and aren’t counted.</p>
+
+    <figure class="figure">
+      <img class="for-light" src="/img/usage-light.png" width="2080" height="842" loading="lazy" alt="The Usage tab: remaining balances, token and cost totals, and a 30-day chart">
+      <img class="for-dark" src="/img/usage-dark.png" width="2080" height="842" loading="lazy" alt="The Usage tab: remaining balances, token and cost totals, and a 30-day chart">
+      <figcaption>Balances, tokens, cache hits and cost for every call through the gateway.</figcaption>
+    </figure>
     <p><b>Profiles.</b> At the bottom of the <span class="ui">Agents</span> tab, <span class="ui">＋ Save current</span> snapshots every agent’s settings under a name; click the chip to switch everything back in one move.</p>
 
     <h2 id="cli"><a class="anchor" href="#cli">From the terminal</a></h2>

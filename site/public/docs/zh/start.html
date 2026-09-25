@@ -42,7 +42,7 @@
   <div class="links">
     <a href="/">首页</a>
     <a href="/docs/zh/start">快速上手</a>
-    <a href="/docs/import">Add to magpie</a>
+    <a href="/docs/zh/import">Add to magpie</a>
     <a href="https://github.com/yetone/magpie-releases/releases">版本发布</a>
   </div>
   <a class="icon-btn lang" href="/docs/start" hreflang="en" lang="en" title="English version">EN</a>
@@ -87,6 +87,12 @@
     <h2 id="providers"><a class="anchor" href="#providers">1 · 添加供应商</a></h2>
     <p>打开 <span class="ui">供应商</span> 标签页，点 <span class="ui">＋ 添加供应商</span>。点选一个卡片，或输入厂商名字查找。</p>
 
+    <figure class="figure">
+      <img class="for-light" src="/img/add-zh-light.png" width="2080" height="1250" loading="lazy" alt="添加供应商面板：订阅、厂商、中转、本机和自定义 URL">
+      <img class="for-dark" src="/img/add-zh-dark.png" width="2080" height="1250" loading="lazy" alt="添加供应商面板：订阅、厂商、中转、本机和自定义 URL">
+      <figcaption>添加供应商：登录订阅、选厂商，或填任意兼容的 URL。</figcaption>
+    </figure>
+
     <h3>订阅 · 登录即可，无需密钥</h3>
     <p>Claude（Pro、Max、Team）、ChatGPT（Plus、Pro、Business）、Cursor、Grok、Copilot 和 Devin。点卡片后 magpie 会在浏览器里打开厂商自己的登录页，登录完成后账号立刻出现（Copilot 会给你一个验证码，在 GitHub 页面上输入）。订阅是在 magpie 里添加的，不需要先去别的 Agent 里登录。</p>
     <ul>
@@ -109,6 +115,12 @@
 
     <h2 id="agents"><a class="anchor" href="#agents">2 · 给每个 Agent 选模型</a></h2>
     <p><span class="ui">Agent</span> 标签页里，本机装了或配置过的每个 Agent 各占一行。magpie 支持 Claude Code、Codex、Gemini CLI、OpenCode、Pi、Goose、Cursor、Copilot CLI、Crush、DeepSeek Harness、Command Code、omp、Devin 和 Hermes Agent。</p>
+
+    <figure class="figure">
+      <img class="for-light" src="/img/agents-zh-light.png" width="2080" height="1058" loading="lazy" alt="Agent 页：每个 Agent 一行，显示当前模型，底部是保存的方案">
+      <img class="for-dark" src="/img/agents-zh-dark.png" width="2080" height="1058" loading="lazy" alt="Agent 页：每个 Agent 一行，显示当前模型，底部是保存的方案">
+      <figcaption>每个 Agent 一行，可以选任意供应商的模型；方案一键切换全部设置。</figcaption>
+    </figure>
     <ul>
       <li><b>点模型</b>打开选择列表。模型分组显示：Agent 自带的、你的路由组、再是你添加的每个供应商。输入可以筛选，也可以直接输入列表里没有的模型 ID。</li>
       <li><b>推理强度</b>：Agent 有这个选项时（Codex 的 <em>推理强度</em>、Pi 的 <em>思考</em>），列表下方会出现滑块。</li>
@@ -127,6 +139,12 @@
 
     <h2 id="routing"><a class="anchor" href="#routing">3 · 可选：路由组</a></h2>
     <p>每个供应商只有一个账号时可以跳过这一步。等你有了多个——比如两个 ChatGPT 账号，或者同一个模型既有订阅又有密钥——再来设置。</p>
+
+    <figure class="figure">
+      <img class="for-light" src="/img/routing-zh-light.png" width="2080" height="1132" loading="lazy" alt="路由页：网关地址和两个路由组及其成员">
+      <img class="for-dark" src="/img/routing-zh-dark.png" width="2080" height="1132" loading="lazy" alt="路由页：网关地址和两个路由组及其成员">
+      <figcaption>路由组：多个模型或账号合成一个名字，按智能或顺序切换。</figcaption>
+    </figure>
 
     <h3>一个供应商里的多个账号或密钥</h3>
     <p>展开供应商那一行，勾选要用的每个账号或密钥。<span class="ui">路由</span> 决定请求怎么分给它们：<span class="ui">智能</span>（默认）、<span class="ui">按顺序</span>、<span class="ui">轮流</span> 或 <span class="ui">用量少的优先</span>。<span class="ui">备用</span> 里列出这个供应商额度用完、被限流或不可用时改用的模型。</p>
@@ -161,6 +179,12 @@ magpie claude group/opus-anywhere    <span class="c"># 使用它</span></pre>
 
     <h2 id="usage"><a class="anchor" href="#usage">用量与方案</a></h2>
     <p><b>用量。</b><span class="ui">用量</span> 标签页按 Agent 和模型统计每次经过网关的调用的 token、缓存命中和费用，可选 <span class="ui">今天</span>、<span class="ui">7 天</span>、<span class="ui">30 天</span> 或 <span class="ui">全部</span>；最上面是各订阅已用的额度和重置时间。Agent 直接发给自己厂商的请求不经过 magpie，不会计入。</p>
+
+    <figure class="figure">
+      <img class="for-light" src="/img/usage-zh-light.png" width="2080" height="842" loading="lazy" alt="用量页：剩余余额、token 与费用汇总，以及 30 天趋势图">
+      <img class="for-dark" src="/img/usage-zh-dark.png" width="2080" height="842" loading="lazy" alt="用量页：剩余余额、token 与费用汇总，以及 30 天趋势图">
+      <figcaption>经过网关的每次调用的余额、token、缓存命中和费用。</figcaption>
+    </figure>
     <p><b>方案。</b>在 <span class="ui">Agent</span> 标签页底部点 <span class="ui">＋ 保存当前</span>，把所有 Agent 的设置存成一个方案；之后点这个方案就能一键全部切回。</p>
 
     <h2 id="cli"><a class="anchor" href="#cli">命令行</a></h2>
@@ -193,7 +217,7 @@ magpie claude group/opus-anywhere    <span class="c"># 使用它</span></pre>
     <h3>手动改 Agent 的配置会冲突吗？</h3>
     <p>不会。magpie 每次都重新读取文件，只动它设置的那几个键，你的其他设置和注释都会保留。用 <span class="ui">导入…</span> 带进来的供应商是一份拷贝：之后在 Agent 里的改动不会再同步过来。</p>
 
-    <p style="margin-top:48px">遇到问题，或者有值得分享的配置？来 <a href="https://discord.gg/vGSnD3ZKQF">Discord</a> 聊。想给自己的用户一键添加供应商的厂商，请看 <a href="/docs/import">Add to magpie</a>（英文）。</p>
+    <p style="margin-top:48px">遇到问题，或者有值得分享的配置？来 <a href="https://discord.gg/vGSnD3ZKQF">Discord</a> 聊。想给自己的用户一键添加供应商的厂商，请看 <a href="/docs/zh/import">Add to magpie</a>。</p>
   </article>
 </main>
 
@@ -201,7 +225,7 @@ magpie claude group/opus-anywhere    <span class="c"># 使用它</span></pre>
   <span>© 2026 magpie · MIT</span>
   <div class="links">
     <a href="/">首页</a>
-    <a href="/docs/import">Add to magpie</a>
+    <a href="/docs/zh/import">Add to magpie</a>
     <a href="https://github.com/yetone/magpie">GitHub</a>
     <a href="https://discord.gg/vGSnD3ZKQF">Discord</a>
     <a href="https://github.com/yetone/magpie-releases/releases">版本发布</a>
