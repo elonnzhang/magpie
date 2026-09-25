@@ -1,6 +1,8 @@
 package agent
 
 import (
+	"encoding/json"
+	"os"
 	"path/filepath"
 
 	"github.com/yetone/magpie/internal/edit"
@@ -18,11 +20,36 @@ import (
 // An anthropic provider is asked at baseURL + /v1/messages. The model is
 // picked per task in ZCode's own picker and kept in its window, not in a
 // file, so what magpie sets is whether its models are in that picker.
+//
+// ZCode 3.14 moved its providers to ~/.zcode/v2/provider_config.json and
+// reads config.json's only once, to import them, so a provider added there
+// later never reached its picker. There a provider is a rule, and a model's
+// context window and inputs are rules of their own:
+//
+//	{"schemaVersion":1,"config":{
+//	  "providerConfigRules":{"providerRules":[{"providerId":"magpie",
+//	    "providerName":"magpie","enabled":true,"config":{
+//	      "group":"standard-personal",
+//	      "access":{"type":"api-key","apiKey":"magpie"},
+//	      "api":{"type":"anthropic-messages","baseUrl":"http://127.0.0.1:3425"},
+//	      "personalModelIds":[…],"modelOrder":[…]}}]},
+//	  "modelConfigRules":{"providerModelRules":[{"providerId":"magpie",
+//	    "modelId":…,"config":{"properties":{"contextWindow":…,
+//	      "inputFormat":{"supportsImage":…}}}}],
+//	    "manualProviderModelRules":[…]}}}
+//
+// magpie writes both files, so an older ZCode sees its models too. A model
+// the user set by hand in ZCode (a manual rule) keeps what they set.
 
 func zcode(home string) *Agent {
 	dir := filepath.Join(home, ".zcode")
 	path := filepath.Join(dir, "v2", "config.json")
+	rules := filepath.Join(dir, "v2", "provider_config.json")
 	key := "provider." + magpieID
+	wired := func() bool {
+		_, ok := edit.GetJSON(path, key)
+		return ok || zcodeRuled(rules)
+	}
 	return &Agent{
 		ID: "zcode", Name: "ZCode", Icon: "zcode", Aliases: []string{"z-code"},
 		UA:  []string{"zcode"},
@@ -33,16 +60,27 @@ func zcode(home string) *Agent {
 			}
 			return ""
 		},
-		Sync: func() error { return syncJSON(path, key, zcodeProviderJSON) },
+		Sync: func() error {
+			if !wired() {
+				return nil
+			}
+			if err := zcodeRules(rules, true); err != nil {
+				return err
+			}
+			return edit.SetJSON(path, edit.KV{Path: key, Value: zcodeProviderJSON()})
+		},
 		Fields: []Field{{
 			Key: "provider", Label: "provider",
 			Get: func() string {
-				if _, ok := edit.GetJSON(path, key); ok {
+				if wired() {
 					return magpieID
 				}
 				return ""
 			},
 			Set: func(v string) error {
+				if err := zcodeRules(rules, v != ""); err != nil {
+					return err
+				}
 				if v == "" {
 					return edit.DelJSON(path, key)
 				}
@@ -71,4 +109,149 @@ func zcodeProviderJSON() any {
 	}
 	return map[string]any{"name": "magpie", "kind": "anthropic", "enabled": true, "source": "custom",
 		"options": map[string]any{"apiKey": gateway.Token, "baseURL": gateway.URL()}, "models": ms}
+}
+
+// zcodeRuled reports whether provider_config.json has magpie's provider.
+func zcodeRuled(path string) bool {
+	var c struct {
+		Config struct {
+			ProviderConfigRules struct {
+				ProviderRules []struct {
+					ProviderID string `json:"providerId"`
+				} `json:"providerRules"`
+			} `json:"providerConfigRules"`
+		} `json:"config"`
+	}
+	b, _ := os.ReadFile(path)
+	if json.Unmarshal(b, &c) != nil {
+		return false
+	}
+	for _, r := range c.Config.ProviderConfigRules.ProviderRules {
+		if r.ProviderID == magpieID {
+			return true
+		}
+	}
+	return false
+}
+
+// zcodeRules puts magpie's provider and its models' rules into ZCode's
+// provider_config.json (on) or takes them out, leaving every other rule and
+// key as ZCode wrote it.
+func zcodeRules(path string, on bool) error {
+	b, err := edit.Read(path)
+	if err != nil {
+		return err
+	}
+	if b == nil && !on {
+		return nil
+	}
+	doc := map[string]any{}
+	if len(b) > 0 {
+		if err := json.Unmarshal(b, &doc); err != nil {
+			return err
+		}
+	}
+	if doc["schemaVersion"] == nil {
+		doc["schemaVersion"] = 1
+	}
+	cfg := zcodeObj(doc, "config")
+	pcr := zcodeObj(cfg, "providerConfigRules")
+	mcr := zcodeObj(cfg, "modelConfigRules")
+	mine := func(r any) bool { m, _ := r.(map[string]any); return m != nil && m["providerId"] == magpieID }
+
+	var old map[string]any
+	var providers []any
+	for _, r := range zcodeList(pcr, "providerRules") {
+		if mine(r) {
+			old, _ = r.(map[string]any)
+			continue
+		}
+		providers = append(providers, r)
+	}
+	var models, manual []any
+	byHand := map[any]bool{}
+	for _, r := range zcodeList(mcr, "manualProviderModelRules") {
+		if mine(r) {
+			if !on {
+				continue
+			}
+			byHand[r.(map[string]any)["modelId"]] = true
+		}
+		manual = append(manual, r)
+	}
+	for _, r := range zcodeList(mcr, "providerModelRules") {
+		if !mine(r) {
+			models = append(models, r)
+		}
+	}
+
+	if on {
+		var ids []string
+		for _, m := range magpieModels() {
+			ids = append(ids, m.ID)
+			if byHand[m.ID] {
+				continue
+			}
+			props := map[string]any{"inputFormat": map[string]any{"supportsImage": m.Images}}
+			if m.Context > 0 {
+				props["contextWindow"] = m.Context
+			}
+			models = append(models, map[string]any{"providerId": magpieID, "modelId": m.ID,
+				"config": map[string]any{"properties": props}})
+		}
+		if ids == nil {
+			ids = []string{}
+		}
+		rule := map[string]any{"providerId": magpieID, "providerName": "magpie", "enabled": true,
+			"config": map[string]any{
+				"group":            "standard-personal",
+				"access":           map[string]any{"type": "api-key", "apiKey": gateway.Token},
+				"api":              map[string]any{"type": "anthropic-messages", "baseUrl": gateway.URL()},
+				"personalModelIds": ids, "modelOrder": ids,
+			}}
+		// turned off in ZCode, it stays off
+		if e, ok := old["enabled"].(bool); ok {
+			rule["enabled"] = e
+		}
+		providers = append(providers, rule)
+	}
+	pcr["providerRules"] = zcodeNonNil(providers)
+	mcr["providerModelRules"] = zcodeNonNil(models)
+	mcr["manualProviderModelRules"] = zcodeNonNil(manual)
+
+	out, err := json.Marshal(doc)
+	if err != nil {
+		return err
+	}
+	if string(out) == string(b) {
+		return nil
+	}
+	if b == nil {
+		// ZCode keeps it private
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			return err
+		}
+		if err := os.WriteFile(path, nil, 0o600); err != nil {
+			return err
+		}
+	}
+	return edit.WriteAtomic(path, out)
+}
+
+func zcodeObj(m map[string]any, k string) map[string]any {
+	o, ok := m[k].(map[string]any)
+	if !ok {
+		o = map[string]any{}
+		m[k] = o
+	}
+	return o
+}
+
+func zcodeList(m map[string]any, k string) []any { l, _ := m[k].([]any); return l }
+
+func zcodeNonNil(l []any) []any {
+	if l == nil {
+		return []any{}
+	}
+	return l
 }

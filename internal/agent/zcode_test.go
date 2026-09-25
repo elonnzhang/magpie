@@ -56,6 +56,52 @@ func TestZCode(t *testing.T) {
 	if f.Get() != "magpie" {
 		t.Fatalf("get: %q", f.Get())
 	}
+	// ZCode 3.14 reads provider_config.json
+	rules := filepath.Join(home, ".zcode", "v2", "provider_config.json")
+	os.WriteFile(rules, []byte(`{"schemaVersion":1,"config":{"providerConfigRules":{"providerRules":[{"providerId":"mine","config":{}}]},"modelConfigRules":{"providerModelRules":[],"manualProviderModelRules":[{"providerId":"magpie","modelId":"deepseek/pro","config":{"enabled":true}}]}},"other":1}`), 0o600)
+	if err := f.Set("magpie"); err != nil {
+		t.Fatal(err)
+	}
+	type rulesDoc struct {
+		Other  int `json:"other"`
+		Config struct {
+			ProviderConfigRules struct {
+				ProviderRules []map[string]any `json:"providerRules"`
+			} `json:"providerConfigRules"`
+			ModelConfigRules struct {
+				ProviderModelRules       []map[string]any `json:"providerModelRules"`
+				ManualProviderModelRules []map[string]any `json:"manualProviderModelRules"`
+			} `json:"modelConfigRules"`
+		} `json:"config"`
+	}
+	readRules := func() rulesDoc {
+		var d rulesDoc
+		b, _ := os.ReadFile(rules)
+		if err := json.Unmarshal(b, &d); err != nil {
+			t.Fatalf("%v\n%s", err, b)
+		}
+		if d.Other != 1 || len(d.Config.ProviderConfigRules.ProviderRules) == 0 || d.Config.ProviderConfigRules.ProviderRules[0]["providerId"] != "mine" {
+			t.Fatalf("ZCode's own rules went: %s", b)
+		}
+		return d
+	}
+	d := readRules()
+	pr := d.Config.ProviderConfigRules.ProviderRules
+	if len(pr) != 2 {
+		t.Fatalf("provider rules: %v", pr)
+	}
+	cfg, _ := pr[1]["config"].(map[string]any)
+	access, _ := cfg["access"].(map[string]any)
+	api, _ := cfg["api"].(map[string]any)
+	if pr[1]["providerId"] != "magpie" || pr[1]["enabled"] != true || cfg["group"] != "standard-personal" ||
+		access["type"] != "api-key" || access["apiKey"] != "magpie" || api["type"] != "anthropic-messages" || api["baseUrl"] == "" ||
+		len(cfg["personalModelIds"].([]any)) != 1 {
+		t.Fatalf("magpie rule: %v", pr[1])
+	}
+	// a model set by hand in ZCode keeps its manual rule, and gets no second one
+	if len(d.Config.ModelConfigRules.ManualProviderModelRules) != 1 || len(d.Config.ModelConfigRules.ProviderModelRules) != 0 {
+		t.Fatalf("model rules: %+v", d.Config.ModelConfigRules)
+	}
 
 	// a provider added later reaches ZCode's picker
 	if err := provider.Save(provider.Provider{ID: "kimi", Name: "Kimi", Chat: "https://api.moonshot.cn/v1", Key: "k", Models: []string{"k2"}}); err != nil {
@@ -67,12 +113,19 @@ func TestZCode(t *testing.T) {
 	if models, _ := read()["models"].(map[string]any); models["kimi/k2"] == nil {
 		t.Fatalf("not synced: %v", models)
 	}
+	if d := readRules(); len(d.Config.ProviderConfigRules.ProviderRules[1]["config"].(map[string]any)["personalModelIds"].([]any)) != 2 ||
+		len(d.Config.ModelConfigRules.ProviderModelRules) != 1 || d.Config.ModelConfigRules.ProviderModelRules[0]["modelId"] != "kimi/k2" {
+		t.Fatalf("rules not synced: %+v", d.Config)
+	}
 
 	if err := f.Set(""); err != nil {
 		t.Fatal(err)
 	}
 	if read() != nil || f.Get() != "" {
 		t.Fatal("magpie provider left behind")
+	}
+	if d := readRules(); len(d.Config.ProviderConfigRules.ProviderRules) != 1 || len(d.Config.ModelConfigRules.ManualProviderModelRules) != 0 {
+		t.Fatalf("magpie rules left behind: %+v", d.Config)
 	}
 	// nothing to sync into a config that has no magpie provider
 	if err := a.Sync(); err != nil || read() != nil {
