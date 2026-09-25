@@ -28,7 +28,14 @@ import (
 var trayIcon []byte // black glyph, tinted by the macOS menu bar
 
 //go:embed icon.png
-var appIcon []byte // coloured, for other trays and the about box
+var appIcon []byte // coloured, for other trays
+
+// The app's own icon: the Mac's Dock (which it replaces the bundle's .icns
+// in, at up to 512pt), window icons and the about box. At 64px it was
+// scaled up there and blurred.
+//
+//go:embed icon-1024.png
+var appIconLarge []byte
 
 type host struct {
 	app   *application.App
@@ -133,7 +140,7 @@ func Run(version string, showMain bool, link string) error {
 		SingleInstance: singleInstance(h),
 		Name:           "magpie",
 		Description:    "one place to pick every agent's model",
-		Icon:           appIcon,
+		Icon:           appIconLarge,
 		Assets:         application.AssetOptions{Handler: handler},
 		Mac:            application.MacOptions{ActivationPolicy: dockPolicy(settings.Load().Dock)},
 		Windows:        application.WindowsOptions{DisableQuitOnLastWindowClosed: true},
