@@ -49,6 +49,16 @@ func (c candidate) label() string {
 	return c.p.ID + " (" + provider.Mask(c.p.Key) + ")"
 }
 
+// who is the key or account itself, however many the provider has on: a
+// provider's one key rests as the provider, and as itself once another
+// is added, and a conversation it answered stays with it all the same.
+func (c candidate) who() string {
+	if c.p.Account == nil && c.p.Key != "" {
+		return c.p.ID + "#" + provider.KeyID(c.p.Key)
+	}
+	return c.rest
+}
+
 // perKey is a provider once per key it has on, in order — or, for a
 // signed-in agent, once per account it has on, its own first. A key made
 // for one protocol only serves on that one's endpoint, and the keys that

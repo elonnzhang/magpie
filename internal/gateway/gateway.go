@@ -441,15 +441,20 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request, from provider.Pro
 		return
 	}
 	// the conversation stays with who answered it last, while its
-	// affinity says: what the vendor cached of it is read again
-	var aff *Affinity
-	var stuck string
-	if len(cands) > 1 {
-		cands, pl, aff, stuck = affine(scope, mode, rotate, r.Header, from, body, cands, pl)
+	// affinity says: what the vendor cached of it is read again. Who
+	// answered is remembered with only one to route to as well, so that a
+	// key or account added while the conversation runs doesn't take it over
+	// (#63): its reasoning, sealed by the account that wrote it, is refused
+	// by another.
+	cands, pl, aff, stuck := affine(scope, mode, rotate, r.Header, from, body, cands, pl)
+	shown := aff
+	if len(cands) == 1 {
+		shown = nil // nobody else to stay away from
 	}
-	tr := s.trace.begin(Route{Time: start, Agent: call.Agent, Model: call.Model, Provider: p.ID, Group: group, Affinity: aff, Order: pl.order, Left: pl.left})
+	tr := s.trace.begin(Route{Time: start, Agent: call.Agent, Model: call.Model, Provider: p.ID, Group: group, Affinity: shown, Order: pl.order, Left: pl.left})
 	var skipped []string
-	again := 0 // times the last one left has been tried again
+	again := 0        // times the last one left has been tried again
+	resealed := false // the conversation's reasoning sealed by another account taken out
 	for i := 0; i < len(cands); i++ {
 		c := cands[i]
 		last := i == len(cands)-1
@@ -468,6 +473,17 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request, from provider.Pro
 			try.Status, try.Error, try.Fail = call.Status, call.Error, failCanceled
 			s.trace.update(tr, func(t *Route) { t.Tries[len(t.Tries)-1] = try })
 			break
+		}
+		if !resealed && from == provider.Responses && !hw.passing && hw.code() == 400 && foreignReasoning.Match(hw.errBody()) {
+			// the conversation moved here from another account, whose
+			// sealed reasoning this one can't read: asked again without it
+			if b, ok := withoutReasoning(body); ok {
+				resealed, body = true, b
+				try.Fail = failForeign
+				s.trace.update(tr, func(t *Route) { t.Tries[len(t.Tries)-1] = try })
+				i--
+				continue
+			}
 		}
 		if !last && hw.failed() {
 			rest := s.restAfter(c, hw.code(), hw.header, hw.errBody())
@@ -495,9 +511,7 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request, from provider.Pro
 		model = c.model
 		if call.Status < 400 {
 			served(c.rest, call.Usage.Input+call.Usage.Output+call.Usage.CacheRead+call.Usage.CacheWrite)
-			if aff != nil {
-				answered(stuck, c.rest, aff.Turn, call.Usage.CacheRead)
-			}
+			answered(stuck, c, aff.Turn, call.Usage.CacheRead)
 		} else {
 			try.Fail = failure(call.Status, []byte(call.Error))
 		}

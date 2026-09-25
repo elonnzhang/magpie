@@ -85,6 +85,9 @@ const (
 	failOther  = "other"
 	// failCanceled: the agent went away before the answer came
 	failCanceled = "canceled"
+	// failForeign: the conversation's reasoning was sealed by another
+	// account, and is sent again without it
+	failForeign = "foreign"
 )
 
 // failure says why a reply failed.

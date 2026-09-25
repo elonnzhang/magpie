@@ -591,6 +591,8 @@ const I18N = {
     "quota used up": "额度用尽",
     "failed": "失败",
     "canceled": "已取消",
+    "another account's reasoning": "另一个账号的推理",
+    "{who} couldn't read the reasoning another account wrote earlier in this conversation, so it is asked again without it, before any of the reply reaches {agent}.": "{who} 读不了这个会话里之前由另一个账号写下的推理，所以去掉这部分后再问一次，{agent} 收到回复前就处理好了。",
     "{agent} canceled the request while {who} was answering: nobody failed, so nobody rests and nobody else is asked.": "{who} 还在回答时，{agent} 取消了请求：不是谁出了错，所以谁也不用休息，也不再问别人。",
     "{who} answered {status} · {fail}, and nobody else is left to ask — a failure that may pass, so it is tried again in {d}, before any of the reply reaches {agent}.": "{who} 回了 {status} · {fail}，而且没有别人可问了——这种失败可能一会儿就过去，所以 {d} 后再试它一次，回复的任何部分都还没交给 {agent}。",
     "fallback": "备用",
