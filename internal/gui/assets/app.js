@@ -1681,9 +1681,11 @@ function iconPicker(ed) {
       const f = file.files[0];
       if (!f) return;
       try {
-        const res = await fetch("/api/icons", { method: "POST", body: f });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || res.statusText);
+        // as base64 in JSON: the app's web view drops a File sent as the body
+        const bytes = new Uint8Array(await f.arrayBuffer());
+        let bin = "";
+        for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+        const data = await api("icons", { data: btoa(bin) });
         draft.icon = data.icon;
         editorError("");
         draw();

@@ -2,6 +2,7 @@ package gui
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -277,12 +278,26 @@ func providerRoutes(mux *http.ServeMux, w Windows, gw *gateway.Server) {
 		writeJSON(rw, providersState(gw))
 	})
 	// a picture for a provider, picked in the editor: kept by content before
-	// the provider is saved, which then points at it
+	// the provider is saved, which then points at it. The page sends it as
+	// base64 in JSON — the app's web view hands a scheme handler no body for
+	// a File or Blob, so a picture posted as it is arrived empty — and the
+	// bytes as they are are still taken.
 	mux.HandleFunc("POST /api/icons", func(rw http.ResponseWriter, r *http.Request) {
-		b, err := io.ReadAll(io.LimitReader(r.Body, provider.MaxIcon+1))
+		b, err := io.ReadAll(io.LimitReader(r.Body, 2*provider.MaxIcon))
 		if err != nil {
 			fail(rw, err)
 			return
+		}
+		if strings.HasPrefix(r.Header.Get("Content-Type"), "application/json") {
+			var in struct{ Data string }
+			if err := json.Unmarshal(b, &in); err != nil {
+				fail(rw, err)
+				return
+			}
+			if b, err = base64.StdEncoding.DecodeString(in.Data); err != nil {
+				fail(rw, err)
+				return
+			}
 		}
 		icon, err := provider.StoreIcon(b)
 		if err != nil {
