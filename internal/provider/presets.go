@@ -27,6 +27,9 @@ type PresetDef struct {
 	Sponsored bool     `json:"sponsored,omitempty"` // shown first, with a tag
 	Note      string   `json:"note,omitempty"`      // one line under the name
 	Regions   []Region `json:"regions,omitempty"`   // base-URL choices (a relay's regional endpoints)
+	// HeaderHints name optional request headers the vendor documents, which
+	// the editor offers to add; their values are the user's to fill in.
+	HeaderHints []string `json:"headerHints,omitempty"`
 }
 
 // Region is one base-URL option of a preset that offers several. The first
@@ -43,7 +46,9 @@ type Region struct {
 var presets = []PresetDef{
 	{ID: "anthropic", Name: "Anthropic", Icon: "claude-color", Kind: KindVendor, Catalog: "anthropic",
 		Anthropic: "https://api.anthropic.com",
-		Website:   "https://console.anthropic.com", KeysURL: "https://console.anthropic.com/settings/keys"},
+		Website:   "https://console.anthropic.com", KeysURL: "https://console.anthropic.com/settings/keys",
+		// a key that reaches several workspaces names the one each request is for
+		HeaderHints: []string{"anthropic-workspace-id"}},
 	{ID: "openai", Name: "OpenAI", Icon: "openai", Kind: KindVendor, Catalog: "openai",
 		Chat: "https://api.openai.com/v1", Responses: "https://api.openai.com/v1",
 		Website: "https://platform.openai.com", KeysURL: "https://platform.openai.com/api-keys"},
@@ -92,7 +97,9 @@ var presets = []PresetDef{
 
 	{ID: "openrouter", Name: "OpenRouter", Icon: "openrouter", Kind: KindRelay, Catalog: "openrouter",
 		Chat: "https://openrouter.ai/api/v1", Anthropic: "https://openrouter.ai/api",
-		Website: "https://openrouter.ai", KeysURL: "https://openrouter.ai/keys"},
+		Website: "https://openrouter.ai", KeysURL: "https://openrouter.ai/keys",
+		// app attribution, for OpenRouter's rankings and analytics
+		HeaderHints: []string{"HTTP-Referer", "X-OpenRouter-Title"}},
 	{ID: "opencode-go", Name: "OpenCode Go", Icon: "opencode", Kind: KindRelay, Catalog: "opencode-go",
 		Chat: "https://opencode.ai/zen/go/v1", Responses: "https://opencode.ai/zen/go/v1", Anthropic: "https://opencode.ai/zen/go",
 		Note:    "open coding models, $10/month",

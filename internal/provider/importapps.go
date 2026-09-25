@@ -129,9 +129,11 @@ func ImportFromApps(picks []AppPick) ([]string, error) {
 				if sameProvider(*h, p) {
 					continue
 				}
+				// a second one of a preset is still that preset's, under an
+				// id of its own
 				p.ID = freeID(p.ID)
-				p.Preset = "" // a second one of a preset is a custom provider
 			}
+			p.Name = freeName(p.Name) // found by name too, so never two alike
 		}
 		if err := Save(p); err != nil {
 			return added, errorf("%s: %v", p.Name, err)
@@ -741,7 +743,7 @@ func readAlma(path string) ([]AppImport, error) {
 			it.Provider, it.Skip = Provider{Name: name}, skip
 		} else {
 			var hs map[string]string
-			if json.Unmarshal([]byte(headers), &hs) == nil && it.Provider.Preset == "" {
+			if json.Unmarshal([]byte(headers), &hs) == nil {
 				it.Provider.Headers = hs
 			}
 			if !enabled {

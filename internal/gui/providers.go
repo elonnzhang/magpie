@@ -223,7 +223,8 @@ func providersState(gw *gateway.Server) providersJSON {
 	}
 	have := map[string]bool{}
 	for _, p := range provider.All() {
-		have[p.ID] = true
+		// a preset is added once any provider is its, whatever its id
+		have[p.ID], have[p.Preset] = true, true
 		s.Providers = append(s.Providers, providerInfo(p, agents))
 	}
 	for _, pr := range provider.Presets() {
@@ -302,17 +303,23 @@ func providerRoutes(mux *http.ServeMux, w Windows, gw *gateway.Server) {
 		http.ServeFile(rw, r, f)
 	})
 	mux.HandleFunc("POST /api/provider/{action}", func(rw http.ResponseWriter, r *http.Request) {
-		var in provider.Provider
-		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		var req struct {
+			provider.Provider
+			// New is set by the editor's Add: the provider is one more, never
+			// one replacing the provider that has its id or name
+			New bool `json:"new"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			fail(rw, err)
 			return
 		}
+		in := req.Provider
 		switch r.PathValue("action") {
 		case "save":
 			// a preset needs nothing but the key; a saved provider keeps
 			// its key when the form left it blank
 			if pr, err := provider.FromPreset(in.Preset); err == nil && in.Chat == "" && in.Responses == "" && in.Anthropic == "" {
-				pr.Key, pr.Models, pr.Fallback = in.Key, in.Models, in.Fallback
+				pr.Key, pr.Models, pr.Fallback, pr.Headers = in.Key, in.Models, in.Fallback, in.Headers
 				if in.Name != "" {
 					pr.Name = in.Name
 				}
@@ -321,24 +328,36 @@ func providerRoutes(mux *http.ServeMux, w Windows, gw *gateway.Server) {
 				}
 				in = pr
 			}
-			old, _ := provider.Find(in.ID)
-			if in.Key == "" && old != nil {
-				in.Key = old.Key
-			}
-			if old != nil {
-				// the other keys are kept apart, in the Accounts list
-				in.Keys = old.Keys
-				in.Routing = old.Routing // set on its own, with route
-				if in.Key == old.Key {
-					in.KeyName, in.KeyProtocol = old.KeyName, old.KeyProtocol
+			var old *provider.Provider
+			if req.New {
+				// a second one of a preset, or a name already in use, is
+				// added beside the first under the next free id
+				id, err := provider.Add(in)
+				if err != nil {
+					fail(rw, err)
+					return
 				}
-			}
-			if in.Icon == "" && old != nil && in.Preset == "" {
-				in.Icon = old.Icon
-			}
-			if err := provider.Save(in); err != nil {
-				fail(rw, err)
-				return
+				in.ID = id
+			} else {
+				old, _ = provider.Find(in.ID)
+				if in.Key == "" && old != nil {
+					in.Key = old.Key
+				}
+				if old != nil {
+					// the other keys are kept apart, in the Accounts list
+					in.Keys = old.Keys
+					in.Routing = old.Routing // set on its own, with route
+					if in.Key == old.Key {
+						in.KeyName, in.KeyProtocol = old.KeyName, old.KeyProtocol
+					}
+				}
+				if in.Icon == "" && old != nil && in.Preset == "" {
+					in.Icon = old.Icon
+				}
+				if err := provider.Save(in); err != nil {
+					fail(rw, err)
+					return
+				}
 			}
 			// a new key means a new vendor list is worth a try; keep it short
 			if p, err := provider.Find(in.ID); err == nil && p.Ready() && (old == nil || old.Key != p.Key) {

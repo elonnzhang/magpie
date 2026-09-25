@@ -1454,7 +1454,9 @@ function tile(pr) {
     ck.append(svg(CHECK, 10, 2));
     b.append(ck);
     b.title = t("{name} is already added — open it", { name: pr.name });
-    b.onclick = () => { editing = pr.id; draft = null; renderProviders(); };
+    // the first provider made from it, which may not have the preset's id
+    const have = providers.providers.find((p) => p.preset === pr.id) || providers.providers.find((p) => p.id === pr.id);
+    b.onclick = () => { editing = have?.id ?? pr.id; draft = null; renderProviders(); };
   } else {
     b.onclick = () => { editing = { preset: pr.id }; draft = null; renderProviders(); };
   }
@@ -1483,8 +1485,10 @@ function cancelEdit() { editing = null; draft = null; importing = null; importin
 // Custom request headers: the draft keeps them as an ordered [name, value,
 // json?] list so a half-typed row (and its open JSON editor) survives a
 // re-render; headersOf folds that back into the object the backend stores,
-// dropping rows with an empty name and minifying any value that parses as
-// JSON — a header value is one line, so pretty-printing is display-only.
+// dropping rows with an empty name or value (a suggested header left unfilled
+// is not sent), keeping the last of two rows that name one header in any
+// case, and minifying any value that parses as JSON — a header value is one
+// line, so pretty-printing is display-only.
 function headerRows(obj) {
   return Object.entries(obj || {}).map(([k, v]) => [k, v, false]);
 }
@@ -1492,8 +1496,9 @@ function headersOf(rows) {
   const out = {};
   for (const [k, v] of rows || []) {
     const name = (k || "").trim();
-    if (!name) continue;
     const val = (v || "").trim();
+    if (!name || !val) continue;
+    for (const had of Object.keys(out)) if (had.toLowerCase() === name.toLowerCase()) delete out[had];
     // minify only a JSON blob; a plain value like "2.0" must stay verbatim
     out[name] = looksJSON(val) ? minifyJSON(val) : val;
   }
@@ -1511,7 +1516,9 @@ function looksJSON(s) {
   s = (s || "").trim();
   return s.startsWith("{") || s.startsWith("[");
 }
-function headerEditor() {
+// hints are the optional headers a preset's vendor documents: each one not
+// in the list yet is offered as a button that adds its row, value left empty.
+function headerEditor(hints = []) {
   const box = el("div", "headers");
   const render = () => {
     box.replaceChildren();
@@ -1561,9 +1568,18 @@ function headerEditor() {
       }
       box.append(line);
     });
+    const adds = el("div", "hadds");
     const add = el("button", "text", t("+ Add header"));
     add.onclick = () => { draft.headers.push(["", "", false]); render(); };
-    box.append(add);
+    adds.append(add);
+    for (const h of hints) {
+      if (draft.headers.some((r) => (r[0] || "").trim().toLowerCase() === h.toLowerCase())) continue;
+      const b = el("button", "text", "+ " + h);
+      b.title = t("Add the {h} header; its value is yours to fill in", { h });
+      b.onclick = () => { draft.headers.push([h, "", false]); render(); [...box.querySelectorAll(".pair")].pop()?.querySelectorAll("input, textarea")[1]?.focus(); };
+      adds.append(b);
+    }
+    box.append(adds);
   };
   render();
   return box;
@@ -1705,6 +1721,9 @@ const PROTOS = [["chat", "OpenAI", "Chat Completions — most agents"], ["respon
 function renderEditor(p, presetID) {
   const pr = presetID ? providers.presets.find((x) => x.id === presetID) : p?.preset ? providers.presets.find((x) => x.id === p.preset) : null;
   const isNew = !p, custom = !pr && !p?.account;
+  // a preset already added is added again only through "Add another": one
+  // more provider of it, under a name and id of its own
+  const another = isNew && !!pr?.added;
   draft = draft || (p
     ? { id: p.id, name: p.name, preset: p.preset, chat: p.chat, responses: p.responses, anthropic: p.anthropic, catalog: p.catalog, key: "", api: p.anthropic && !p.chat ? "anthropic" : "openai", chosen: p.models.filter((m) => m.on).map((m) => m.id), extra: [], headers: headerRows(p.headers), icon: p.icon || "", fallback: [...(p.fallback || [])], balanceURL: p.balanceURL || "", balancePath: p.balancePath || "" }
     : pr
@@ -1743,6 +1762,16 @@ function renderEditor(p, presetID) {
   }
 
   let name, url;
+  if (another) {
+    name = input(draft.name === pr.name ? "" : draft.name, t("e.g. {name} · Work", { name: pr.name }));
+    const hint = el("div", "hint");
+    const idHint = () => { hint.textContent = t("id {id} — a number is added if it is taken", { id: draft.id }); };
+    name.oninput = () => { draft.name = name.value.trim() || pr.name; draft.id = slug(name.value) || pr.id; idHint(); };
+    idHint();
+    const wrap = el("div");
+    wrap.append(name, hint);
+    ed.append(el("label", "", t("Name")), wrap);
+  }
   if (custom) {
     name = input(draft.name, t("e.g. My Relay"));
     name.oninput = () => { draft.name = name.value; if (isNew) draft.id = slug(name.value); };
@@ -1822,12 +1851,14 @@ function renderEditor(p, presetID) {
   // A user-defined provider can have its own picture; presets keep theirs.
   if (custom) ed.append(...field(t("Icon"), iconPicker(ed), ""));
 
-  // Custom request headers are only supported for a user-defined provider.
-  // Presets own their request shape, and signed-in accounts returned above
-  // use the agent's own authentication headers.
+  // Request headers of the user's own, for a preset's provider as much as a
+  // custom one — which workspace a key is for, who the app is; signed-in
+  // accounts returned above use the agent's own authentication headers.
   if (custom) {
     if (!draft.headers.length) draft.headers.push(["", ""]);
     ed.append(...field(t("Headers"), headerEditor(), t("Extra HTTP headers sent to the vendor, applied after auth. For gateways that need a private scheme.")));
+  } else {
+    ed.append(...field(t("Headers"), headerEditor(pr?.headerHints || []), t("Optional headers sent with every request to {p}, applied after auth.", { p: pr?.name || p?.name })));
   }
 
   // a relay that offers several regional endpoints: one selector, and the
@@ -1900,13 +1931,21 @@ function renderEditor(p, presetID) {
     del.onclick = () => providerAction("delete", { id: p.id }, t("{name} removed", { name: p.name }));
     bar.append(del);
   }
+  if (p && pr) {
+    // another key of the vendor, or the same key for another workspace
+    const more = el("button", "text", t("Add another {name}", { name: pr.name }));
+    more.title = t("One more {name} provider, with its own key, headers and models", { name: pr.name });
+    more.onclick = () => { adding = true; editing = { preset: pr.id }; draft = null; renderProviders(); };
+    bar.append(more);
+  }
   bar.append(el("span", "grow"));
   const cancel = el("button", "text", t("Cancel"));
   cancel.onclick = cancelEdit;
   const saveBtn = el("button", "text primary", t(isNew ? "Add" : "Save"));
   const save = () => {
-    const body = { id: draft.id, name: draft.name, preset: draft.preset, key: draft.key || "", chat: draft.chat, responses: draft.responses, anthropic: draft.anthropic, catalog: draft.catalog, models: p ? draft.chosen : draft.extra };
-    if (custom) { body.headers = headersOf(draft.headers); body.icon = draft.icon || "generic"; body.balanceURL = (draft.balanceURL || "").trim(); body.balancePath = (draft.balancePath || "").trim(); }
+    // new: an Add never replaces a provider that has the id already
+    const body = { id: draft.id, name: draft.name, preset: draft.preset, key: draft.key || "", chat: draft.chat, responses: draft.responses, anthropic: draft.anthropic, catalog: draft.catalog, models: p ? draft.chosen : draft.extra, headers: headersOf(draft.headers), new: isNew };
+    if (custom) { body.icon = draft.icon || "generic"; body.balanceURL = (draft.balanceURL || "").trim(); body.balancePath = (draft.balancePath || "").trim(); }
     if (p) body.fallback = draft.fallback;
     if (isNew && custom && !body.name) { name.focus(); return editorError(t("Give it a name"), "warn"); }
     if (isNew && custom && !body.chat && !body.anthropic) { url.focus(); return editorError(t("A base URL is needed"), "warn"); }
@@ -1917,7 +1956,7 @@ function renderEditor(p, presetID) {
   saveBtn.onclick = save;
   bar.append(cancel, saveBtn);
   ed.append(bar);
-  setTimeout(() => (isNew ? (custom ? name : key) : null)?.focus(), 0);
+  setTimeout(() => (isNew ? (custom || another ? name : key) : null)?.focus(), 0);
   return ed;
 }
 

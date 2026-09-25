@@ -210,8 +210,8 @@ model_catalog_json = "magpie-models.json"
 	if got := items["my.relay"].Provider.Headers["X-Org"]; got != "xyz" {
 		t.Fatalf("quoted provider's header = %q, want %q", got, "xyz")
 	}
-	if p := items["openrouter"].Provider; p.Preset != "openrouter" || len(p.Headers) != 0 {
-		t.Fatalf("preset import should keep its request shape: %+v", p)
+	if p := items["openrouter"].Provider; p.Preset != "openrouter" || p.Headers["X-Org"] != "preset" {
+		t.Fatalf("preset import should keep the preset and its headers: %+v", p)
 	}
 	if items["magpie"].Skip == "" || items["unkeyed"].Skip == "" {
 		t.Fatalf("gateway or env-key provider offered: %+v %+v", items["magpie"], items["unkeyed"])
@@ -239,8 +239,50 @@ model_catalog_json = "magpie-models.json"
 	if p.Headers["X-Org"] != "abc" {
 		t.Fatalf("Codex http_headers lost during import: got %q, want %q", p.Headers["X-Org"], "abc")
 	}
-	if p, err := Find("openrouter"); err != nil || p.Preset != "openrouter" || len(p.Headers) != 0 {
-		t.Fatalf("preset import changed its request shape: %+v %v", p, err)
+	if p, err := Find("openrouter"); err != nil || p.Preset != "openrouter" || p.Headers["X-Org"] != "preset" {
+		t.Fatalf("preset import lost its preset or headers: %+v %v", p, err)
+	}
+}
+
+// One key for two Anthropic workspaces: the entry naming the other workspace
+// is a provider of its own, still the preset's, under the next free id.
+func TestImportPresetOtherHeaders(t *testing.T) {
+	isolate(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	t.Setenv("XDG_CACHE_HOME", filepath.Join(home, ".cache"))
+	first, _ := FromPreset("anthropic")
+	first.Key, first.Headers = "sk-ant", map[string]string{"anthropic-workspace-id": "ws1"}
+	if err := Save(first); err != nil {
+		t.Fatal(err)
+	}
+	cfg, _ := os.UserConfigDir()
+	sqliteFixture(t, filepath.Join(cfg, "alma", "chat_threads.db"),
+		`CREATE TABLE providers (id TEXT PRIMARY KEY, name TEXT, type TEXT, api_key TEXT, models TEXT, base_url TEXT, enabled INTEGER, created_at TEXT, api_format TEXT, is_response_api INTEGER, custom_headers TEXT)`,
+		`INSERT INTO providers VALUES ('ws2','Anthropic','anthropic','sk-ant','[]',NULL,1,'2',NULL,0,'{"anthropic-workspace-id":"ws2"}')`,
+	)
+	same, _ := imported("Anthropic", "sk-ant", endpoints{anthropic: "https://api.anthropic.com"}, nil)
+	same.Headers = map[string]string{"anthropic-workspace-id": " ws1 "}
+	if it := settle([]AppImport{{Provider: same}}, load().Providers, map[string]bool{})[0]; it.Status != "same" {
+		t.Fatalf("same key and headers should be the provider already here: %+v", it)
+	}
+	items := itemsOf(t, "alma")
+	if it := items["ws2"]; it.Status != "taken" || it.KeyOf != "" || it.Provider.Preset != "anthropic" || it.Provider.Headers["anthropic-workspace-id"] != "ws2" {
+		t.Fatalf("other workspace should be a provider of its own: %+v", it)
+	}
+	if added, err := ImportFromApps([]AppPick{{Source: "alma", Ref: "ws2"}}); err != nil || len(added) != 1 {
+		t.Fatalf("import: %v %v", added, err)
+	}
+	p, err := Find("anthropic-2")
+	if err != nil || p.Preset != "anthropic" || p.Headers["anthropic-workspace-id"] != "ws2" || p.Anthropic != "https://api.anthropic.com" || p.Name != "Anthropic 2" {
+		t.Fatalf("second Anthropic: %+v %v", p, err)
+	}
+	if p, _ := Find("anthropic"); p.Headers["anthropic-workspace-id"] != "ws1" {
+		t.Fatalf("first Anthropic changed: %+v", p)
+	}
+	if it := itemsOf(t, "alma")["ws2"]; it.Status != "same" {
+		t.Fatalf("reimport: %+v", it)
 	}
 }
 

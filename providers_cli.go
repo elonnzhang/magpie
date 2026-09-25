@@ -24,6 +24,7 @@ const providerUsage = `usage:
   magpie presets                          list the vendors magpie knows out of the box
   magpie provider <id>                    show one provider and its models
   magpie provider add <preset> <key>      add a preset vendor   e.g. magpie provider add deepseek sk-…
+                                          again, it adds another (deepseek-2); k=v pairs too: id, name, header.X-Foo
   magpie provider add <name> k=v…         add a custom vendor   k: url, anthropic, responses, key, models, catalog, icon, header.X-Foo, balance, balance.path
   magpie provider key <id> <key>          change the API key
   magpie provider icon <id> <file|name>   give a custom provider a picture (PNG, JPEG, SVG…) or a built-in icon
@@ -35,6 +36,7 @@ const providerUsage = `usage:
   e.g. magpie provider add "My Relay" url=https://relay.example.com/v1 key=sk-…
        magpie provider add "Own Claude" anthropic=https://gw.example.com key=sk-… catalog=anthropic
        magpie provider add "My Relay" url=https://relay.example.com/v1 key=sk-… header.X-Org-Id=acme
+       magpie provider add anthropic sk-… id=anthropic-ws2 name="Anthropic WS2" header.anthropic-workspace-id=wrkspc_…
        magpie provider add "My Relay" url=https://relay.example.com/v1 key=sk-… balance=https://relay.example.com/api/usage/token balance.path='$data.total_available / 500000'`
 
 // providers: `magpie providers`
@@ -121,7 +123,7 @@ func usesByProvider() map[string][]string {
 func presets() error {
 	have := map[string]bool{}
 	for _, p := range provider.All() {
-		have[p.ID] = true
+		have[p.ID], have[p.Preset] = true, true
 	}
 	kind := provider.Kind("")
 	for _, pr := range provider.Presets() {
@@ -355,7 +357,13 @@ func addProvider(rest []string) error {
 	if err := applyPairs(&p, rest); err != nil {
 		return err
 	}
-	return saveNew(p)
+	// adding a preset that is already here adds another of it (deepseek-2),
+	// for another key or another header, rather than replacing the first
+	id, err := provider.Add(p)
+	if err != nil {
+		return err
+	}
+	return announce(id)
 }
 
 // saveNew saves a provider the user just added, then asks the vendor for
@@ -364,10 +372,16 @@ func saveNew(p provider.Provider) error {
 	if err := provider.Save(p); err != nil {
 		return err
 	}
-	saved, err := provider.Find(p.ID)
-	if err != nil {
-		saved, err = provider.Find(p.Name)
+	id := p.ID
+	if _, err := provider.Find(id); err != nil {
+		id = p.Name
 	}
+	return announce(id)
+}
+
+// announce says a provider was added and asks the vendor for its models.
+func announce(id string) error {
+	saved, err := provider.Find(id)
 	if err != nil {
 		return err
 	}
@@ -499,9 +513,19 @@ func applyPairs(p *provider.Provider, pairs []string) error {
 			}
 			p.Icon = v
 		default:
-			// header.X-Foo=bar sets a custom request header (name kept as typed)
+			// header.X-Foo=bar sets a custom request header (name kept as
+			// typed, replacing one of the same name in any case); an empty
+			// value leaves it out
 			if len(k) > len("header.") && strings.EqualFold(k[:len("header.")], "header.") {
 				name := k[len("header."):]
+				for h := range p.Headers {
+					if strings.EqualFold(h, name) {
+						delete(p.Headers, h)
+					}
+				}
+				if strings.TrimSpace(v) == "" {
+					continue
+				}
 				if p.Headers == nil {
 					p.Headers = map[string]string{}
 				}

@@ -771,6 +771,7 @@ body.window .ag-sk-icon { width: 22px; height: 22px; border-radius: 6px; }
 .editor .stack { display: flex; flex-direction: column; gap: 6px; }
 .editor .headers { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
 .editor .headers .pair { width: 100%; }
+.editor .headers .hadds { display: flex; flex-wrap: wrap; gap: 2px 12px; }
 .editor .headers .pair input { flex: 1; min-width: 0; }
 .editor .headers .pair input:first-child { flex: 4; }
 .editor .headers .pair input:nth-child(2) { flex: 6; }

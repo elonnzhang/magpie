@@ -261,6 +261,46 @@ func Save(p Provider) error {
 	return store(f)
 }
 
+// Add saves a provider the user just added, beside those already here: an
+// id in use — the preset's, or the one its name slugs to — moves on to the
+// next free one (anthropic-2), and a name in use gets the same number, so a
+// second key of a vendor, or one key for another workspace, is a provider of
+// its own rather than one replacing the first. It answers the id saved.
+func Add(p Provider) (string, error) {
+	p.ID = strings.ToLower(strings.TrimSpace(p.ID))
+	if p.ID == "" {
+		p.ID = Slug(p.Name)
+	}
+	// the same key on the same host with the same headers is the one
+	// already here, not another: adding it twice would only split its usage
+	for _, h := range All() {
+		if h.Account == nil && sameProvider(h, normalize(p)) {
+			return "", fmt.Errorf("%s is already added with that key (%s); magpie provider key %s <key> changes its key", h.Name, h.ID, h.ID)
+		}
+	}
+	p.ID, p.Name = freeID(p.ID), freeName(p.Name)
+	return p.ID, Save(p)
+}
+
+// freeName is name, or "name 2", "name 3"… whichever no provider is called,
+// since providers are found by name as well as id.
+func freeName(name string) string {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return ""
+	}
+	taken := map[string]bool{}
+	for _, p := range All() {
+		taken[strings.ToLower(p.Name)] = true
+	}
+	for n, try := 2, name; ; n++ {
+		if !taken[strings.ToLower(try)] {
+			return try
+		}
+		try = name + " " + itoa(n)
+	}
+}
+
 // accountIDs are the ids of the subscriptions magpie can list (account.go).
 var accountIDs = []string{"claude", "codex", "copilot", "cursor", "devin", "grok"}
 
@@ -345,12 +385,9 @@ func normalize(p Provider) Provider {
 		p.Affinity = ""
 	}
 	p.Catalog = strings.Join(p.Catalogs(), ", ")
+	// a preset's provider keeps its headers too: the preset gives the
+	// endpoints and catalog, the headers say which workspace or app it is
 	p.Headers = cleanHeaders(p.Headers)
-	if p.Preset != "" {
-		// Presets own their request shape; custom headers are supported only
-		// for user-defined providers.
-		p.Headers = nil
-	}
 	if pr := Preset(p.Preset); pr != nil {
 		if p.Icon == "" {
 			p.Icon = pr.Icon
