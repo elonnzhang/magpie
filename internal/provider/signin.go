@@ -48,13 +48,15 @@ var signInTimeout = 10 * time.Minute
 type SignInState struct {
 	ID    string `json:"id"`
 	Agent string `json:"agent"`
-	URL   string `json:"url"`             // the vendor's page, to open or copy
-	Code  string `json:"code,omitempty"`  // what to type there, for a device code
-	State string `json:"state"`           // waiting, done, failed or canceled
-	User  string `json:"user,omitempty"`  // the account, once done
-	Plan  string `json:"plan,omitempty"`  //
-	Using bool   `json:"using,omitempty"` // the agent was signed in to it too
-	Error string `json:"error,omitempty"`
+	URL   string `json:"url"`            // the vendor's page, to open or copy
+	Code  string `json:"code,omitempty"` // what to type there, for a device code
+	State string `json:"state"`          // installing, waiting, done, failed or canceled
+	// Installing is the CLI being installed before the sign-in can start
+	Installing string `json:"installing,omitempty"`
+	User       string `json:"user,omitempty"`  // the account, once done
+	Plan       string `json:"plan,omitempty"`  //
+	Using      bool   `json:"using,omitempty"` // the agent was signed in to it too
+	Error      string `json:"error,omitempty"`
 }
 
 type signInFlow struct {
@@ -81,9 +83,84 @@ func randomToken(n int) string {
 
 // StartSignIn begins adding an account to an agent: open the returned URL
 // in a browser and the rest happens on its own; SignInStatus follows it.
+//
+// An agent signed in with a CLI that isn't installed has it installed first:
+// the sign-in is then "installing", and gets its URL when that is done.
 func StartSignIn(agent string) (SignInState, error) {
 	s := &signInFlow{verifier: randomToken(48), state: randomToken(24), done: make(chan struct{})}
 	s.st = SignInState{ID: randomToken(9), Agent: agent, State: "waiting"}
+	cli, install := missingCLI(agent)
+	var installing context.Context
+	if install {
+		s.st.State, s.st.Installing = "installing", cli.Name
+		// canceling the sign-in stops the installer
+		installing, s.stop = context.WithCancel(context.Background())
+	} else if err := s.begin(); err != nil {
+		return SignInState{}, err
+	}
+	timeout := signInTimeout
+	if install {
+		timeout += installTimeout
+	}
+	go func() {
+		select {
+		case <-s.done:
+		case <-time.After(timeout):
+			s.finish(SignInState{State: "failed", Error: "the sign-in timed out; start it again"})
+		}
+	}()
+
+	signIns.Lock()
+	// only one sign-in per agent at a time: a newer one replaces the older
+	for id, o := range signIns.m {
+		if o.st.Agent == agent {
+			o.finish(SignInState{State: "canceled"})
+			delete(signIns.m, id)
+		}
+	}
+	signIns.m[s.st.ID] = s
+	signIns.Unlock()
+	if install {
+		go s.installThenBegin(installing, cli)
+	}
+	return s.status(), nil
+}
+
+// installThenBegin installs the CLI the sign-in needs, then starts it.
+func (s *signInFlow) installThenBegin(ctx context.Context, cli agentCLI) {
+	err := installCLI(ctx, cli)
+	s.mu.Lock()
+	s.stop = nil
+	s.mu.Unlock()
+	if err == nil {
+		forgetAccountCaches()
+		err = s.begin()
+	}
+	if err != nil {
+		s.finish(SignInState{State: "failed", Error: err.Error()})
+		return
+	}
+	s.mu.Lock()
+	if s.st.State == "installing" {
+		s.st.State, s.st.Installing = "waiting", ""
+		s.mu.Unlock()
+		return
+	}
+	// canceled while it began: let go of what it started
+	stop, srv := s.stop, s.srv
+	s.mu.Unlock()
+	if stop != nil {
+		stop()
+	}
+	if srv != nil {
+		_ = srv.Close()
+	}
+}
+
+// begin starts the vendor's sign-in: the URL to open, and whatever waits
+// for the browser to come back.
+func (s *signInFlow) begin() error {
+	agent := s.st.Agent
 	sum := sha256.Sum256([]byte(s.verifier))
 	challenge := base64.RawURLEncoding.EncodeToString(sum[:])
 
@@ -93,7 +170,7 @@ func StartSignIn(agent string) (SignInState, error) {
 	switch agent {
 	case "claude":
 		if ln, err = net.Listen("tcp", "127.0.0.1:0"); err != nil {
-			return SignInState{}, err
+			return err
 		}
 		s.redirect = fmt.Sprintf("http://localhost:%d/callback", ln.Addr().(*net.TCPAddr).Port)
 		q.Set("code", "true")
@@ -107,7 +184,7 @@ func StartSignIn(agent string) (SignInState, error) {
 		s.st.URL = claudeAuthorizeURL + "?" + q.Encode()
 	case "codex":
 		if ln, err = listenCodexCallback(); err != nil {
-			return SignInState{}, err
+			return err
 		}
 		_, port, _ := net.SplitHostPort(codexCallbackAddr)
 		s.redirect = "http://localhost:" + port + "/auth/callback"
@@ -125,18 +202,18 @@ func StartSignIn(agent string) (SignInState, error) {
 	case "cursor":
 		// Cursor has no sign-in of its own to borrow: its CLI signs in
 		if err := startCursorSignIn(s); err != nil {
-			return SignInState{}, err
+			return err
 		}
 	case "grok":
 		// so is Grok: its CLI signs in with a device code
 		if err := startGrokSignIn(s); err != nil {
-			return SignInState{}, err
+			return err
 		}
 	case "devin":
 		// `devin auth login` is a TUI over this same PKCE + localhost
 		// callback, so magpie runs the round itself
 		if ln, err = net.Listen("tcp", "127.0.0.1:0"); err != nil {
-			return SignInState{}, err
+			return err
 		}
 		s.redirect = fmt.Sprintf("http://127.0.0.1:%d/callback", ln.Addr().(*net.TCPAddr).Port)
 		q.Set("redirect_uri", s.redirect)
@@ -145,48 +222,37 @@ func StartSignIn(agent string) (SignInState, error) {
 		q.Set("code_challenge", challenge)
 		q.Set("code_challenge_method", "S256")
 		q.Set("cli_pkce_marker", "1")
+		// set with the lock: the window follows a sign-in that installed
+		// devin first while this runs
+		s.mu.Lock()
 		s.st.URL = devinAuthorizeURL + "?" + q.Encode()
+		s.mu.Unlock()
 	case "copilot":
 		// GitHub's device code, as Copilot's editors sign in
 		if err := startCopilotSignIn(s); err != nil {
-			return SignInState{}, err
+			return err
 		}
 	case "gemini", "antigravity":
 		// Google's sign-in, under the app's own OAuth client
 		app, _ := googleAppOf(agent)
 		if ln, err = net.Listen("tcp", "127.0.0.1:0"); err != nil {
-			return SignInState{}, err
+			return err
 		}
 		startGoogleSignIn(s, app, ln.Addr().(*net.TCPAddr).Port, challenge)
 	default:
-		return SignInState{}, fmt.Errorf("magpie can't sign in to %s accounts", agent)
+		return fmt.Errorf("magpie can't sign in to %s accounts", agent)
 	}
 
 	if ln != nil {
 		mux := http.NewServeMux()
 		mux.HandleFunc("/", s.callback)
-		s.srv = &http.Server{Handler: mux, ReadHeaderTimeout: 10 * time.Second}
-		go func() { _ = s.srv.Serve(ln) }()
+		srv := &http.Server{Handler: mux, ReadHeaderTimeout: 10 * time.Second}
+		s.mu.Lock()
+		s.srv = srv
+		s.mu.Unlock()
+		go func() { _ = srv.Serve(ln) }()
 	}
-	go func() {
-		select {
-		case <-s.done:
-		case <-time.After(signInTimeout):
-			s.finish(SignInState{State: "failed", Error: "the sign-in timed out; start it again"})
-		}
-	}()
-
-	signIns.Lock()
-	// only one sign-in per agent at a time: a newer one replaces the older
-	for id, o := range signIns.m {
-		if o.st.Agent == agent {
-			o.finish(SignInState{State: "canceled"})
-			delete(signIns.m, id)
-		}
-	}
-	signIns.m[s.st.ID] = s
-	signIns.Unlock()
-	return s.status(), nil
+	return nil
 }
 
 // listenCodexCallback takes Codex's callback port. A `codex login` left
@@ -255,22 +321,23 @@ func (s *signInFlow) status() SignInState {
 // finish records the outcome once and lets the callback server go.
 func (s *signInFlow) finish(out SignInState) bool {
 	s.mu.Lock()
-	if s.st.State != "waiting" {
+	if s.st.State != "waiting" && s.st.State != "installing" {
 		s.mu.Unlock()
 		return false
 	}
 	out.ID, out.Agent, out.URL, out.Code = s.st.ID, s.st.Agent, s.st.URL, s.st.Code
 	s.st = out
+	stop, srv := s.stop, s.srv
 	s.mu.Unlock()
 	if out.State == "done" {
 		// signing in again brings back an account removed from magpie
 		_ = ShowAccount(out.Agent)
 	}
 	close(s.done)
-	if s.stop != nil {
-		s.stop()
+	if stop != nil {
+		stop()
 	}
-	if s.srv == nil {
+	if srv == nil {
 		return true
 	}
 	go func() {
@@ -278,7 +345,7 @@ func (s *signInFlow) finish(out SignInState) bool {
 		time.Sleep(time.Second)
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()
-		_ = s.srv.Shutdown(ctx)
+		_ = srv.Shutdown(ctx)
 	}()
 	return true
 }

@@ -262,7 +262,9 @@ func runCLISignIn(s *signInFlow, what string, env []string, using bool, failed f
 		cancel()
 		return err
 	}
+	s.mu.Lock()
 	s.stop = cancel
+	s.mu.Unlock()
 	got := make(chan string, 1)
 	go func() {
 		sc := bufio.NewScanner(out)

@@ -523,7 +523,11 @@ func providerRoutes(mux *http.ServeMux, w Windows, gw *gateway.Server) {
 			fail(rw, err)
 			return
 		}
-		w.OpenURL(st.URL)
+		if st.URL != "" {
+			// one that installs a CLI first has no URL yet: the window
+			// opens it once there is one
+			w.OpenURL(st.URL)
+		}
 		writeJSON(rw, st)
 	})
 	mux.HandleFunc("GET /api/signin/{id}", func(rw http.ResponseWriter, r *http.Request) {

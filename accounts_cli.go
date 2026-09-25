@@ -253,6 +253,16 @@ func addAccount(agentID string) error {
 	if err != nil {
 		return err
 	}
+	if st.State == "installing" {
+		fmt.Printf("Installing %s, which %s is used through…\n", st.Installing, agentID)
+		for st.State == "installing" {
+			time.Sleep(500 * time.Millisecond)
+			st, _ = provider.SignInStatus(st.ID)
+		}
+		if st.State != "waiting" {
+			return fmt.Errorf("sign-in didn't finish: %s", st.Error)
+		}
+	}
 	fmt.Println("Finish signing in in your browser. If it didn't open, go to:")
 	fmt.Println(faint.Render(st.URL))
 	openInBrowser(st.URL)

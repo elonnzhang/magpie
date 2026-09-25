@@ -2715,11 +2715,12 @@ const SUBS = [
   { agent: "antigravity", name: "Antigravity", icon: "antigravity-color", plans: "Google AI Pro · Ultra · free", risk: true },
 ];
 const subOf = (agent) => SUBS.find((x) => x.agent === agent);
-let signing = null; // the sign-in under way: { id, agent, url, state, error }
+let signing = null; // the sign-in under way: { id, agent, url, state, installing, error }
+const signingOpen = () => signing?.state === "waiting" || signing?.state === "installing";
 let justAdded = ""; // the account that just came in, to greet it
 
 async function startSignIn(agent, risky) {
-  if (signing?.state === "waiting") api("signin/" + signing.id + "/cancel", {}).catch(() => {});
+  if (signingOpen()) api("signin/" + signing.id + "/cancel", {}).catch(() => {});
   // an account Google may suspend is added only once that is said
   if (subOf(agent)?.risk && !risky) {
     signing = { agent, state: "risk" };
@@ -2739,11 +2740,17 @@ async function startSignIn(agent, risky) {
 }
 
 async function followSignIn(id) {
-  while (signing?.id === id && signing.state === "waiting") {
+  while (signing?.id === id && signingOpen()) {
     await new Promise((r) => setTimeout(r, 800));
     let st;
     try { st = await api("signin/" + id); } catch { continue; }
-    if (signing?.id !== id || st.state === "waiting") continue;
+    if (signing?.id !== id) continue;
+    if (st.state === "waiting" || st.state === "installing") {
+      // the CLI it needed is in: now the vendor's page can open
+      if (signing.state === "installing" && st.state === "waiting" && st.url) api("open", { url: st.url }).catch(() => {});
+      if (signing.state !== st.state || signing.url !== st.url) { signing = st; renderProviders(); }
+      continue;
+    }
     if (st.state === "done") {
       signing = null;
       justAdded = st.user;
@@ -2797,6 +2804,15 @@ function renderSigning(sub) {
     return box;
   }
   box.append(el("span", "spinner"));
+  if (signing.state === "installing") {
+    tt.append(el("span", "n", t("Installing {cli}…", { cli: signing.installing })),
+      el("span", "s", t("{name} is used through its own CLI, which isn't on this computer yet. magpie is installing it with the official installer; the sign-in page opens as soon as it's done.", { name: sub.name })));
+    box.append(tt);
+    const x = el("button", "text", t("Cancel"));
+    x.onclick = cancelSignIn;
+    box.append(x);
+    return box;
+  }
   tt.append(el("span", "n", t("Finish signing in to {name} in your browser", { name: sub.name })),
     el("span", "s", signing.code ? t("magpie opened GitHub's device page. Enter this code there; the account shows up here as soon as you're done.") : t("magpie opened the sign-in page. The account shows up here as soon as you're done.")));
   if (signing.code) {

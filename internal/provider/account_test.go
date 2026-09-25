@@ -66,16 +66,20 @@ func signIn(t *testing.T) string {
 func isolate(t *testing.T) {
 	t.Helper()
 	oldKeychain, oldURL, oldBase, oldExe := claudeKeychain, claudeTokenURL, claudeBase, claudeExecutable
-	oldCursor := cursorKeychain
+	oldCursor, oldDevin := cursorKeychain, DevinExecutable
 	claudeKeychain, cursorKeychain = false, false
 	claudeExecutable = func() string { return "" }
+	// the machine's own devin, if it has one, is no test's
+	DevinExecutable = func() string { return "" }
 	forgetClaudeCredential()
 	forgetClaudeStatus()
+	forgetDevinStatus()
 	t.Cleanup(func() {
 		claudeKeychain, claudeTokenURL, claudeBase, claudeExecutable = oldKeychain, oldURL, oldBase, oldExe
-		cursorKeychain = oldCursor
+		cursorKeychain, DevinExecutable = oldCursor, oldDevin
 		forgetClaudeCredential()
 		forgetClaudeStatus()
+		forgetDevinStatus()
 	})
 }
 
