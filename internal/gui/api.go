@@ -114,6 +114,10 @@ func settingsState() settingsJSON {
 	return s
 }
 
+// onDock puts the app in the Mac's Dock or takes it out, when the Settings
+// page changes that; set by the process that has the app.
+var onDock func(bool)
+
 // Handler serves the embedded UI and the JSON API.
 // gw is the gateway this process serves, or nil when another magpie has it.
 func Handler(w Windows, gw *gateway.Server) http.Handler {
@@ -237,6 +241,9 @@ func Handler(w Windows, gw *gateway.Server) http.Handler {
 		if err := settings.Save(in); err != nil {
 			fail(rw, err)
 			return
+		}
+		if in.Dock != cur.Dock && onDock != nil {
+			onDock(in.Dock)
 		}
 		writeJSON(rw, settingsState())
 	})

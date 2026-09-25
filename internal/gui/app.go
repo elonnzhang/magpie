@@ -135,13 +135,21 @@ func Run(version string, showMain bool, link string) error {
 		Description:    "one place to pick every agent's model",
 		Icon:           appIcon,
 		Assets:         application.AssetOptions{Handler: handler},
-		Mac:            application.MacOptions{ActivationPolicy: application.ActivationPolicyAccessory},
+		Mac:            application.MacOptions{ActivationPolicy: dockPolicy(settings.Load().Dock)},
 		Windows:        application.WindowsOptions{DisableQuitOnLastWindowClosed: true},
 		// A version downloaded but not restarted into is installed on the
 		// way out, so the next launch is the new one.
 		OnShutdown: func() { updates.install(false) },
 		// Wails exits on some webview errors; say why before it does.
 		ErrorHandler: func(err error) { log.Println("magpie:", err) },
+	})
+
+	onDock = setDock
+	// The Dock icon opens the window. Wails would show every hidden window
+	// on it, the panel too, so the hook answers first and stops it.
+	h.app.Event.RegisterApplicationEventHook(events.Mac.ApplicationShouldHandleReopen, func(e *application.ApplicationEvent) {
+		h.ShowMain("")
+		e.Cancel()
 	})
 
 	h.panel = h.app.Window.NewWithOptions(application.WebviewWindowOptions{

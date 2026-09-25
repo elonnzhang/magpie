@@ -52,6 +52,8 @@ const I18N = {
     "You removed it from magpie.": "你已把它从 magpie 中移除。",
     "Add it back": "加回来",
     "Tray icon": "托盘图标",
+    "Dock": "程序坞",
+    "Keep magpie in the Dock too, for a menu bar too full to show its icon": "让 magpie 同时常驻程序坞，菜单栏图标被挤掉时也能打开",
     "What clicking magpie’s icon in the menu bar or tray opens": "点击菜单栏或托盘里的 magpie 图标时打开什么",
     "Quick panel": "快捷面板",
     "Main window": "主窗口",

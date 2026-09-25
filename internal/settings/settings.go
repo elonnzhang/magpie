@@ -22,6 +22,9 @@ type Settings struct {
 	Theme string `json:"theme,omitempty"` // system | light | dark
 	Lang  string `json:"lang,omitempty"`  // system | en | zh
 	Tray  string `json:"tray,omitempty"`  // what clicking the tray icon opens: panel | window
+	// Dock keeps magpie in the Mac's Dock as well as the menu bar, for a
+	// menu bar too full to show its icon.
+	Dock bool `json:"dock,omitempty"`
 	// Proxy for magpie's own requests to vendors: "" follows the
 	// environment and then the system, "direct" uses none, anything else
 	// is the proxy (http://, https:// or socks5://; host:port means http).

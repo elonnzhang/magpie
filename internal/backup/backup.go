@@ -237,7 +237,7 @@ func Restore(b Bundle, parts Parts) (Result, error) {
 	if parts.Settings && b.Settings != nil {
 		// the window's size and the proxy are this machine's own
 		s, cur := *b.Settings, settings.Load()
-		s.Window, s.Proxy = cur.Window, cur.Proxy
+		s.Window, s.Proxy, s.Dock = cur.Window, cur.Proxy, cur.Dock
 		if err := settings.Save(s); err != nil {
 			return r, err
 		}
