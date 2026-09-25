@@ -165,9 +165,11 @@ func libraryRoutes(mux *http.ServeMux, w Windows) {
 	// every change answers with the page as it is after it, and what it did
 	mux.HandleFunc("POST /api/library/{what}/{action}", func(rw http.ResponseWriter, r *http.Request) {
 		var in struct {
-			Name   string
-			Old    string
-			Agents []string
+			Name string
+			Old  string
+			// Agents is named as the page sends it, so that it is this
+			// and not the instructions' own Agents that "agents" fills
+			Agents []string `json:"agents"`
 			Source string
 			Paths  []string
 			Server library.Server
@@ -183,7 +185,9 @@ func libraryRoutes(mux *http.ServeMux, w Windows) {
 		var err error
 		switch r.PathValue("what") + "/" + r.PathValue("action") {
 		case "instructions/save":
-			res, err = library.SaveInstructions(in.InstructionsChange)
+			c := in.InstructionsChange
+			c.Agents = in.Agents
+			res, err = library.SaveInstructions(c)
 		case "instructions/import":
 			res, err = library.ImportInstructions(in.Name)
 		case "servers/save":
