@@ -383,6 +383,9 @@ type holdWriter struct {
 	scanned int       // how much of held has been read as events
 	failure int       // the status the stream's error stands for
 	failMsg string
+
+	ended bool   // the stream's last event was written: the reply is whole
+	tail  []byte // the end of the last write, for a marker split across two
 }
 
 func newHoldWriter(w http.ResponseWriter, hold bool) *holdWriter {
@@ -419,6 +422,7 @@ func (h *holdWriter) Write(b []byte) (int, error) {
 	if h.status == 0 {
 		h.WriteHeader(http.StatusOK)
 	}
+	h.see(b)
 	if h.passing {
 		return h.w.Write(b)
 	}
@@ -427,6 +431,30 @@ func (h *holdWriter) Write(b []byte) (int, error) {
 		h.scan()
 	}
 	return n, err
+}
+
+// streamEnds are how each protocol's stream says it is over, as they can
+// only appear outside a quoted string: text that says so is escaped.
+var streamEnds = [][]byte{
+	[]byte(`"type":"response.completed"`), []byte(`"type":"response.incomplete"`), // Responses
+	[]byte(`"type":"message_stop"`), []byte("event: message_stop"), // Anthropic
+	[]byte("data: [DONE]"), // Chat Completions
+}
+
+// see notes a stream's last event going by. An agent may hang up as soon as
+// it has that — Codex does — and a reply it had whole is not canceled.
+func (h *holdWriter) see(b []byte) {
+	if h.ended {
+		return
+	}
+	buf := append(h.tail, b...)
+	for _, m := range streamEnds {
+		if bytes.Contains(buf, m) {
+			h.ended = true
+			return
+		}
+	}
+	h.tail = append(h.tail[:0], buf[max(len(buf)-32, 0):]...)
 }
 
 // holdLongest is the longest a stream is held waiting for its first

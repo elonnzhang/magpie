@@ -11,11 +11,19 @@ package gateway
 // HTTP request supplies tool_result blocks, which unblock the same Claude Code
 // turn. This is the protocol-neutral equivalent of pi-claude-bridge's parked
 // Agent SDK query (https://github.com/elidickinson/pi-claude-bridge, MIT).
+//
+// A turn that ends leaves its Claude Code running, its input still open, for
+// the conversation's next turn: that one is told only what the user said
+// since, so the conversation Claude Code keeps goes on as it began and the
+// prompt it has cached is read again. A new run would start from the whole
+// history in one message, which shares nothing with what was cached but
+// Claude Code's own prompt.
 
 import (
 	"bufio"
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -36,8 +44,17 @@ type subscriptionBridge struct {
 	mu      sync.Mutex
 	runs    map[string]*subscriptionRun // callback token → run
 	calls   map[string]*subscriptionRun // tool_use id → run
+	idle    map[string]*subscriptionRun // conversation so far (turnKey) → run
 	baseURL string
 }
+
+// A run left for its conversation's next turn waits idleLongest at most,
+// and idleMost of them are kept, the longest waiting let go first: each is
+// a Claude Code process.
+const (
+	idleLongest = 20 * time.Minute
+	idleMost    = 6
+)
 
 type subscriptionRun struct {
 	bridge *subscriptionBridge
@@ -52,6 +69,13 @@ type subscriptionRun struct {
 	closed  bool
 	stderr  strings.Builder
 	timer   *time.Timer
+
+	// Claude Code's input, kept open for the next turn; owner is the account
+	// it runs as, and idleKey and idleAt say it is waiting for one.
+	stdin   io.WriteCloser
+	owner   string
+	idleKey string
+	idleAt  time.Time
 
 	// An agent whose stream does not carry its tool calls in full (Cursor)
 	// learns of them here, as the MCP helper hands each one over, and opens
@@ -82,7 +106,7 @@ type bridgeTool struct {
 }
 
 func newSubscriptionBridge() *subscriptionBridge {
-	return &subscriptionBridge{runs: map[string]*subscriptionRun{}, calls: map[string]*subscriptionRun{}}
+	return &subscriptionBridge{runs: map[string]*subscriptionRun{}, calls: map[string]*subscriptionRun{}, idle: map[string]*subscriptionRun{}}
 }
 
 func randomToken() string {
@@ -118,7 +142,7 @@ func callbackBaseURL() string {
 	return "http://" + host + ":" + port
 }
 
-func (b *subscriptionBridge) start(ctx context.Context, req *Request, model, oauth string) (*subscriptionRun, <-chan Event, error) {
+func (b *subscriptionBridge) start(ctx context.Context, req *Request, model, oauth, owner string) (*subscriptionRun, <-chan Event, error) {
 	binary, err := claudeBinary()
 	if err != nil {
 		return nil, nil, err
@@ -170,7 +194,7 @@ func (b *subscriptionBridge) start(ctx context.Context, req *Request, model, oau
 		return nil, nil, err
 	}
 
-	run := &subscriptionRun{bridge: b, token: token, model: model, cmd: cmd, tmp: tmp, pending: map[string]chan mcpToolResult{}}
+	run := &subscriptionRun{bridge: b, token: token, model: model, cmd: cmd, tmp: tmp, pending: map[string]chan mcpToolResult{}, stdin: stdin, owner: owner}
 	// A caller may abandon a turn after receiving tool_use. Do not leave the
 	// parked Claude process and MCP request alive forever.
 	run.timer = time.AfterFunc(30*time.Minute, run.abort)
@@ -202,8 +226,129 @@ func (b *subscriptionBridge) start(ctx context.Context, req *Request, model, oau
 		run.abort()
 		return nil, nil, err
 	}
-	_ = stdin.Close()
 	return run, segment, nil
+}
+
+// resume hands a conversation's next turn to the run that had its last
+// one, when one is waiting: the user's messages since, and nothing else.
+func (b *subscriptionBridge) resume(req *Request, owner string) (*subscriptionRun, <-chan Event) {
+	j := len(req.Messages) - 1
+	for j >= 0 && req.Messages[j].Role != "assistant" {
+		j--
+	}
+	if j < 0 || j == len(req.Messages)-1 {
+		return nil, nil
+	}
+	since := req.Messages[j+1:]
+	for _, m := range since {
+		for _, p := range m.Parts {
+			if p.Kind == ToolResult {
+				return nil, nil
+			}
+		}
+	}
+	key := turnKey(owner, req, req.Messages[:j+1])
+	b.mu.Lock()
+	run := b.idle[key]
+	if run != nil {
+		delete(b.idle, key)
+		run.idleKey = ""
+	}
+	b.mu.Unlock()
+	if run == nil {
+		return nil, nil
+	}
+	line, _ := json.Marshal(map[string]any{"type": "user", "message": map[string]any{"role": "user", "content": renderClaudeTurn(since)}})
+	run.mu.Lock()
+	if run.closed {
+		run.mu.Unlock()
+		return nil, nil
+	}
+	ch := make(chan Event, 64)
+	run.segment = ch
+	run.mu.Unlock()
+	run.timer.Reset(30 * time.Minute)
+	if _, err := run.stdin.Write(append(line, '\n')); err != nil {
+		run.abort()
+		return nil, nil
+	}
+	return run, ch
+}
+
+// ended is told how a turn's reply went. A run whose reply was whole and
+// asked for nothing more waits for the conversation's next turn; one that
+// failed, was cut short or went unheard is let go.
+func (r *subscriptionRun) ended(req *Request, said, stop string, ok bool) {
+	if r.stdin == nil || stop == "tool" && ok {
+		return // it ends by itself, or waits on its tool calls
+	}
+	if !ok || stop != "stop" {
+		r.abort()
+		return
+	}
+	reply := Message{Role: "assistant", Parts: []Part{{Kind: Text, Text: said}}}
+	key := turnKey(r.owner, req, append(req.Messages[:len(req.Messages):len(req.Messages)], reply))
+	b := r.bridge
+	var drop []*subscriptionRun
+	b.mu.Lock()
+	if old := b.idle[key]; old != nil {
+		drop = append(drop, old)
+	}
+	b.idle[key] = r
+	r.idleKey, r.idleAt = key, time.Now()
+	for len(b.idle) > idleMost {
+		var oldest *subscriptionRun
+		for _, run := range b.idle {
+			if oldest == nil || run.idleAt.Before(oldest.idleAt) {
+				oldest = run
+			}
+		}
+		delete(b.idle, oldest.idleKey)
+		oldest.idleKey = ""
+		drop = append(drop, oldest)
+	}
+	b.mu.Unlock()
+	r.timer.Reset(idleLongest)
+	for _, run := range drop {
+		run.abort()
+	}
+}
+
+// turnKey is what a conversation has been so far, for the run that had it
+// to be found again: whom it runs as, the model, its settings and tools,
+// and the messages' words, tool calls and results. Whitespace, thinking and
+// how a reply is split into messages are left out, as clients keep those
+// differently.
+func turnKey(owner string, req *Request, msgs []Message) string {
+	h := sha256.New()
+	tools, _ := json.Marshal(req.Tools)
+	fmt.Fprintf(h, "%s\x00%s\x00%s\x00%s\x00%s\x00%s", owner, req.Model, req.Effort, req.ToolChoice, req.System, tools)
+	role := ""
+	for _, m := range msgs {
+		var b strings.Builder
+		for _, p := range m.Parts {
+			switch p.Kind {
+			case Text:
+				b.WriteString(p.Text + " ")
+			case ToolCall:
+				fmt.Fprintf(&b, "\x01call %s %s ", p.Name, p.ID)
+			case ToolResult:
+				fmt.Fprintf(&b, "\x01result %s %s ", p.CallID, p.Text)
+			case Image:
+				fmt.Fprintf(&b, "\x01image %d %s ", len(p.Data), p.URL)
+			}
+		}
+		words := strings.Join(strings.Fields(b.String()), " ")
+		if words == "" {
+			continue
+		}
+		if m.Role != role {
+			role = m.Role
+			fmt.Fprintf(h, "\x00%s:", role)
+		}
+		h.Write([]byte(words + " "))
+	}
+	return hex.EncodeToString(h.Sum(nil))
 }
 
 func claudeCLIArgs(model, mcpConfig, effort string) []string {
@@ -399,38 +544,61 @@ func renderClaudePrompt(req *Request) ([]map[string]any, error) {
 			label = "Assistant"
 		}
 		text.WriteString(label + ": ")
-		for _, p := range m.Parts {
-			switch p.Kind {
-			case Text:
-				text.WriteString(p.Text)
-			case Thinking:
-				text.WriteString(p.Text)
-			case ToolCall:
-				fmt.Fprintf(&text, "\n[tool call %s id=%s args=%s]", p.Name, p.ID, argsString(p))
-			case ToolResult:
-				fmt.Fprintf(&text, "\n[tool result id=%s%s]\n%s", p.CallID, map[bool]string{true: " error"}[p.IsError], p.Text)
-			case Image:
-				if text.Len() > 0 {
-					blocks = append(blocks, map[string]any{"type": "text", "text": text.String()})
-					text.Reset()
-				}
-				switch {
-				case p.Data != "":
-					blocks = append(blocks, map[string]any{"type": "image", "source": map[string]any{"type": "base64", "media_type": p.MediaType, "data": p.Data}})
-				case p.URL != "":
-					blocks = append(blocks, map[string]any{"type": "image", "source": map[string]any{"type": "url", "url": p.URL}})
-				}
-			}
-		}
+		blocks = renderParts(blocks, &text, m.Parts)
 		text.WriteString("\n\n")
 	}
+	return closeBlocks(blocks, &text), nil
+}
+
+// renderClaudeTurn is the user's messages in a conversation Claude Code
+// already has, as it would be told them itself.
+func renderClaudeTurn(msgs []Message) []map[string]any {
+	var blocks []map[string]any
+	var text strings.Builder
+	for i, m := range msgs {
+		if i > 0 {
+			text.WriteString("\n\n")
+		}
+		blocks = renderParts(blocks, &text, m.Parts)
+	}
+	return closeBlocks(blocks, &text)
+}
+
+func renderParts(blocks []map[string]any, text *strings.Builder, parts []Part) []map[string]any {
+	for _, p := range parts {
+		switch p.Kind {
+		case Text:
+			text.WriteString(p.Text)
+		case Thinking:
+			text.WriteString(p.Text)
+		case ToolCall:
+			fmt.Fprintf(text, "\n[tool call %s id=%s args=%s]", p.Name, p.ID, argsString(p))
+		case ToolResult:
+			fmt.Fprintf(text, "\n[tool result id=%s%s]\n%s", p.CallID, map[bool]string{true: " error"}[p.IsError], p.Text)
+		case Image:
+			if text.Len() > 0 {
+				blocks = append(blocks, map[string]any{"type": "text", "text": text.String()})
+				text.Reset()
+			}
+			switch {
+			case p.Data != "":
+				blocks = append(blocks, map[string]any{"type": "image", "source": map[string]any{"type": "base64", "media_type": p.MediaType, "data": p.Data}})
+			case p.URL != "":
+				blocks = append(blocks, map[string]any{"type": "image", "source": map[string]any{"type": "url", "url": p.URL}})
+			}
+		}
+	}
+	return blocks
+}
+
+func closeBlocks(blocks []map[string]any, text *strings.Builder) []map[string]any {
 	if text.Len() > 0 {
 		blocks = append(blocks, map[string]any{"type": "text", "text": text.String()})
 	}
 	if len(blocks) == 0 {
 		blocks = append(blocks, map[string]any{"type": "text", "text": "[continue]"})
 	}
-	return blocks, nil
+	return blocks
 }
 
 func (b *subscriptionBridge) findRun(req *Request) (*subscriptionRun, []Part) {
@@ -629,6 +797,9 @@ func (r *subscriptionRun) abort() {
 func (b *subscriptionBridge) removeRun(run *subscriptionRun) {
 	b.mu.Lock()
 	delete(b.runs, run.token)
+	if run.idleKey != "" && b.idle[run.idleKey] == run {
+		delete(b.idle, run.idleKey)
+	}
 	for id, owner := range b.calls {
 		if owner == run {
 			delete(b.calls, id)
@@ -640,11 +811,15 @@ func (b *subscriptionBridge) removeRun(run *subscriptionRun) {
 
 func (s *Server) serveClaudeSubscription(w http.ResponseWriter, r *http.Request, from provider.Protocol, p provider.Provider, model string, body []byte, usage *Usage) (int, string) {
 	start := func(ctx context.Context, req *Request) (*subscriptionRun, <-chan Event, error) {
+		owner := p.ID + "\x00" + p.Account.User
+		if run, events := s.subscription.resume(req, owner); run != nil {
+			return run, events, nil
+		}
 		token, _, err := p.Account.Token(ctx)
 		if err != nil {
 			return nil, nil, err
 		}
-		return s.subscription.start(ctx, req, model, token)
+		return s.subscription.start(ctx, req, model, token, owner)
 	}
 	return s.serveSubscription(w, r, from, "Claude Code", model, body, usage, start)
 }
@@ -695,33 +870,47 @@ func (s *Server) serveSubscription(w http.ResponseWriter, r *http.Request, from 
 			return writeError(w, from, code, name+": "+msg), msg
 		}
 		enc := encoder(from, newSSEWriter(w), req.Model)
-		var failed string
-		for _, ev := range head {
-			if ev.Kind == KStart || ev.Kind == KUsage {
+		var failed, said, stop string
+		see := func(ev Event) {
+			switch ev.Kind {
+			case KError:
+				failed = ev.Text
+			case KStart, KUsage:
 				usage.add(ev.Usage)
+			case KText:
+				said += ev.Text
+			case KStop:
+				stop = ev.Stop
 			}
 			enc.event(ev)
+		}
+		for _, ev := range head {
+			see(ev)
 		}
 		for ev := range events {
-			if ev.Kind == KError {
-				failed = ev.Text
-			}
-			if ev.Kind == KStart || ev.Kind == KUsage {
-				usage.add(ev.Usage)
-			}
-			enc.event(ev)
+			see(ev)
 		}
+		// before the reply's last event, which the agent may answer at once
+		run.ended(req, said, stop, failed == "" && r.Context().Err() == nil)
 		enc.finish()
 		return 200, failed
 	}
 	var col collector
+	var said, stop string
 	for ev := range events {
+		switch ev.Kind {
+		case KText:
+			said += ev.Text
+		case KStop:
+			stop = ev.Stop
+		}
 		col.add(ev)
 	}
 	if col.err != "" && len(col.res.Parts) == 0 {
 		run.abort()
 		return writeError(w, from, 502, name+": "+col.err), col.err
 	}
+	run.ended(req, said, stop, col.err == "" && r.Context().Err() == nil)
 	res := col.finish()
 	usage.add(res.Usage)
 	w.Header().Set("Content-Type", "application/json")

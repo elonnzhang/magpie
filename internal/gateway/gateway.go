@@ -414,7 +414,7 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request, from provider.Pro
 			call.Status, call.Error = hw.failure, c.p.Name+": "+hw.failMsg
 		}
 		try := Try{ID: c.rest, Start: began, Done: true, Status: call.Status, Millis: time.Since(began).Milliseconds(), Error: call.Error}
-		if r.Context().Err() != nil {
+		if r.Context().Err() != nil && !hw.ended {
 			// the agent went away: nobody failed, and nobody else is asked
 			call.Status, call.Error = 499, "the agent canceled the request"
 			try.Status, try.Error, try.Fail = call.Status, call.Error, failCanceled

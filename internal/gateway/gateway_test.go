@@ -829,3 +829,66 @@ func TestModelListSaysWhichAPI(t *testing.T) {
 		}
 	}
 }
+
+// An agent that hangs up once the last event is in — Codex does, while the
+// ChatGPT backend is still to close its end — had its answer: the call is
+// served, not canceled. One that hangs up before is canceled.
+func TestHangUpAfterTheLastEvent(t *testing.T) {
+	for _, whole := range []bool{true, false} {
+		last := `data: {"type":"response.output_text.delta","delta":"hi"}`
+		if whole {
+			last = `data: {"type":"response.completed","response":{"usage":{"input_tokens":5,"output_tokens":1}}}`
+		}
+		up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "text/event-stream")
+			io.WriteString(w, sse(`data: {"type":"response.created","response":{}}`, last))
+			w.(http.Flusher).Flush()
+			<-r.Context().Done()
+		}))
+		t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+		t.Setenv("XDG_CACHE_HOME", t.TempDir())
+		provider.Save(provider.Provider{ID: "fake", Name: "Fake", Key: "k", Models: []string{"m1"}, Responses: up.URL + "/v1"})
+		s := New()
+		gw := httptest.NewServer(s.Handler())
+		ctx, cancel := context.WithCancel(context.Background())
+		req, _ := http.NewRequestWithContext(ctx, "POST", gw.URL+"/v1/responses", strings.NewReader(`{"model":"fake/m1","stream":true,"input":"hi"}`))
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		buf := make([]byte, 4096)
+		for got := ""; !strings.Contains(got, strings.TrimPrefix(last, "data: ")); {
+			n, err := res.Body.Read(buf)
+			if err != nil {
+				t.Fatal(err)
+			}
+			got += string(buf[:n])
+		}
+		cancel()
+		var calls []Call
+		for deadline := time.Now().Add(5 * time.Second); len(calls) == 0 && time.Now().Before(deadline); {
+			time.Sleep(10 * time.Millisecond)
+			calls = s.Recent()
+		}
+		if want := map[bool]int{true: 200, false: 499}[whole]; len(calls) != 1 || calls[0].Status != want {
+			t.Fatalf("whole %v: %+v", whole, calls)
+		}
+		gw.Close()
+		up.Close()
+	}
+}
+
+// Anthropic's input count leaves out what the prompt read from its cache
+// and wrote to it; OpenAI's and Gemini's count both.
+func TestUsagePromptCountsCacheWrites(t *testing.T) {
+	u := Usage{Input: 2, Output: 30, CacheRead: 6176, CacheWrite: 20563}
+	if r := u.responses(); r["input_tokens"] != 26741 || r["total_tokens"] != 26771 {
+		t.Errorf("responses: %v", r)
+	}
+	if c := u.chat(); c["prompt_tokens"] != 26741 {
+		t.Errorf("chat: %v", c)
+	}
+	if g := u.gemini(); g["promptTokenCount"] != 26741 || g["totalTokenCount"] != 26771 {
+		t.Errorf("gemini: %v", g)
+	}
+}

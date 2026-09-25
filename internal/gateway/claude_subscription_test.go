@@ -2,8 +2,14 @@ package gateway
 
 import (
 	"encoding/json"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/yetone/magpie/internal/provider"
 )
 
 func TestClaudeSubscriptionPromptKeepsForeignHarnessOutOfSystem(t *testing.T) {
@@ -53,5 +59,69 @@ func TestCleanClaudeEnvRemovesGatewayOverrides(t *testing.T) {
 		if !strings.Contains(joined, want) {
 			t.Fatalf("missing %s in %q", want, joined)
 		}
+	}
+}
+
+// fakeClaude answers each line it is given with the process it runs in and
+// how many turns that process has had, as Claude Code's stream-json does.
+func fakeClaude(t *testing.T) {
+	t.Helper()
+	dir := t.TempDir()
+	script := `#!/bin/sh
+n=0
+while read -r line; do
+  n=$((n+1))
+  echo '{"type":"stream_event","event":{"type":"message_start","message":{"id":"m","model":"claude-sonnet-5","usage":{"input_tokens":1}}}}'
+  echo '{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"pid '$$' turn '$n'"}}}'
+  echo '{"type":"stream_event","event":{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":3}}}'
+  echo '{"type":"stream_event","event":{"type":"message_stop"}}'
+  echo '{"type":"result","subtype":"success","is_error":false,"result":""}'
+done
+`
+	os.WriteFile(filepath.Join(dir, "claude"), []byte(script), 0o755)
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+}
+
+// A conversation's next turn goes to the Claude Code that had its last,
+// told only what the user said since; another conversation, or the same one
+// with its reply changed, gets a Claude Code of its own.
+func TestClaudeRunKeptForTheNextTurn(t *testing.T) {
+	fakeClaude(t)
+	s := New()
+	p := provider.Provider{ID: "claude", Account: &provider.Account{Agent: "claude", User: "u"}}
+	ask := func(msgs string) string {
+		t.Helper()
+		body := `{"model":"claude-sonnet-5","max_tokens":100,"system":"be brief","messages":` + msgs + `}`
+		rec := httptest.NewRecorder()
+		var u Usage
+		if code, msg := s.serveClaudeSubscription(rec, httptest.NewRequest("POST", "/v1/messages", strings.NewReader(body)), provider.Anthropic, p, "claude-sonnet-5", []byte(body), &u); code != 200 {
+			t.Fatalf("%d %s", code, msg)
+		}
+		var res struct {
+			Content []struct{ Text string } `json:"content"`
+		}
+		json.Unmarshal(rec.Body.Bytes(), &res)
+		if len(res.Content) == 0 {
+			t.Fatalf("no answer: %s", rec.Body)
+		}
+		return res.Content[0].Text
+	}
+	msg := func(role, text string) string { return `{"role":"` + role + `","content":` + strconv.Quote(text) + `}` }
+
+	first := ask(`[` + msg("user", "hi") + `]`)
+	pid, _, _ := strings.Cut(strings.TrimPrefix(first, "pid "), " ")
+	if !strings.HasSuffix(first, "turn 1") {
+		t.Fatalf("first: %q", first)
+	}
+	second := ask(`[` + msg("user", "hi") + `,` + msg("assistant", " "+first+"\n") + `,` + msg("user", "and?") + `]`)
+	if second != "pid "+pid+" turn 2" {
+		t.Fatalf("second: %q, first %q", second, first)
+	}
+	if other := ask(`[` + msg("user", "bye") + `,` + msg("assistant", second) + `,` + msg("user", "and?") + `]`); strings.Contains(other, "pid "+pid) {
+		t.Fatalf("another conversation: %q", other)
+	}
+	third := ask(`[` + msg("user", "hi") + `,` + msg("assistant", first) + `,` + msg("user", "and?") + `,` + msg("assistant", "edited") + `,` + msg("user", "so?") + `]`)
+	if strings.Contains(third, "pid "+pid) {
+		t.Fatalf("an edited reply: %q", third)
 	}
 }

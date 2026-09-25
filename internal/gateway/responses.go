@@ -271,7 +271,7 @@ func (u rUsage) usage() Usage {
 }
 
 func (u Usage) responses() map[string]any {
-	in := u.Input + u.CacheRead
+	in := u.prompt()
 	return map[string]any{"input_tokens": in, "output_tokens": u.Output, "total_tokens": in + u.Output,
 		"input_tokens_details":  map[string]any{"cached_tokens": u.CacheRead},
 		"output_tokens_details": map[string]any{"reasoning_tokens": u.Reasoning}}

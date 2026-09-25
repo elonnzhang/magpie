@@ -113,6 +113,13 @@ type Usage struct {
 	Reasoning  int `json:"reasoning"`
 }
 
+// prompt is every token the prompt came to, as OpenAI's and Gemini's
+// counts have it: Anthropic's leaves out what was read from its cache and
+// what was written to it.
+func (u Usage) prompt() int {
+	return u.Input + u.CacheRead + u.CacheWrite
+}
+
 func (u *Usage) add(v Usage) {
 	if v.Input > 0 {
 		u.Input = v.Input
