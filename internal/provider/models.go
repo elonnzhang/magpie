@@ -82,9 +82,13 @@ func (p Provider) Fetch(ctx context.Context) ([]catalog.Model, error) {
 func (p Provider) fetchOne(ctx context.Context) ([]catalog.Model, string, error) {
 	var lastErr error
 	for _, proto := range p.Speaks() {
-		ms, err := catalog.Fetch(ctx, p.Base(proto), p.Key, proto == Anthropic, p.Headers)
+		base := p.Base(proto)
+		ms, at, err := catalog.FetchAt(ctx, base, p.Key, proto == Anthropic, p.Headers)
 		if err == nil {
-			return ms, p.Base(proto), nil
+			if proto != Anthropic {
+				base = p.fixV1(base, at)
+			}
+			return ms, base, nil
 		}
 		lastErr = err
 	}
@@ -92,6 +96,40 @@ func (p Provider) fetchOne(ctx context.Context) ([]catalog.Model, string, error)
 		lastErr = errorf("%s has no endpoint to ask", p.Name)
 	}
 	return nil, "", lastErr
+}
+
+// fixV1 adds the /v1 an OpenAI-style base URL was given without, when
+// the models were found only under it: base/models didn't answer and
+// base/v1/models did. The list is asked for at both, but a request goes
+// to the base as written, so base/chat/completions would miss what
+// base/v1/chat/completions serves. Both OpenAI URLs that were base are
+// set right, and the base the models are at is returned.
+func (p Provider) fixV1(base, at string) string {
+	base = strings.TrimRight(strings.TrimSpace(base), "/")
+	if base == "" || at != base+"/v1/models" {
+		return base
+	}
+	fixed := base + "/v1"
+	f := load()
+	for i := range f.Providers {
+		q := &f.Providers[i]
+		if q.ID != p.ID {
+			continue
+		}
+		changed := false
+		for _, u := range []*string{&q.Chat, &q.Responses} {
+			if strings.TrimRight(strings.TrimSpace(*u), "/") == base {
+				*u, changed = fixed, true
+			}
+		}
+		if changed {
+			if err := store(f); err != nil {
+				return base
+			}
+		}
+		return fixed
+	}
+	return base
 }
 
 // fetchPerKey asks with each key in turn, at the endpoint it is made for: a

@@ -2908,6 +2908,7 @@ function loginUsageOf(agent) {
 // said outright; anything else is in the tooltip.
 function quotaError(err) {
   if (/magpie accounts project/.test(err)) return t("Needs a Google Cloud project — hover for how");
+  if (/^Antigravity (hasn't set|won't serve)/.test(err)) return t("Antigravity hasn't set this account up — hover for why");
   return t("Usage unavailable");
 }
 

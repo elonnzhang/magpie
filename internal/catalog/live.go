@@ -86,9 +86,15 @@ func Touched() {
 // dual-protocol relay like OpenRouter reads as a request for its
 // Anthropic-flavoured catalog — namespaced, differently named ids.
 func Fetch(ctx context.Context, base, key string, anthropic bool, headers map[string]string) ([]Model, error) {
+	ms, _, err := FetchAt(ctx, base, key, anthropic, headers)
+	return ms, err
+}
+
+// FetchAt is Fetch, and says which URL answered.
+func FetchAt(ctx context.Context, base, key string, anthropic bool, headers map[string]string) ([]Model, string, error) {
 	base = strings.TrimRight(strings.TrimSpace(base), "/")
 	if base == "" {
-		return nil, errors.New("no base URL")
+		return nil, "", errors.New("no base URL")
 	}
 	var urls []string
 	add := func(u string) {
@@ -114,7 +120,7 @@ func Fetch(ctx context.Context, base, key string, anthropic bool, headers map[st
 	for _, u := range urls {
 		ms, err := fetchOne(ctx, u, key, anthropic, headers)
 		if err == nil && len(ms) > 0 {
-			return ms, nil
+			return ms, u, nil
 		}
 		if err != nil {
 			lastErr = err
@@ -126,7 +132,7 @@ func Fetch(ctx context.Context, base, key string, anthropic bool, headers map[st
 	if lastErr == nil {
 		lastErr = errors.New("no model list at " + base)
 	}
-	return nil, lastErr
+	return nil, "", lastErr
 }
 
 func fetchOne(ctx context.Context, url, key string, anthropic bool, headers map[string]string) ([]Model, error) {

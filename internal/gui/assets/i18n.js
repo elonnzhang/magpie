@@ -413,6 +413,7 @@ const I18N = {
     "Total": "合计",
     "Usage unavailable": "暂时无法获取用量",
     "Needs a Google Cloud project — hover for how": "需要指定 Google Cloud 项目，悬停查看方法",
+    "Antigravity hasn't set this account up — hover for why": "Antigravity 还没为这个账号开通，悬停查看原因",
     "Resets {when}": "重置于 {when}",
     "Allowance": "用量额度",
     "Chat requests": "聊天请求",
