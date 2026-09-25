@@ -258,6 +258,9 @@ func codex(home string) *Agent {
 		},
 		// every prompt typed into Codex goes into history.jsonl
 		LastUsed: func() time.Time { return lastJSONLTime(filepath.Join(dir, "history.jsonl"), "ts", "text") },
+		// the Codex app writes no history.jsonl, but it and the TUI log each
+		// model request they open
+		Reached: func(since time.Time) (time.Time, string, bool) { return codexReached(dir, since) },
 		// the app-server behind the Codex app (and every codex TUI) builds
 		// its model list once, at start-up.
 		Notice: func() string {
@@ -415,4 +418,49 @@ func codexSignedIn(dir string) bool {
 		return false
 	}
 	return a.Key != "" || a.Tokens.Access != ""
+}
+
+// codexReached reads Codex's newest model request since a time — the
+// newest day of it at most — from the log database the Codex app and the
+// TUI share: the address it opened, and whether that was refused (nothing
+// listening there). Zero when none is logged.
+func codexReached(dir string, since time.Time) (at time.Time, to string, refused bool) {
+	logs, _ := filepath.Glob(filepath.Join(dir, "logs_*.sqlite"))
+	if len(logs) == 0 {
+		return
+	}
+	slices.Sort(logs)
+	db, err := provider.OpenReadOnly(logs[len(logs)-1])
+	if err != nil {
+		return
+	}
+	defer db.Close()
+	from := max(since.Unix(), time.Now().Add(-24*time.Hour).Unix())
+	rows, err := db.Query(`SELECT ts, feedback_log_body FROM logs
+		WHERE ts > ? AND target = 'codex_api::endpoint::responses_websocket'
+		ORDER BY ts DESC, ts_nanos DESC, id DESC LIMIT 20`, from)
+	if err != nil {
+		return
+	}
+	defer rows.Close()
+	// newest first: a refusal comes before the attempt it answers
+	failedAt := map[string]bool{}
+	for rows.Next() {
+		var ts int64
+		var body string
+		if rows.Scan(&ts, &body) != nil {
+			continue
+		}
+		if _, u, ok := strings.Cut(body, "failed to connect to websocket: "); ok {
+			if _, u, ok := strings.Cut(u, "url: "); ok && (strings.Contains(body, "Connection refused") || strings.Contains(body, "os error 10061")) {
+				failedAt[strings.TrimSpace(u)] = true
+			}
+			continue
+		}
+		if _, u, ok := strings.Cut(body, "connecting to websocket: "); ok {
+			u = strings.TrimSpace(u)
+			return time.Unix(ts, 0), u, failedAt[u]
+		}
+	}
+	return
 }

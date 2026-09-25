@@ -781,6 +781,9 @@ func openReadOnly(path string) (*sql.DB, error) {
 	return db, nil
 }
 
+// OpenReadOnly opens another app's SQLite database without writing to it.
+func OpenReadOnly(path string) (*sql.DB, error) { return openReadOnly(path) }
+
 // CCSwitchSkillsDir is the folder CC Switch keeps the skills it installs in.
 func CCSwitchSkillsDir() string { return filepath.Join(filepath.Dir(ccSwitchPath()), "skills") }
 

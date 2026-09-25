@@ -71,6 +71,10 @@ type Agent struct {
 	// it was last used — each prompt a request the gateway should have
 	// seen, so one it didn't went round magpie (see Drift). Zero if unknown.
 	LastUsed func() time.Time
+	// Reached, for an agent that logs where its model requests go, is its
+	// newest one since a time: when, the address it went to, and whether
+	// nothing answered there. Zero if there is none.
+	Reached func(since time.Time) (at time.Time, to string, refused bool)
 }
 
 // Running reports whether a process whose command line matches any pattern

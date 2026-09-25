@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"database/sql"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -192,5 +193,45 @@ func TestClaudeDriftManaged(t *testing.T) {
 	os.WriteFile(claudeManaged(), []byte(`{"env":{"ANTHROPIC_BASE_URL":"https://corp.example"}}`), 0o644)
 	if d := cl.Drift(); d == nil || d.Kind != "unwired" || !strings.Contains(d.Detail, "managed") {
 		t.Fatalf("managed: %+v", d)
+	}
+}
+
+// The Codex app writes no prompt log, but it logs each model request it
+// opens: one sent elsewhere, or refused because magpie wasn't running, is
+// drift; one that reached magpie isn't.
+func TestCodexDriftReached(t *testing.T) {
+	home, _ := codexHome(t, `{"tokens":{"access_token":"x","id_token":"x.e30.x"}}`, "")
+	cx := codex(home)
+	if err := cx.Apply("model", "fake/m1"); err != nil {
+		t.Fatal(err)
+	}
+	db, err := sql.Open("sqlite", filepath.Join(home, ".codex", "logs_2.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.Exec(`CREATE TABLE logs (id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER NOT NULL, ts_nanos INTEGER NOT NULL,
+		level TEXT NOT NULL, target TEXT NOT NULL, feedback_log_body TEXT)`); err != nil {
+		t.Fatal(err)
+	}
+	ws := "ws://" + strings.TrimPrefix(gateway.URL(), "http://") + "/backend-api/codex/responses"
+	at := time.Now().Add(2 * time.Second).Unix()
+	log := func(level, body string) {
+		at++
+		db.Exec(`INSERT INTO logs (ts, ts_nanos, level, target, feedback_log_body) VALUES (?, 0, ?, 'codex_api::endpoint::responses_websocket', ?)`,
+			at, level, "responses_websocket.connect{}: "+body)
+	}
+	log("INFO", "connecting to websocket: "+ws)
+	log("ERROR", "failed to connect to websocket: IO error: Connection refused (os error 61), url: "+ws)
+	if d := cx.Drift(); d == nil || d.Kind != "bypassed" || !strings.Contains(d.Detail, "wasn't running") {
+		t.Fatalf("refused: %+v", d)
+	}
+	log("INFO", "connecting to websocket: wss://chatgpt.com/backend-api/codex/responses")
+	if d := cx.Drift(); d == nil || d.Kind != "bypassed" || !strings.Contains(d.Detail, "chatgpt.com") {
+		t.Fatalf("elsewhere: %+v", d)
+	}
+	log("INFO", "connecting to websocket: "+ws)
+	if d := cx.Drift(); d != nil {
+		t.Fatalf("reached magpie: %+v", d)
 	}
 }

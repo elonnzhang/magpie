@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/yetone/magpie/internal/gateway"
 	"github.com/yetone/magpie/internal/provider"
 	"github.com/yetone/magpie/internal/usage"
 )
@@ -140,6 +141,18 @@ func (a *Agent) Drift() *Drift {
 		return &Drift{Kind: "replaced", Field: f.Key, Now: vals[f.Key], Want: want,
 			Detail: a.Name + "'s config was changed outside magpie: " + f.Label + " is " + orDefault(vals[f.Key]) + ", not " + want + " as magpie set it"}
 	}
+	if a.Reached != nil && onMagpie {
+		if at, to, refused := a.Reached(rec.At); !at.IsZero() {
+			switch {
+			case !sameHost(to, gateway.URL()):
+				return &Drift{Kind: "bypassed", Field: on.Key, Now: vals[on.Key], Want: vals[on.Key],
+					Detail: a.Name + "'s last request (" + at.Format("15:04") + ") went to " + hostOf(to) + ", not magpie — it was started before magpie set it up and still runs on its old config: quit and reopen it"}
+			case refused:
+				return &Drift{Kind: "bypassed", Field: on.Key, Now: vals[on.Key], Want: vals[on.Key],
+					Detail: a.Name + " couldn't reach magpie at " + at.Format("15:04") + " — magpie wasn't running then, so it has none of magpie's models: quit and reopen it"}
+			}
+		}
+	}
 	if a.LastUsed != nil && onMagpie {
 		if used := a.LastUsed(); bypassed(used, rec.At, usage.LastSeen(a.ID)) {
 			return &Drift{Kind: "bypassed", Field: on.Key, Now: vals[on.Key], Want: vals[on.Key],
@@ -269,6 +282,10 @@ func lastJSONLTime(path, key, textKey string) time.Time {
 	}
 	return time.Unix(last, 0)
 }
+
+// sameHost: two URLs name the same server, whatever their scheme (Codex
+// asks magpie's http gateway over ws) or path.
+func sameHost(a, b string) bool { return hostOf(a) == hostOf(b) }
 
 // wiringOff checks what magpie wrote into an agent's config to reach the
 // gateway — pairs of key and value, read with get — and says which no longer
