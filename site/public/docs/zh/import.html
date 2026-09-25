@@ -112,7 +112,7 @@
       <tr><td><code>key</code></td><td>用户的 API 密钥。不填的话，用户在对话框里自己粘贴。</td></tr>
       <tr><td><code>models</code></td><td>提供给 Agent 的模型 id，用逗号分隔。不填时，magpie 会列出你的 <code>/v1/models</code> 返回的模型。</td></tr>
       <tr><td><code>id</code></td><td>Agent 在 <code>id/model</code> 里用的 id。默认取名称的小写加连字符形式（<code>Acme Relay</code> → <code>acme-relay</code>）。</td></tr>
-      <tr><td><code>catalog</code></td><td>一个 <a href="https://models.dev">models.dev</a> 供应商 id，用它的元数据（显示名、上下文长度、推理档位），比如转发 OpenAI 模型的服务可以填 <code>openai</code>。</td></tr>
+      <tr><td><code>catalog</code></td><td>一个 <a href="https://models.dev">models.dev</a> 供应商 id，用它的元数据，比如转发 OpenAI 模型的服务可以填 <code>openai</code>。它提供：显示名、上下文长度（会写进支持该设置的 agent）、推理档位和是否支持图片；供应商自己的 <code>/models</code> 读不到时的模型列表；以及每 token 价格，用量页据此估算美元费用。可以用逗号填多个 id：它们的模型合在一起，同一个模型以排在前面的为准。</td></tr>
       <tr><td><code>website</code></td><td>你的网站（https），显示在供应商页面上。</td></tr>
       <tr><td><code>keys</code></td><td>用户创建密钥的页面（https）。链接里没有密钥时，对话框会链接到这里。</td></tr>
       <tr><td><code>icon</code></td><td>你自己的图标（https）：PNG、JPEG、GIF、WebP、ICO 或 SVG，最大 1&nbsp;MB。用户确认导入后，magpie 只下载一次，存在供应商旁边。不填时，magpie 显示 <code>catalog</code> 对应厂商的 logo，或一个默认图标。</td></tr>
