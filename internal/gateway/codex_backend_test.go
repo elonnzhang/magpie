@@ -329,3 +329,10 @@ func TestCodexModelsNameGroups(t *testing.T) {
 		t.Fatalf("%v", names)
 	}
 }
+
+func TestCodexOwnModelKeepsReasoningWithNullContent(t *testing.T) {
+	body := `{"model":"gpt-5.5","input":[{"type":"reasoning","content":null,"encrypted_content":"openai-own"}]}`
+	if got, _ := codexInput([]byte(body), false); string(got) != body {
+		t.Errorf("input: %s", got)
+	}
+}

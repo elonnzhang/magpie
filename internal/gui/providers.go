@@ -528,6 +528,17 @@ func providerRoutes(mux *http.ServeMux, w Windows, gw *gateway.Server) {
 			fail(rw, err)
 			return
 		}
+		// a key that now takes requests has its models asked for: which
+		// models a key sees is known only from its own list, and an off
+		// key's isn't asked (#76), so until then a relay that hands out a
+		// key per group would send the key nothing, or everything
+		if a := r.PathValue("action"); a == "add" || a == "on" {
+			if p, err := provider.Find(in.ID); err == nil && p.Ready() && len(p.KeysOn()) > 1 {
+				ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)
+				p.Fetch(ctx)
+				cancel()
+			}
+		}
 		writeJSON(rw, providersState(gw))
 	})
 	// Adding a subscription: magpie opens the vendor's sign-in in the

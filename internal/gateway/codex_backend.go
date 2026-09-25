@@ -308,7 +308,7 @@ func codexInput(body []byte, magpieModel bool) (_ []byte, compact bool) {
 			// OpenAI accepts no reasoning content parts in replayed input.
 			// Drop the item so its encrypted_content cannot fail there too.
 			if !magpieModel {
-				if content, present := it["content"]; present {
+				if content, present := it["content"]; present && content != nil {
 					parts, ok := content.([]any)
 					if !ok || len(parts) > 0 {
 						changed = true
