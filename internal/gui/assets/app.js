@@ -98,9 +98,9 @@ function icon(name) {
     return e;
   }
   if (name) {
-    if (name.endsWith("-color") || name === "crush") {
+    if (name.endsWith("-color") || name === "crush" || name === "zcode") {
       const img = el("img");
-      img.src = `icons/${name}.${name === "crush" ? "png" : "svg"}`;
+      img.src = `icons/${name}.${name === "crush" || name === "zcode" ? "png" : "svg"}`;
       img.alt = "";
       img.draggable = false;
       e.append(img);

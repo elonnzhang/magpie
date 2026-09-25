@@ -64,6 +64,7 @@ func All() []*Agent {
 		devin(home, cfg),
 		hermes(home),
 		grok(home),
+		zcode(home),
 	}
 }
 

@@ -79,6 +79,7 @@ and there is a terminal version (`magpie tui`) and a plain CLI.
 | Devin        | `~/.config/devin/config.json` (`%APPDATA%\devin\config.json` on Windows) | model |
 | Hermes Agent | `~/.hermes/config.yaml` (`$HERMES_HOME`) | model |
 | Grok Build   | `~/.grok/config.toml` (`$GROK_HOME`) | model, effort |
+| ZCode        | `~/.zcode/v2/config.json`         | provider (magpie's models in ZCode's picker) |
 
 Provider-scoped agents (OpenCode, Pi, Goose, Crush, omp, Hermes Agent) take `provider/model`.
 Only agents that are installed or configured are shown.
