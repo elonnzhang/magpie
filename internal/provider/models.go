@@ -108,6 +108,9 @@ func (p Provider) fetchPerKey(ctx context.Context, keys []KeyAccount) ([]catalog
 			m.Keys = nil
 			at[m.ID], i = len(out), len(out)
 			out = append(out, m)
+		} else {
+			out[i].ImageInput = sharedImageInput(out[i].ImageInput, m.ImageInput)
+			out[i].Images = out[i].Images && m.Images
 		}
 		if !slices.Contains(out[i].Keys, id) {
 			out[i].Keys = append(out[i].Keys, id)
@@ -139,6 +142,21 @@ func (p Provider) fetchPerKey(ctx context.Context, keys []KeyAccount) ([]catalog
 		return nil, lastErr
 	}
 	return out, catalog.SaveLive(p.ID, base, out)
+}
+
+// An explicit text-only answer wins. Without one, an unknown answer stays
+// unknown; the caller can still use the catalog's image capability estimate.
+func sharedImageInput(a, b *bool) *bool {
+	if a != nil && !*a {
+		return a
+	}
+	if b != nil && !*b {
+		return b
+	}
+	if a == nil || b == nil {
+		return nil
+	}
+	return a
 }
 
 // allKeys is every key the provider has, on or not, the first first.
@@ -254,14 +272,15 @@ func (p Provider) Chosen(id string) bool {
 
 // Entry is one model as the agents see it.
 type Entry struct {
-	ID       string   `json:"id"`    // what the agent sends magpie
-	Model    string   `json:"model"` // what magpie sends the vendor
-	Name     string   `json:"name"`
-	Efforts  []string `json:"efforts,omitempty"`
-	Provider Provider `json:"-"`                // a group's: its first member's
-	Group    string   `json:"group,omitempty"`  // set on a routing group (group.go)
-	Icons    []string `json:"-"`                // a group's: its providers' icons, one per provider
-	Images   bool     `json:"images,omitempty"` // takes images as input (a group's: every member does)
+	ID         string   `json:"id"`    // what the agent sends magpie
+	Model      string   `json:"model"` // what magpie sends the vendor
+	Name       string   `json:"name"`
+	Efforts    []string `json:"efforts,omitempty"`
+	Provider   Provider `json:"-"`                // a group's: its first member's
+	Group      string   `json:"group,omitempty"`  // set on a routing group (group.go)
+	Icons      []string `json:"-"`                // a group's: its providers' icons, one per provider
+	Images     bool     `json:"images,omitempty"` // takes images as input (a group's: every member does)
+	ImageInput *bool    `json:"-"`                // explicit answer, nil when unknown
 	// Context is the tokens a prompt may hold, when known (a group's: the
 	// least of its members')
 	Context int `json:"context,omitempty"`
@@ -288,8 +307,12 @@ func providerEntries() []Entry {
 			if ctx == 0 {
 				ctx = catalog.ContextOf(m.ID)
 			}
+			images := m.Images || catalog.SeesImages(m.ID)
+			if m.ImageInput != nil {
+				images = *m.ImageInput
+			}
 			out = append(out, Entry{ID: p.ID + "/" + m.ID, Model: m.ID, Name: m.Name, Efforts: effortsOf(m), Provider: p,
-				Images: m.Images || catalog.SeesImages(m.ID), Context: ctx})
+				Images: images, ImageInput: m.ImageInput, Context: ctx})
 		}
 	}
 	return out
