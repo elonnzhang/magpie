@@ -27,6 +27,7 @@ const I18N = {
     "small": "小模型",
     "large": "大模型",
     "tiers": "分档",
+    "subagents": "子 agent",
     "same as model": "同主模型",
     "same as model ({model})": "同主模型（{model}）",
     "Same as model": "同主模型",

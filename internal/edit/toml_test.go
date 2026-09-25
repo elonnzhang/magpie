@@ -84,3 +84,41 @@ func TestDelTOMLTop(t *testing.T) {
 		t.Fatalf("got:\n%s", s)
 	}
 }
+
+func TestTOMLKey(t *testing.T) {
+	p := tmpToml(t)
+	// a table of its own, appended
+	if err := SetTOMLKey(p, "agents", "default_subagent_model", "deepseek/pro"); err != nil {
+		t.Fatal(err)
+	}
+	if GetTOMLTable(p, "agents")["default_subagent_model"] != "deepseek/pro" {
+		t.Fatalf("set: %v", GetTOMLTable(p, "agents"))
+	}
+	if err := DelTOMLKey(p, "agents", "default_subagent_model"); err != nil {
+		t.Fatal(err)
+	}
+	if raw, _ := os.ReadFile(p); string(raw) != tomlDoc {
+		t.Fatalf("delete did not restore:\n%s", raw)
+	}
+
+	// in a table the user has, beside their keys
+	os.WriteFile(p, []byte("model = \"x\"\n\n[agents]\nmax_threads = 6 # mine\n\n[notice]\nhide = true\n"), 0o644)
+	if err := SetTOMLKey(p, "agents", "default_subagent_model", "a"); err != nil {
+		t.Fatal(err)
+	}
+	if err := SetTOMLKey(p, "agents", "default_subagent_model", "b"); err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := os.ReadFile(p)
+	want := "model = \"x\"\n\n[agents]\nmax_threads = 6 # mine\ndefault_subagent_model = \"b\"\n\n[notice]\nhide = true\n"
+	if string(raw) != want {
+		t.Fatalf("set beside:\n%s", raw)
+	}
+	if err := DelTOMLKey(p, "agents", "default_subagent_model"); err != nil {
+		t.Fatal(err)
+	}
+	raw, _ = os.ReadFile(p)
+	if string(raw) != "model = \"x\"\n\n[agents]\nmax_threads = 6 # mine\n\n[notice]\nhide = true\n" {
+		t.Fatalf("delete beside:\n%s", raw)
+	}
+}

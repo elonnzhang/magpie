@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -74,8 +75,32 @@ func codex(home string) *Agent {
 		}
 		return edit.DelTOMLTop(path, "openai_base_url")
 	}
+	// the model spawned subagents start on, when not the parent's; one of
+	// magpie's goes when magpie steps out, as Codex could no longer find it
+	subagent := func() string { return edit.GetTOMLTable(path, "agents")["default_subagent_model"] }
+	dropSubagent := func() error {
+		if !isMagpie(subagent()) {
+			return nil
+		}
+		return edit.DelTOMLKey(path, "agents", "default_subagent_model")
+	}
+	modelOptions := func(withMagpie bool) []Option {
+		var own []Option
+		if p := get("model_provider"); p != "" && p != magpieID {
+			own = group(p, options(catalog.Codex(), ""))
+		} else {
+			own = group("OpenAI", options(ownCodex(), ""))
+		}
+		if !withMagpie {
+			return own
+		}
+		return append(own, viaMagpieFor("codex", "")...)
+	}
 	set := func(v string) error {
 		if v == "" {
+			if err := dropSubagent(); err != nil {
+				return err
+			}
 			// Codex as installed: OpenAI, its own catalog, its default model
 			if err := dropBase(); err != nil {
 				return err
@@ -145,6 +170,9 @@ func codex(home string) *Agent {
 			if err := dropProvider(); err != nil {
 				return err
 			}
+			if err := dropSubagent(); err != nil {
+				return err
+			}
 			unstash("codex.model")
 			var back []edit.KV
 			if p := unstash("codex.provider"); p != "" && p != magpieID {
@@ -182,17 +210,9 @@ func codex(home string) *Agent {
 		Fields: []Field{
 			{
 				Key: "model", Label: "model",
-				Get: func() string { return get("model") },
-				Set: set,
-				Options: func(map[string]string) []Option {
-					var own []Option
-					if p := get("model_provider"); p != "" && p != magpieID {
-						own = group(p, options(catalog.Codex(), ""))
-					} else {
-						own = group("OpenAI", options(ownCodex(), ""))
-					}
-					return append(own, viaMagpieFor("codex", "")...)
-				},
+				Get:     func() string { return get("model") },
+				Set:     set,
+				Options: func(map[string]string) []Option { return modelOptions(true) },
 			},
 			{
 				Key: "effort", Label: "effort",
@@ -209,6 +229,24 @@ func codex(home string) *Agent {
 					}
 					return static("low", "medium", "high", "xhigh")
 				},
+			},
+			{
+				// Codex lists only the first few models in the spawn_agent
+				// tool it gives the model, its own ahead of magpie's, so a
+				// subagent is put on one of magpie's here, where it can't be
+				// by the model unless asked by name
+				Key: "subagent", Label: "subagents", Quiet: true,
+				Get: subagent,
+				Set: func(v string) error {
+					if v == "" {
+						return edit.DelTOMLKey(path, "agents", "default_subagent_model")
+					}
+					if isMagpie(v) && !routed() {
+						return fmt.Errorf("pick a model through magpie for Codex first; its subagents can then have one of their own")
+					}
+					return edit.SetTOMLKey(path, "agents", "default_subagent_model", v)
+				},
+				Options: func(map[string]string) []Option { return modelOptions(routed()) },
 			},
 		},
 	}

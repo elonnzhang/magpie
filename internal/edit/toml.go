@@ -78,6 +78,72 @@ func SetTOMLTable(path, name string, kvs ...KV) error {
 	return WriteAtomic(path, []byte(joinLines(out)))
 }
 
+// SetTOMLKey sets one key of table `name` and leaves the table's other
+// lines as they are. The key goes after the table's last key, and the table
+// is appended when there is none.
+func SetTOMLKey(path, name, key string, value any) error {
+	raw, err := Read(path)
+	if err != nil {
+		return err
+	}
+	line := key + " = " + tomlLiteral(value)
+	lines := splitLines(string(raw))
+	from, to := tableSpan(lines, name)
+	if from < 0 {
+		out := trimBlank(lines)
+		if len(out) > 0 {
+			out = append(out, "")
+		}
+		out = append(out, "["+name+"]", line, "")
+		return WriteAtomic(path, []byte(joinLines(out)))
+	}
+	at := from + 1
+	for i := from + 1; i < to; i++ {
+		m := tomlKV.FindStringSubmatch(lines[i])
+		if m == nil {
+			continue
+		}
+		if strings.Trim(m[1], `"`) == key {
+			lines[i] = line
+			return WriteAtomic(path, []byte(joinLines(lines)))
+		}
+		at = i + 1
+	}
+	out := append(append(append([]string{}, lines[:at]...), line), lines[at:]...)
+	return WriteAtomic(path, []byte(joinLines(out)))
+}
+
+// DelTOMLKey removes one key of table `name`, and the table with it when
+// nothing else is left in it.
+func DelTOMLKey(path, name, key string) error {
+	raw, err := Read(path)
+	if err != nil || raw == nil {
+		return err
+	}
+	lines := splitLines(string(raw))
+	from, to := tableSpan(lines, name)
+	if from < 0 {
+		return nil
+	}
+	var out []string
+	rest := false
+	for i, line := range lines {
+		if i > from && i < to {
+			if m := tomlKV.FindStringSubmatch(line); m != nil && strings.Trim(m[1], `"`) == key {
+				continue
+			}
+			if strings.TrimSpace(line) != "" {
+				rest = true
+			}
+		}
+		out = append(out, line)
+	}
+	if err := WriteAtomic(path, []byte(joinLines(out))); err != nil || rest {
+		return err
+	}
+	return DelTOMLTable(path, name)
+}
+
 // DelTOMLTable removes table `name` (header and body) if present.
 func DelTOMLTable(path, name string) error {
 	raw, err := Read(path)

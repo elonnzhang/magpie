@@ -112,3 +112,57 @@ func TestCodexUsedUpUsesProvider(t *testing.T) {
 		t.Fatalf("\n%s", cfg)
 	}
 }
+
+// Subagents can be given a magpie model of their own once Codex runs through
+// magpie; it goes with magpie when Codex steps back to its own models, where
+// a user's own choice of one of those stays.
+func TestCodexSubagentModel(t *testing.T) {
+	home, read := codexHome(t, `{"tokens":{"access_token":"x","id_token":"x.e30.x"}}`,
+		"model = \"gpt-5.5\"\n\n[agents]\nmax_threads = 6\n")
+	cx := codex(home)
+	sub := cx.Field("subagent")
+	if sub == nil {
+		t.Fatal("no subagent field")
+	}
+	if err := sub.Set("fake/m1"); err == nil {
+		t.Error("a magpie model was taken before Codex runs through magpie")
+	}
+	for _, o := range sub.Options(nil) {
+		if isMagpie(o.Value) {
+			t.Errorf("magpie model offered before Codex runs through magpie: %s", o.Value)
+		}
+	}
+	if err := cx.Fields[0].Set("fake/m1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := sub.Set("fake/m1"); err != nil {
+		t.Fatal(err)
+	}
+	if got := sub.Get(); got != "fake/m1" {
+		t.Fatalf("subagent = %q\n%s", got, read())
+	}
+	if cfg := read(); !strings.Contains(cfg, "max_threads = 6") {
+		t.Fatalf("user's [agents] key lost:\n%s", cfg)
+	}
+	if err := cx.Fields[0].Set("gpt-5.4"); err != nil {
+		t.Fatal(err)
+	}
+	if cfg := read(); strings.Contains(cfg, "default_subagent_model") || !strings.Contains(cfg, "max_threads = 6") {
+		t.Fatalf("stepping out of magpie:\n%s", cfg)
+	}
+	if err := sub.Set("gpt-5.4-mini"); err != nil {
+		t.Fatal(err)
+	}
+	if err := cx.Fields[0].Set(""); err != nil {
+		t.Fatal(err)
+	}
+	if got := sub.Get(); got != "gpt-5.4-mini" {
+		t.Fatalf("own subagent model dropped: %q", got)
+	}
+	if err := sub.Set(""); err != nil {
+		t.Fatal(err)
+	}
+	if cfg := read(); strings.Contains(cfg, "default_subagent_model") {
+		t.Fatalf("\n%s", cfg)
+	}
+}
