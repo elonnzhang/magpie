@@ -328,10 +328,13 @@ func Logins(agent string) []Login {
 		return grokLoginList()
 	case "copilot":
 		return copilotLoginList()
+	case "zcode":
+		return zcodeLoginList()
 	case "gemini", "antigravity":
 		return googleLoginList(agent)
 	case "":
 		side = append(grokLoginList(), copilotLoginList()...)
+		side = append(side, zcodeLoginList()...)
 		side = append(side, googleLoginList("gemini")...)
 		side = append(side, googleLoginList("antigravity")...)
 	}
@@ -368,6 +371,8 @@ func SwitchLogin(agent, user string) error {
 		return switchGrokLogin(user)
 	case "copilot":
 		return switchCopilotLogin(user)
+	case "zcode":
+		return switchZCodeLogin(user)
 	case "gemini", "antigravity":
 		return switchGoogleLogin(agent, user)
 	}
@@ -475,6 +480,8 @@ func ForgetLogin(agent, user string) error {
 		return forgetGrokLogin(user)
 	case "copilot":
 		return forgetCopilotLogin(user)
+	case "zcode":
+		return forgetZCodeLogin(user)
 	case "gemini", "antigravity":
 		return forgetGoogleLogin(agent, user)
 	}

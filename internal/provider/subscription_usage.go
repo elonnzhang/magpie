@@ -186,6 +186,9 @@ func fetchSubscriptionUsage() []SubscriptionQuota {
 			}
 		}
 	}
+	if !hidden["zcode"] {
+		fetches = append(fetches, perLogin(ctx, zcodeLoginList(), "ZCode", "zcode")...)
+	}
 	for _, agent := range []string{"gemini", "antigravity"} {
 		if hidden[agent] {
 			continue

@@ -233,6 +233,11 @@ func (s *signInFlow) begin() error {
 		if err := startCopilotSignIn(s); err != nil {
 			return err
 		}
+	case "zcode":
+		// Z.ai's sign-in, as ZCode makes it
+		if err := startZCodeSignIn(s); err != nil {
+			return err
+		}
 	case "gemini", "antigravity":
 		// Google's sign-in, under the app's own OAuth client
 		app, _ := googleAppOf(agent)
