@@ -67,6 +67,16 @@ const I18N = {
     "{name} applied · {n} settings changed": "已应用 {name} · 更改了 {n} 项设置",
     "Saved {name}": "已保存 {name}",
     "Deleted {name}": "已删除 {name}",
+    "{n} server": "{n} 个服务器",
+    "{n} servers": "{n} 个服务器",
+    "{n} skill": "{n} 个技能",
+    "{n} skills": "{n} 个技能",
+    "instructions": "指令",
+    ", ": "、",
+    "+ Library: {what}": "+ 资源库：{what}",
+    "+ Library: nothing on": "+ 资源库：全部关闭",
+    "skipped, no longer in the Library: {names}": "已跳过资源库中已不存在的：{names}",
+    "some of the Library couldn't be given; see Library": "资源库有部分内容未能写入，详见资源库",
 
     // picker
     "Default": "默认",

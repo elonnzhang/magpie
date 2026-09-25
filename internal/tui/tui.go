@@ -234,7 +234,7 @@ func (m *model) openProfiles() {
 	}
 	var items []agent.Option
 	for _, n := range profile.Names(ps) {
-		items = append(items, agent.Option{Value: n, Note: profile.Summary(ps[n])})
+		items = append(items, agent.Option{Value: n, Note: profile.LongSummary(ps[n])})
 	}
 	m.pk = picker{
 		crumbs: []string{"profiles"},
@@ -247,11 +247,15 @@ func (m *model) openProfiles() {
 				if err != nil {
 					return flashMsg{text: err.Error()}
 				}
-				changed, err := profile.Apply(ps[n])
+				a, err := profile.Apply(ps[n])
 				if err != nil {
 					return flashMsg{text: err.Error()}
 				}
-				return flashMsg{text: fmt.Sprintf("profile %s applied · %d change%s", n, changed, plural(changed)), ok: true}
+				text := fmt.Sprintf("profile %s applied · %d change%s", n, a.Changed, plural(a.Changed))
+				for _, line := range profile.Report(a) {
+					text += " · " + line
+				}
+				return flashMsg{text: text, ok: a.Library == nil || len(a.Library.Problems) == 0}
 			}
 		},
 		onDel: func(n string) tea.Cmd {
@@ -315,7 +319,11 @@ func (m model) updateName(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		m.mode = modeList
 		return m, func() tea.Msg {
-			if err := profile.Save(n, profile.Snapshot()); err != nil {
+			p, err := profile.Snapshot()
+			if err != nil {
+				return flashMsg{text: err.Error()}
+			}
+			if err := profile.Save(n, p); err != nil {
 				return flashMsg{text: err.Error()}
 			}
 			return flashMsg{text: "saved profile " + n, ok: true}
@@ -603,9 +611,12 @@ func (m model) viewName() string {
 	b.WriteString("\n\n")
 	b.WriteString(pad + "  " + sMuted.Render("snapshots every agent's current settings"))
 	b.WriteString("\n\n")
-	snap := profile.Snapshot()
-	for _, k := range sortedKeys(snap) {
-		b.WriteString(pad + "  " + sFaint.Render(padRight(k, 18)) + sText.Render(snap[k]) + "\n")
+	snap, _ := profile.Snapshot()
+	for _, k := range sortedKeys(snap.Fields) {
+		b.WriteString(pad + "  " + sFaint.Render(padRight(k, 18)) + sText.Render(snap.Fields[k]) + "\n")
+	}
+	if snap.Library != nil {
+		b.WriteString(pad + "  " + sFaint.Render(padRight("library", 18)) + sText.Render(strings.TrimPrefix(snap.Library.Summary(), "library: ")) + "\n")
 	}
 	return strings.TrimRight(b.String(), "\n")
 }

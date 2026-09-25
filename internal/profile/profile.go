@@ -1,5 +1,6 @@
-// Package profile stores named snapshots of every agent's settings so a whole
-// setup can be switched in one move.
+// Package profile stores named snapshots of every agent's settings, and of
+// who gets what from the library, so a whole setup can be switched in one
+// move.
 package profile
 
 import (
@@ -12,10 +13,63 @@ import (
 
 	"github.com/yetone/magpie/internal/agent"
 	"github.com/yetone/magpie/internal/edit"
+	"github.com/yetone/magpie/internal/library"
 )
 
-// Profile maps "agent.field" to a value.
-type Profile map[string]string
+// Profile is every agent's fields, and the library's setup.
+type Profile struct {
+	// Fields maps "agent.field" to a value.
+	Fields map[string]string
+	// Library is which agents got which servers and skills, and the
+	// instructions; nil for a profile saved while the library was empty,
+	// or before profiles kept it, which leaves the library as it is.
+	Library *library.Setup
+}
+
+// libraryKey holds the library's setup among a profile's "agent.field"
+// keys: it has no dot, so it is no agent's field, and a profile saved
+// before it is read as it always was.
+const libraryKey = "library"
+
+// MarshalJSON writes the fields and the library's setup side by side.
+func (p Profile) MarshalJSON() ([]byte, error) {
+	m := make(map[string]any, len(p.Fields)+1)
+	for k, v := range p.Fields {
+		m[k] = v
+	}
+	if p.Library != nil {
+		m[libraryKey] = p.Library
+	}
+	return json.Marshal(m)
+}
+
+// UnmarshalJSON reads what MarshalJSON writes, and a profile of before,
+// which was the fields alone.
+func (p *Profile) UnmarshalJSON(b []byte) error {
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal(b, &m); err != nil {
+		return err
+	}
+	*p = Profile{Fields: map[string]string{}}
+	for k, raw := range m {
+		if k == libraryKey {
+			if string(raw) == "null" {
+				continue
+			}
+			p.Library = &library.Setup{}
+			if err := json.Unmarshal(raw, p.Library); err != nil {
+				return fmt.Errorf("%s: %w", k, err)
+			}
+			continue
+		}
+		var v string
+		if err := json.Unmarshal(raw, &v); err != nil {
+			return fmt.Errorf("%s: %w", k, err)
+		}
+		p.Fields[k] = v
+	}
+	return nil
+}
 
 // Path is the profiles file.
 func Path() string {
@@ -60,9 +114,9 @@ func store(ps map[string]Profile) error {
 	return edit.WriteAtomic(Path(), append(b, '\n'))
 }
 
-// Snapshot captures the current value of every detected agent's fields.
-func Snapshot() Profile {
-	p := Profile{}
+// Fields captures the current value of every detected agent's fields.
+func Fields() map[string]string {
+	p := map[string]string{}
 	for _, a := range agent.Detected() {
 		for k, v := range a.Values() {
 			if v != "" {
@@ -71,6 +125,20 @@ func Snapshot() Profile {
 		}
 	}
 	return p
+}
+
+// Snapshot captures every detected agent's fields, and the library's setup
+// unless the library is empty.
+func Snapshot() (Profile, error) {
+	p := Profile{Fields: Fields()}
+	s, err := library.Snapshot()
+	if err != nil {
+		return p, err
+	}
+	if !s.Empty() {
+		p.Library = s
+	}
+	return p, nil
 }
 
 // Save stores p under name, replacing any existing profile.
@@ -100,9 +168,30 @@ func Delete(name string) error {
 	return store(ps)
 }
 
-// Apply writes every value in p that differs from what is set now. It
-// returns the number of changes made and the first error encountered.
-func Apply(p Profile) (int, error) {
+// Applied is what applying a profile did.
+type Applied struct {
+	Changed int // agent fields changed
+	// Library is what bringing the library's setup back wrote into the
+	// agents; nil for a profile that carries none.
+	Library *library.Result
+}
+
+// Apply writes every field in p that differs from what is set now, then
+// brings the library's setup back when p carries one and writes it into
+// the agents (their files kept aside first). It stops at the first error.
+func Apply(p Profile) (Applied, error) {
+	n, err := ApplyFields(p.Fields)
+	out := Applied{Changed: n}
+	if err != nil || p.Library == nil {
+		return out, err
+	}
+	out.Library, err = library.Restore(p.Library)
+	return out, err
+}
+
+// ApplyFields writes every value in p that differs from what is set now.
+// It returns the number of changes made and the first error encountered.
+func ApplyFields(p map[string]string) (int, error) {
 	agents := map[string]*agent.Agent{}
 	for _, a := range agent.All() {
 		agents[a.ID] = a
@@ -150,10 +239,10 @@ func Apply(p Profile) (int, error) {
 	return changed, nil
 }
 
-// Summary renders a profile as a short one-line description.
+// Summary renders a profile's models as a short one-line description.
 func Summary(p Profile) string {
-	keys := make([]string, 0, len(p))
-	for k := range p {
+	keys := make([]string, 0, len(p.Fields))
+	for k := range p.Fields {
 		if strings.HasSuffix(k, ".model") {
 			keys = append(keys, k)
 		}
@@ -161,7 +250,39 @@ func Summary(p Profile) string {
 	sort.Strings(keys)
 	parts := make([]string, 0, len(keys))
 	for _, k := range keys {
-		parts = append(parts, strings.TrimSuffix(k, ".model")+" "+p[k])
+		parts = append(parts, strings.TrimSuffix(k, ".model")+" "+p.Fields[k])
 	}
 	return strings.Join(parts, " · ")
+}
+
+// LongSummary is Summary, and what the profile gives out from the library.
+func LongSummary(p Profile) string {
+	s := Summary(p)
+	if p.Library == nil {
+		return s
+	}
+	if s == "" {
+		return "+ " + p.Library.Summary()
+	}
+	return s + " · + " + p.Library.Summary()
+}
+
+// Report is what applying a profile did to the library, a line each, for
+// the terminal: none for a profile without the library's setup.
+func Report(a Applied) []string {
+	r := a.Library
+	if r == nil {
+		return nil
+	}
+	var out []string
+	if len(r.Changed) > 0 {
+		out = append(out, "library written into "+strings.Join(r.Changed, ", "))
+	}
+	if len(r.Missing) > 0 {
+		out = append(out, "skipped, no longer in the library: "+strings.Join(r.Missing, ", "))
+	}
+	for _, p := range r.Problems {
+		out = append(out, p.Agent+" "+p.What+": "+p.Error)
+	}
+	return out
 }

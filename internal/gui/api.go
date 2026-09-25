@@ -16,6 +16,7 @@ import (
 	"github.com/yetone/magpie/internal/agent"
 	"github.com/yetone/magpie/internal/catalog"
 	"github.com/yetone/magpie/internal/gateway"
+	"github.com/yetone/magpie/internal/library"
 	"github.com/yetone/magpie/internal/netproxy"
 	"github.com/yetone/magpie/internal/profile"
 	"github.com/yetone/magpie/internal/provider"
@@ -75,6 +76,15 @@ type clientJSON struct {
 type profileJSON struct {
 	Name    string `json:"name"`
 	Summary string `json:"summary"`
+	// Library is what the profile gives out from the library, for one
+	// saved with its setup
+	Library *profileLibraryJSON `json:"library,omitempty"`
+}
+
+type profileLibraryJSON struct {
+	Servers      int  `json:"servers"`      // given to at least one agent
+	Skills       int  `json:"skills"`       // given to at least one agent
+	Instructions bool `json:"instructions"` // some agent gets them
 }
 
 type stateJSON struct {
@@ -144,14 +154,22 @@ func Handler(w Windows, gw *gateway.Server) http.Handler {
 		_ = json.NewDecoder(r.Body).Decode(&in)
 		in.Name = strings.TrimSpace(in.Name)
 		var err error
-		changed := 0
+		var applied profile.Applied
 		switch r.PathValue("action") {
 		case "save":
-			err = profile.Save(in.Name, profile.Snapshot())
+			var p profile.Profile
+			if p, err = profile.Snapshot(); err == nil {
+				err = profile.Save(in.Name, p)
+			}
 		case "use":
 			var ps map[string]profile.Profile
 			if ps, err = profile.Load(); err == nil {
-				changed, err = profile.Apply(ps[in.Name])
+				applied, err = profile.Apply(ps[in.Name])
+			}
+			if applied.Library != nil {
+				lastProblems.Lock()
+				lastProblems.p = applied.Library.Problems
+				lastProblems.Unlock()
 			}
 		case "delete":
 			err = profile.Delete(in.Name)
@@ -167,7 +185,9 @@ func Handler(w Windows, gw *gateway.Server) http.Handler {
 		writeJSON(rw, struct {
 			stateJSON
 			Changed int `json:"changed"`
-		}{s, changed})
+			// Library is what bringing the profile's library setup back did
+			Library *library.Result `json:"library,omitempty"`
+		}{s, applied.Changed, applied.Library})
 	})
 	mux.HandleFunc("POST /api/sync", func(rw http.ResponseWriter, r *http.Request) {
 		ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
@@ -253,7 +273,12 @@ func state() stateJSON {
 	}
 	if ps, err := profile.Load(); err == nil {
 		for _, n := range profile.Names(ps) {
-			s.Profiles = append(s.Profiles, profileJSON{Name: n, Summary: profile.Summary(ps[n])})
+			pj := profileJSON{Name: n, Summary: profile.Summary(ps[n])}
+			if l := ps[n].Library; l != nil {
+				servers, skills := l.On()
+				pj.Library = &profileLibraryJSON{Servers: servers, Skills: skills, Instructions: l.GivesInstructions()}
+			}
+			s.Profiles = append(s.Profiles, pj)
 		}
 	}
 	return s

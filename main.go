@@ -302,17 +302,24 @@ func profiles(args []string) error {
 			return nil
 		}
 		for _, n := range profile.Names(ps) {
-			fmt.Printf("  %s  %s\n", bold.Render(n), muted.Render(profile.Summary(ps[n])))
+			fmt.Printf("  %s  %s\n", bold.Render(n), muted.Render(profile.LongSummary(ps[n])))
 		}
 		return nil
 	case "save":
 		if len(args) < 2 {
 			return fmt.Errorf("usage: magpie save <name>")
 		}
-		if err := profile.Save(args[1], profile.Snapshot()); err != nil {
+		p, err := profile.Snapshot()
+		if err != nil {
+			return err
+		}
+		if err := profile.Save(args[1], p); err != nil {
 			return err
 		}
 		fmt.Println(green.Render("✓"), "saved profile", bold.Render(args[1]))
+		if p.Library != nil {
+			fmt.Println(" ", muted.Render("with the "+p.Library.Summary()))
+		}
 		return nil
 	case "use":
 		if len(args) < 2 {
@@ -326,11 +333,14 @@ func profiles(args []string) error {
 		if !ok {
 			return fmt.Errorf("no profile named %q", args[1])
 		}
-		n, err := profile.Apply(p)
+		a, err := profile.Apply(p)
 		if err != nil {
 			return err
 		}
-		fmt.Println(green.Render("✓"), "applied", bold.Render(args[1]), muted.Render(fmt.Sprintf("(%d changed)", n)))
+		fmt.Println(green.Render("✓"), "applied", bold.Render(args[1]), muted.Render(fmt.Sprintf("(%d changed)", a.Changed)))
+		for _, line := range profile.Report(a) {
+			fmt.Println(" ", muted.Render(line))
+		}
 		return nil
 	case "rm":
 		if len(args) < 2 {

@@ -45,7 +45,7 @@ func setUp(t *testing.T) {
 	if err := settings.Save(settings.Settings{Theme: "dark", Lang: "zh"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := profile.Save("work", profile.Profile{"claude.model": "acme/m1"}); err != nil {
+	if err := profile.Save("work", profile.Profile{Fields: map[string]string{"claude.model": "acme/m1"}}); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -93,7 +93,7 @@ func TestRoundTrip(t *testing.T) {
 	if s := settings.Load(); s.Theme != "dark" || s.Lang != "zh" {
 		t.Fatalf("settings: %+v", s)
 	}
-	if ps, _ := profile.Load(); ps["work"]["claude.model"] != "acme/m1" {
+	if ps, _ := profile.Load(); ps["work"].Fields["claude.model"] != "acme/m1" {
 		t.Fatalf("profiles: %+v", ps)
 	}
 }
@@ -161,7 +161,7 @@ func TestTampered(t *testing.T) {
 }
 
 func TestProfileKeys(t *testing.T) {
-	got := profileKeys(profile.Profile{"codex.effort": "", "claude.model": "", "codex.provider": "", "codex.model": ""})
+	got := profileKeys(map[string]string{"codex.effort": "", "claude.model": "", "codex.provider": "", "codex.model": ""})
 	want := []string{"codex.provider", "claude.model", "codex.model", "codex.effort"}
 	if !slices.Equal(got, want) {
 		t.Fatalf("%v", got)

@@ -258,8 +258,10 @@ function renderAgents() {
   if (!state.profiles.length) chips.append(el("span", "hint", t("none yet · save the setup to switch back in one click")));
   for (const p of state.profiles) {
     const c = el("button", "chip");
-    c.title = p.summary;
+    const lib = profileLibrary(p.library);
+    c.title = [p.summary, lib].filter(Boolean).join("\n");
     c.append(el("span", "", p.name));
+    if (lib) c.append(el("span", "lib"));
     const x = el("span", "x", "×");
     x.title = t("Delete profile");
     x.onclick = (ev) => { ev.stopPropagation(); profileAction("delete", p.name); };
@@ -788,12 +790,29 @@ document.addEventListener("keydown", (e) => {
 
 // ---------- profiles ----------
 
+// profileLibrary is what a profile gives out from the Library, in a few
+// words; "" for one saved without it.
+function profileLibrary(l) {
+  if (!l) return "";
+  const parts = [];
+  if (l.servers) parts.push(t(l.servers === 1 ? "{n} server" : "{n} servers", { n: l.servers }));
+  if (l.skills) parts.push(t(l.skills === 1 ? "{n} skill" : "{n} skills", { n: l.skills }));
+  if (l.instructions) parts.push(t("instructions"));
+  return parts.length ? t("+ Library: {what}", { what: parts.join(t(", ")) }) : t("+ Library: nothing on");
+}
+
 async function profileAction(action, name) {
   try {
     const data = await api("profile/" + action, { name });
     state = data;
     renderAgents();
-    if (action === "use") status(t(data.changed === 1 ? "{name} applied · {n} setting changed" : "{name} applied · {n} settings changed", { name, n: data.changed }), "ok");
+    if (action === "use") {
+      let msg = t(data.changed === 1 ? "{name} applied · {n} setting changed" : "{name} applied · {n} settings changed", { name, n: data.changed });
+      const lib = data.library;
+      if (lib?.missing?.length) msg += " · " + t("skipped, no longer in the Library: {names}", { names: lib.missing.map((m) => m.replace(/^\w+:/, "")).join(", ") });
+      if (lib?.problems?.length) status(msg + " · " + t("some of the Library couldn't be given; see Library"), "err", 6000);
+      else status(msg, "ok", lib?.missing?.length ? 6000 : 3500);
+    }
     else if (action === "save") status(t("Saved {name}", { name }), "ok");
     else status(t("Deleted {name}", { name }));
   } catch (e) {

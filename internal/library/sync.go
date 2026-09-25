@@ -10,6 +10,9 @@ type Result struct {
 	Changed  []string  `json:"changed"`  // agents whose files were written
 	Problems []Problem `json:"problems"` // what couldn't be written, and why
 	Backup   string    `json:"backup,omitempty"`
+	// Missing are the servers and skills (mcp:<name>, skill:<name>) a
+	// profile named that the library no longer has
+	Missing []string `json:"missing,omitempty"`
 }
 
 // Problem is one thing that couldn't be given to an agent.
@@ -32,7 +35,10 @@ func (r *Result) fail(agent, what string, err error) {
 // sync writes the library into every agent on this machine.
 func (l *Library) sync() *Result {
 	res := &Result{Changed: []string{}, Problems: []Problem{}}
-	b := newBackups()
+	b := l.kept
+	if b == nil {
+		b = newBackups()
+	}
 	all := Targets()
 	for _, t := range all {
 		l.syncInstructions(t, b, res)

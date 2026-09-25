@@ -29,6 +29,9 @@ type Library struct {
 	// Icons are the icons of the servers added from the market, by what
 	// each runs, for the page to show them by
 	Icons map[string]string `json:"icons,omitempty"`
+	// kept is where a change put what it kept aside before the sync, for
+	// the sync to keep the agents' files beside it
+	kept *backups
 }
 
 // Instructions are one shared text, and for each agent whether it gets it

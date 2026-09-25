@@ -52,7 +52,7 @@ type Bundle struct {
 	Icons     map[string][]byte          `json:"icons,omitempty"` // pictures picked for providers, by file name
 	Settings  *settings.Settings         `json:"settings,omitempty"`
 	Profiles  map[string]profile.Profile `json:"profiles,omitempty"`
-	Agents    profile.Profile            `json:"agents,omitempty"` // every agent's fields as they are now
+	Agents    map[string]string          `json:"agents,omitempty"` // every agent's fields as they are now
 }
 
 type envelope struct {
@@ -99,7 +99,7 @@ func Collect(keys bool, app string) (Bundle, error) {
 	if len(ps) > 0 {
 		b.Profiles = ps
 	}
-	if snap := profile.Snapshot(); len(snap) > 0 {
+	if snap := profile.Fields(); len(snap) > 0 {
 		b.Agents = snap
 	}
 	return b, nil
@@ -256,7 +256,7 @@ func Restore(b Bundle, parts Parts) (Result, error) {
 				r.Skipped = append(r.Skipped, k)
 				continue
 			}
-			n, err := profile.Apply(profile.Profile{k: b.Agents[k]})
+			n, err := profile.ApplyFields(map[string]string{k: b.Agents[k]})
 			if err != nil {
 				r.Skipped = append(r.Skipped, k)
 				continue
@@ -267,9 +267,9 @@ func Restore(b Bundle, parts Parts) (Result, error) {
 	return r, nil
 }
 
-// profileKeys orders a profile's keys the way Apply does: providers, then
+// profileKeys orders a profile's fields the way ApplyFields does: providers, then
 // models, then the rest.
-func profileKeys(p profile.Profile) []string {
+func profileKeys(p map[string]string) []string {
 	rank := func(k string) int {
 		switch {
 		case strings.HasSuffix(k, ".provider"):
