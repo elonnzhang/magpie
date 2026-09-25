@@ -44,6 +44,8 @@ const usage = `magpie — one place to pick every agent's model
   magpie backup [--no-keys] [file]    providers, keys, settings, profiles and agent models in one file, sealed with a passphrase
   magpie restore [--no-agents] <file> put a backup in on this machine
 
+  magpie library [sync|instructions|mcp|skill]   the instructions, MCP servers and skills written into every agent (magpie library help)
+
   magpie providers                list your providers: host, key, models, who uses them
   magpie presets                  the vendors magpie knows: add one with just a key
   magpie provider add <preset> <key>   e.g. magpie provider add deepseek sk-…
@@ -166,6 +168,8 @@ func run(args []string) error {
 		return usageCmd(args)
 	case "update":
 		return updateCmd(args)
+	case "library", "lib":
+		return libraryCmd(args)
 	case "backup":
 		return backupCmd(args[1:])
 	case "restore":

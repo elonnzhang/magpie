@@ -19,6 +19,7 @@ import (
 	"github.com/yetone/magpie/internal/agent"
 	"github.com/yetone/magpie/internal/catalog"
 	"github.com/yetone/magpie/internal/gateway"
+	"github.com/yetone/magpie/internal/library"
 	"github.com/yetone/magpie/internal/provider"
 	"github.com/yetone/magpie/internal/settings"
 	"github.com/yetone/magpie/internal/update"
@@ -249,6 +250,17 @@ func Run(version string, showMain bool, link string) error {
 		})
 	}
 	updates.start()
+	// the library written into the agents again, once: one installed or
+	// updated since (or an edit by hand) gets it without a visit to the page
+	go func() {
+		if res, err := library.Sync(); err != nil {
+			log.Println("library sync:", err)
+		} else {
+			for _, p := range res.Problems {
+				log.Println("library sync:", p.Agent, p.What, p.Error)
+			}
+		}
+	}()
 
 	h.tray = h.app.SystemTray.New()
 	h.tray.SetTooltip("magpie")
