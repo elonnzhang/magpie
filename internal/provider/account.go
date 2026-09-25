@@ -12,6 +12,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -20,6 +21,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"os/user"
 	"path/filepath"
 	"regexp"
 	"runtime"
@@ -259,8 +261,47 @@ func readClaudeCredential() (claudeCredentials, claudeCredentialLocation, bool) 
 	if err != nil {
 		return claudeCredentials{}, claudeCredentialLocation{}, false
 	}
-	c, ok := parseClaudeCredentials(bytes.TrimSpace(out))
-	return c, claudeCredentialLocation{keychain: true, account: os.Getenv("USER")}, ok
+	b, wasHex := keychainText(bytes.TrimSpace(out))
+	c, ok := parseClaudeCredentials(b)
+	loc := claudeCredentialLocation{keychain: true, account: claudeKeychainAccount()}
+	if ok && wasHex {
+		// written by magpie before it wrote them on one line: Claude Code
+		// reads that hex as no sign-in, so it is written again as it
+		// writes it
+		saveClaudeCredential(loc, c)
+	}
+	return c, loc, ok
+}
+
+// claudeKeychainAccount is the account Claude Code keeps its sign-in
+// under: $USER, else the login name, and claude-code-user for a name it
+// won't use.
+func claudeKeychainAccount() string {
+	name := os.Getenv("USER")
+	if name == "" {
+		if u, err := user.Current(); err == nil {
+			name = u.Username
+		}
+	}
+	if !keychainAccountRe.MatchString(name) {
+		return "claude-code-user"
+	}
+	return name
+}
+
+var keychainAccountRe = regexp.MustCompile(`^[a-zA-Z0-9._-]+$`)
+
+// keychainText undoes `security find-generic-password -w` printing a
+// password with a character it can't print — a newline — as hex.
+func keychainText(out []byte) ([]byte, bool) {
+	if len(out) == 0 || len(out)%2 != 0 || out[0] == '{' {
+		return out, false
+	}
+	b, err := hex.DecodeString(string(out))
+	if err != nil || !json.Valid(b) {
+		return out, false
+	}
+	return b, true
 }
 
 func claudeCredential() (claudeCredentials, claudeCredentialLocation, bool) {
@@ -291,6 +332,16 @@ func saveClaudeCredential(loc claudeCredentialLocation, c claudeCredentials) err
 	b, err := c.marshal()
 	if err != nil {
 		return err
+	}
+	if loc.keychain {
+		// on one line, as Claude Code writes it: a password with a newline
+		// comes back from `security -w` as hex, which Claude Code takes for
+		// no sign-in at all (#70)
+		var one bytes.Buffer
+		if err := json.Compact(&one, b); err != nil {
+			return err
+		}
+		b = one.Bytes()
 	}
 	if !loc.keychain {
 		if err := os.WriteFile(loc.path, append(b, '\n'), 0o600); err != nil {

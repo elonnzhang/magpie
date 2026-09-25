@@ -437,7 +437,7 @@ func putClaudeLogin(l savedLogin) error {
 		}
 		loc = claudeCredentialLocation{path: filepath.Join(dir, ".credentials.json")}
 		if claudeKeychain {
-			loc = claudeCredentialLocation{keychain: true, account: os.Getenv("USER")}
+			loc = claudeCredentialLocation{keychain: true, account: claudeKeychainAccount()}
 		}
 	}
 	if err := saveClaudeCredential(loc, c); err != nil {

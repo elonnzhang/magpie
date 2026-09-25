@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -543,5 +544,26 @@ func TestCopilotAPIs(t *testing.T) {
 	}
 	if copilotAPIs(nil) != nil {
 		t.Error("no endpoints should be not known")
+	}
+}
+
+// A sign-in magpie wrote on several lines comes back from `security -w` as
+// hex; it is read, and written on one line so Claude Code can read it (#70).
+func TestKeychainText(t *testing.T) {
+	c := claudeCredentials{OAuth: claudeAuth{AccessToken: "a", RefreshToken: "r", Scopes: []string{"user:inference"}}}
+	indented, _ := c.marshal()
+	b, wasHex := keychainText([]byte(hex.EncodeToString(indented)))
+	if !wasHex {
+		t.Fatal("hex not recognised")
+	}
+	if got, ok := parseClaudeCredentials(b); !ok || got.OAuth.AccessToken != "a" {
+		t.Fatalf("parsed %+v %v", got, ok)
+	}
+	plain := []byte(`{"claudeAiOauth":{"accessToken":"a"}}`)
+	if b, wasHex := keychainText(plain); wasHex || string(b) != string(plain) {
+		t.Fatal("plain JSON changed")
+	}
+	if _, wasHex := keychainText([]byte("abcd")); wasHex {
+		t.Fatal("hex that isn't JSON taken")
 	}
 }
