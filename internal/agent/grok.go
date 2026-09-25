@@ -1,0 +1,163 @@
+package agent
+
+// Grok Build, xAI's grok CLI, keeps its settings in ~/.grok/config.toml (or
+// $GROK_HOME's): the model new sessions start with under [models] default,
+// and models of the user's own as [model."<id>"] tables. magpie adds one
+// such table per catalog model, named "magpie/<provider>/<model>", pointing
+// at the gateway with magpie's own key — a model with no key of its own
+// would be sent the user's xAI sign-in — so the catalog joins Grok's own
+// models in its /model picker.
+
+import (
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
+
+	"github.com/yetone/magpie/internal/catalog"
+	"github.com/yetone/magpie/internal/edit"
+	"github.com/yetone/magpie/internal/gateway"
+)
+
+// grokEfforts are the reasoning efforts Grok knows.
+var grokEfforts = []string{"none", "minimal", "low", "medium", "high", "xhigh", "max"}
+
+// grokModelTable is the header prefix of every table magpie writes.
+var grokModelTable = `model."` + magpieID + "/"
+
+func grokModelTables() []edit.Table {
+	var out []edit.Table
+	for _, m := range magpieModels() {
+		kvs := []edit.KV{
+			{Path: "model", Value: m.ID},
+			{Path: "name", Value: m.Name},
+			{Path: "base_url", Value: gatewayV1()},
+			{Path: "api_key", Value: gateway.Token},
+			{Path: "api_backend", Value: "chat_completions"},
+		}
+		if m.Context > 0 {
+			kvs = append(kvs, edit.KV{Path: "context_window", Value: m.Context})
+		}
+		var efforts []string
+		for _, e := range grokEfforts { // in Grok's order
+			if contains(m.Efforts, e) {
+				efforts = append(efforts, strconv.Quote(e))
+			}
+		}
+		if len(efforts) > 0 {
+			kvs = append(kvs, edit.KV{Path: "reasoning_efforts", Value: edit.Raw("[" + strings.Join(efforts, ", ") + "]")})
+		}
+		out = append(out, edit.Table{Name: "model." + strconv.Quote(magpieID+"/"+m.ID), KVs: kvs})
+	}
+	return out
+}
+
+func grok(home string) *Agent {
+	dir := os.Getenv("GROK_HOME")
+	if dir == "" {
+		dir = filepath.Join(home, ".grok")
+	}
+	path := filepath.Join(dir, "config.toml")
+	get := func(k string) string { return edit.GetTOMLTable(path, "models")[k] }
+	wired := func() bool {
+		for _, t := range edit.TOMLTables(path) {
+			if strings.HasPrefix(t, grokModelTable) {
+				return true
+			}
+		}
+		return false
+	}
+	writeMagpie := func() error { return edit.SetTOMLTables(path, []string{grokModelTable}, grokModelTables()) }
+	dropMagpie := func() error { return edit.SetTOMLTables(path, []string{grokModelTable}, nil) }
+	// the efforts of a model through magpie, as its catalog entry has them
+	efforts := func(model string) []string {
+		ref, ok := strings.CutPrefix(model, magpieID+"/")
+		if !ok {
+			return nil
+		}
+		return catalog.Efforts(magpieModels(), ref)
+	}
+	return &Agent{
+		ID: "grok", Name: "Grok Build", Icon: "xai", Aliases: []string{"grok-build", "grok-cli"},
+		UA:  []string{"grok-shell", "xai-grok-build"},
+		Dir: dir, Path: path,
+		Sync: func() error {
+			if !wired() {
+				return nil
+			}
+			return writeMagpie()
+		},
+		Notice: func() string {
+			if Running(`(^|/)grok( |$)`) {
+				return "Grok Build reads its settings at start-up — restart open grok sessions to use this."
+			}
+			return ""
+		},
+		Fields: []Field{
+			{
+				Key: "model", Label: "model",
+				Get: func() string { return get("default") },
+				Set: func(v string) error {
+					if v == "" {
+						if err := edit.DelTOMLKey(path, "models", "default"); err != nil {
+							return err
+						}
+						return dropMagpie()
+					}
+					if ref, ok := strings.CutPrefix(v, magpieID+"/"); ok && isMagpie(ref) {
+						if err := writeMagpie(); err != nil {
+							return err
+						}
+					} else if err := dropMagpie(); err != nil {
+						return err
+					}
+					if e := get("default_reasoning_effort"); e != "" {
+						if es := efforts(v); es != nil && !contains(es, e) {
+							if err := edit.DelTOMLKey(path, "models", "default_reasoning_effort"); err != nil {
+								return err
+							}
+						}
+					}
+					return edit.SetTOMLKey(path, "models", "default", v)
+				},
+				Options: func(cur map[string]string) []Option {
+					return append(grokOwnOptions(cur["model"]), viaMagpie(magpieID+"/")...)
+				},
+			},
+			{
+				// the effort new sessions start with; Grok applies it to a
+				// model that supports it and ignores it otherwise
+				Key: "effort", Label: "effort",
+				Get: func() string { return get("default_reasoning_effort") },
+				Set: func(v string) error {
+					if v == "" {
+						return edit.DelTOMLKey(path, "models", "default_reasoning_effort")
+					}
+					return edit.SetTOMLKey(path, "models", "default_reasoning_effort", v)
+				},
+				Options: func(cur map[string]string) []Option {
+					if es := efforts(cur["model"]); es != nil {
+						return static(es...)
+					}
+					return static("low", "medium", "high")
+				},
+			},
+		},
+	}
+}
+
+// grokOwnOptions are the models Grok Build offers its signed-in account, as
+// magpie last listed them for a Grok subscription, and the current one.
+func grokOwnOptions(cur string) []Option {
+	ms, _, _ := catalog.Live("grok")
+	seen := map[string]bool{}
+	var out []Option
+	for _, m := range ms {
+		seen[m.ID] = true
+		out = append(out, Option{Value: m.ID, Icon: "xai"})
+	}
+	if cur != "" && !seen[cur] && !strings.HasPrefix(cur, magpieID+"/") {
+		out = append([]Option{{Value: cur, Icon: modelIcon("", cur)}}, out...)
+	}
+	return group("Grok Build", out)
+}

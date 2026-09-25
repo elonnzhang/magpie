@@ -1199,7 +1199,7 @@ function accountPlan(a) {
   if (a.agent === "copilot") return "GitHub";
   if (a.agent === "claude") return "Claude" + (a.plan ? " " + a.plan[0].toUpperCase() + a.plan.slice(1) : "");
   if (a.agent === "cursor") return "Cursor" + (a.plan ? " " + a.plan[0].toUpperCase() + a.plan.slice(1) : "");
-  if (a.agent === "grok") return "Grok";
+  if (a.agent === "grok") return "Grok Build";
   if (a.agent === "gemini" || a.agent === "antigravity") return a.plan || "Google";
   return t("signed in");
 }
@@ -2734,8 +2734,8 @@ const SUBS = [
   { agent: "codex", name: "ChatGPT", icon: "openai", plans: "Plus · Pro · Business" },
   // cursor-agent keeps one account; signing in again replaces it
   { agent: "cursor", name: "Cursor", icon: "cursor", plans: "Pro · Ultra · Teams", single: true },
-  // so does the Grok CLI
-  { agent: "grok", name: "Grok", icon: "xai", plans: "SuperGrok · X Premium+", own: true },
+  // so does Grok Build
+  { agent: "grok", name: "Grok Build", icon: "xai", plans: "SuperGrok · X Premium+", own: true },
   // signed in with GitHub's device code; the editors' own sign-in stays theirs
   { agent: "copilot", name: "Copilot", icon: "githubcopilot", plans: "Pro · Pro+ · Business", own: true },
   // devin's credentials.toml keeps one account too

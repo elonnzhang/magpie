@@ -38,7 +38,7 @@ func cliFor(agent string) (agentCLI, bool) {
 			"curl https://cursor.com/install -fsS | bash",
 			"irm 'https://cursor.com/install?win32=true' | iex"}, true
 	case "grok":
-		return agentCLI{"Grok CLI", func() string { return GrokExecutable() },
+		return agentCLI{"Grok Build", func() string { return GrokExecutable() },
 			"curl -fsSL https://x.ai/cli/install.sh | bash",
 			"irm https://x.ai/cli/install.ps1 | iex"}, true
 	}

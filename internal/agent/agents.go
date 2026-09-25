@@ -63,6 +63,7 @@ func All() []*Agent {
 		omp(home),
 		devin(home, cfg),
 		hermes(home),
+		grok(home),
 	}
 }
 

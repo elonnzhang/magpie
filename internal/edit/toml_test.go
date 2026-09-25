@@ -122,3 +122,22 @@ func TestTOMLKey(t *testing.T) {
 		t.Fatalf("delete beside:\n%s", raw)
 	}
 }
+
+func TestSetTOMLTables(t *testing.T) {
+	p := tmpToml(t)
+	os.WriteFile(p, []byte("top = 1\n\n[a]\nx = 1\n\n[own.\"m/1\"]\nk = \"old\"\n\n[own.\"m/1\".sub]\ny = 2\n\n[b]\nz = 3\n"), 0o644)
+	ts := []Table{{Name: `own."m/2"`, KVs: []KV{{Path: "k", Value: "v"}, {Path: "n", Value: 5}}}}
+	if err := SetTOMLTables(p, []string{`own."m/`}, ts); err != nil {
+		t.Fatal(err)
+	}
+	want := "top = 1\n\n[a]\nx = 1\n\n[b]\nz = 3\n\n[own.\"m/2\"]\nk = \"v\"\nn = 5\n"
+	if b, _ := os.ReadFile(p); string(b) != want {
+		t.Fatalf("got:\n%s", b)
+	}
+	if err := SetTOMLTables(p, []string{`own."m/`}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(p); string(b) != "top = 1\n\n[a]\nx = 1\n\n[b]\nz = 3\n" {
+		t.Fatalf("removed:\n%s", b)
+	}
+}

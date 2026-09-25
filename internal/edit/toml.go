@@ -237,3 +237,62 @@ func tomlLiteral(v any) string {
 	}
 	return strconv.Quote(toString(v))
 }
+
+// Table is one TOML table: its header name and its keys, in order.
+type Table struct {
+	Name string
+	KVs  []KV
+}
+
+// SetTOMLTables replaces every table whose name begins with one of the
+// prefixes by the given tables, appended at the end in one write: a set of
+// tables magpie owns as a whole (one per model of its catalog), which would
+// otherwise be rewritten once per table. With no tables it only removes.
+func SetTOMLTables(path string, prefixes []string, tables []Table) error {
+	raw, err := Read(path)
+	if err != nil {
+		return err
+	}
+	owned := func(name string) bool {
+		for _, p := range prefixes {
+			if strings.HasPrefix(name, p) {
+				return true
+			}
+		}
+		return false
+	}
+	var out []string
+	drop, found := false, false
+	for _, line := range splitLines(string(raw)) {
+		if m := tomlHeader.FindStringSubmatch(line); m != nil {
+			was := drop
+			drop = owned(strings.TrimPrefix(m[1], "["))
+			if drop {
+				found = true
+				out = trimBlank(out)
+			} else if was && len(out) > 0 {
+				out = append(out, "")
+			}
+		}
+		if !drop {
+			out = append(out, line)
+		}
+	}
+	if !found && len(tables) == 0 {
+		return nil
+	}
+	out = trimBlank(out)
+	for _, t := range tables {
+		if len(out) > 0 {
+			out = append(out, "")
+		}
+		out = append(out, "["+t.Name+"]")
+		for _, kv := range t.KVs {
+			out = append(out, kv.Path+" = "+tomlLiteral(kv.Value))
+		}
+	}
+	if len(out) > 0 {
+		out = append(out, "")
+	}
+	return WriteAtomic(path, []byte(joinLines(out)))
+}

@@ -78,6 +78,7 @@ and there is a terminal version (`magpie tui`) and a plain CLI.
 | omp (oh-my-pi) | `~/.omp/agent/config.yml` (+ `models.yml`) | model |
 | Devin        | `~/.config/devin/config.json` (`%APPDATA%\devin\config.json` on Windows) | model |
 | Hermes Agent | `~/.hermes/config.yaml` (`$HERMES_HOME`) | model |
+| Grok Build   | `~/.grok/config.toml` (`$GROK_HOME`) | model, effort |
 
 Provider-scoped agents (OpenCode, Pi, Goose, Crush, omp, Hermes Agent) take `provider/model`.
 Only agents that are installed or configured are shown.
@@ -173,7 +174,7 @@ Code process; Pi, OpenCode and every other agent use this path automatically.
 The generated harness stays out of Anthropic's system-prompt classifier while
 its instructions remain part of the user context. This requires Claude Code
 to be installed and signed in.
-Cursor, Grok and Devin subscriptions likewise run through their own CLIs —
+Cursor, Grok Build and Devin subscriptions likewise run through their own CLIs —
 none of them has an endpoint a borrowed key can be sent to — with Devin
 driven over ACP (`devin acp`) in a home of magpie's own that keeps only the
 caller's MCP tools and shares just the sign-in.
