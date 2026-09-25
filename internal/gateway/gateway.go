@@ -129,6 +129,11 @@ func (s *Server) record(c Call) {
 	}
 }
 
+// WhileServing is work only the magpie serving the gateway does, begun
+// once it is bound and ended with it: one of the magpies running, never
+// two at once.
+var WhileServing []func(context.Context)
+
 // ListenAndServe runs the gateway until ctx ends. A bind error means
 // another magpie is already serving, which is fine for the caller to ignore.
 func (s *Server) ListenAndServe(ctx context.Context) error {
@@ -140,6 +145,9 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 	// the magpie serving the gateway, and only it, keeps the saved accounts
 	// signed in, so two never refresh one sign-in at once
 	go provider.KeepLoginsAlive(ctx)
+	for _, f := range WhileServing {
+		go f(ctx)
+	}
 	go func() {
 		<-ctx.Done()
 		c, cancel := context.WithTimeout(context.Background(), 2*time.Second)

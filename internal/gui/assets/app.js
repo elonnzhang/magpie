@@ -3540,6 +3540,7 @@ function renderSettings() {
   $("#langSegs").replaceChildren(segs(LOCALES.map(([id, name]) => [id, t(name)]), s.lang, (lang) => savePrefs({ ...keep, lang })));
   $("#traySegs").replaceChildren(segs(TRAYS.map(([id, name]) => [id, t(name)]), s.tray || "panel", (tray) => savePrefs({ ...keep, tray })));
   renderProxy(s, keep);
+  renderSync();
 
   const about = $("#about");
   about.replaceChildren();
@@ -3566,6 +3567,208 @@ function renderSettings() {
   join.title = "discord.gg/vGSnD3ZKQF";
   join.onclick = () => api("open", { url: "https://discord.gg/vGSnD3ZKQF" }).catch(() => {});
   row(t("Community"), t("questions, ideas and feedback, on Discord"), "", join);
+}
+
+// renderSync: the Settings page's sync and backup — WebDAV keeping the
+// setup the same on every computer, and a sealed file to carry by hand.
+// One of the three opens a form below its row at a time.
+let syncOpen = ""; // "dav" | "export" | "import"
+let syncView = null;
+async function renderSync(v) {
+  const box = $("#syncList");
+  if (v) syncView = v;
+  else if (!syncView) {
+    syncView = await api("davsync").catch(() => ({}));
+  }
+  v = syncView;
+  box.replaceChildren();
+  const row = (name, sub, ...tools) => {
+    const r = el("div", "row pref");
+    const who = el("div", "who");
+    who.append(el("div", "name", name));
+    const s = el("div", "sub", sub);
+    who.append(s);
+    const val = el("div", "val");
+    val.append(...tools);
+    r.append(who, val);
+    box.append(r);
+    return s;
+  };
+  const btn = (label, fn, cls = "text") => { const b = el("button", cls, label); b.onclick = fn; return b; };
+  const toggle = (id) => () => { syncOpen = syncOpen === id ? "" : id; renderSync(); };
+  const parts = (ps) => ps.map((p) => t({ providers: "providers", settings: "settings", profiles: "profiles", agents: "agents' models" }[p])).join(t(", "));
+
+  // WebDAV
+  let status = t("Keeps providers, settings, profiles and agents' models the same on every computer");
+  if (v.on) {
+    const host = (() => { try { return new URL(v.url).host; } catch { return v.url; } })();
+    status = v.error ? t("Couldn't sync: {error}", { error: v.error })
+      : v.last ? t("Synced {when} · {host}", { when: syncWhen(v.last), host }) : t("Not synced yet · {host}", { host });
+  }
+  const sub = row(t("WebDAV sync"), status, ...(v.on
+    ? [btn(t("Sync now"), async (e) => { e.target.classList.add("busy"); renderSync(await api("davsync/now", {}).catch((x) => ({ ...v, error: x.message }))); }),
+       btn(t(syncOpen === "dav" ? "Close" : "Edit"), toggle("dav"))]
+    : [btn(t(syncOpen === "dav" ? "Close" : "Set up"), toggle("dav"))]));
+  if (v.error) sub.classList.add("bad");
+  if (v.notice) {
+    const n = v.notice, r = el("div", "row pref sync-note");
+    const lines = [];
+    if (n.here?.length) lines.push(t("Replaced here by newer ones from another computer: {parts}", { parts: parts(n.here) }));
+    if (n.there?.length) lines.push(t("Replaced on the server by this computer's newer ones: {parts}", { parts: parts(n.there) }));
+    const who = el("div", "who");
+    for (const l of lines) who.append(el("div", "sub", l));
+    who.append(el("div", "sub", t("The copies replaced are kept in the sync folder.")));
+    const val = el("div", "val");
+    val.append(btn(t("Show"), () => api("davsync/reveal", {})), btn(t("OK"), async () => renderSync(await api("davsync/dismiss", {}))));
+    r.append(who, val);
+    box.append(r);
+  }
+  if (syncOpen === "dav") box.append(davForm(v));
+
+  // export and import
+  row(t("Export"), t("Everything above in one file, sealed with a passphrase, to carry to another computer"), btn(t(syncOpen === "export" ? "Close" : "Export…"), toggle("export")));
+  if (syncOpen === "export") box.append(exportForm());
+  row(t("Import"), t("Bring in a file exported from magpie"), btn(t(syncOpen === "import" ? "Close" : "Import…"), toggle("import")));
+  if (syncOpen === "import") box.append(importForm());
+}
+
+// refreshAfterSync: what a sync or an import brought in reaches the other
+// pages, leaving this one (and what it says was done) as it is.
+function refreshAfterSync() {
+  providers = null;
+  api("state").then((s) => { state = s; renderAgents(); }).catch(() => {});
+}
+
+function syncWhen(iso) {
+  const d = new Date(iso);
+  const time = d.toLocaleTimeString(locale === "zh" ? "zh-CN" : undefined, { hour: "2-digit", minute: "2-digit" });
+  return new Date().toDateString() === d.toDateString() ? t("at {time}", { time }) : d.toLocaleDateString(locale === "zh" ? "zh-CN" : undefined) + " " + time;
+}
+
+function tick(label, on) {
+  const l = el("label", "tick");
+  const c = el("input");
+  c.type = "checkbox";
+  c.checked = on;
+  l.append(c, el("span", "", label));
+  return [l, c];
+}
+
+function syncBar(ed, err, ...tools) {
+  const bar = el("div", "bar");
+  bar.append(...tools);
+  ed.append(el("div", "editor-error", ""), bar);
+  return (msg) => { ed.querySelector(".editor-error").textContent = msg || ""; };
+}
+
+function davForm(v) {
+  const ed = el("div", "editor sync-form");
+  const url = input(v.url || "", "https://dav.jianguoyun.com/dav/");
+  const user = input(v.user || "", t("user name"));
+  const pass = input("", v.passwordSet ? t("saved · type a new one to replace it") : t("password, or an app password"), "password");
+  const phrase = input("", v.passphraseSet ? t("saved · type a new one to replace it") : t("the same on every computer"), "password");
+  const [keysL, keys] = tick(t("Providers' API keys"), v.keys !== false);
+  const [agentsL, agents] = tick(t("Agents' models"), v.agents !== false);
+  const what = el("div", "stack");
+  what.append(keysL, agentsL);
+  ed.append(...field(t("Address"), url, t("A folder named magpie is made in it.")),
+    ...field(t("User"), user),
+    ...field(t("Password"), pass),
+    ...field(t("Passphrase"), phrase, t("The file is sealed with it on this computer; the server only ever sees it sealed. Keep it: without it the file can't be opened.")),
+    ...field(t("Also sync"), what));
+  const save = el("button", "text primary", t(v.on ? "Save" : "Turn on"));
+  const off = v.on ? el("button", "text danger", t("Turn off")) : el("span");
+  const cancel = el("button", "text", t("Cancel"));
+  const say = syncBar(ed, "", off, el("span", "grow"), cancel, save);
+  cancel.onclick = () => { syncOpen = ""; renderSync(); };
+  off.onclick = async () => { syncOpen = ""; renderSync(await api("davsync/off", {}).catch(() => null) || undefined); };
+  save.onclick = async () => {
+    if (!v.passphraseSet && !phrase.value) return say(t("Pick a passphrase: the file is sealed with it"));
+    save.classList.add("busy");
+    try {
+      const r = await api("davsync/save", { url: url.value.trim(), user: user.value.trim(), password: pass.value, passphrase: phrase.value, keys: keys.checked, agents: agents.checked });
+      if (!r.error) syncOpen = "";
+      renderSync(r);
+      if (r.error) return;
+      refreshAfterSync();
+    } catch (e) {
+      save.classList.remove("busy");
+      say(e.message);
+    }
+  };
+  return ed;
+}
+
+function exportForm() {
+  const ed = el("div", "editor sync-form");
+  const p1 = input("", t("passphrase"), "password");
+  const p2 = input("", t("again"), "password");
+  const [keysL, keys] = tick(t("With the providers' API keys"), true);
+  ed.append(...field(t("Passphrase"), p1, t("Needed to open the file. Subscriptions aren't in it: sign in to them on the other computer.")),
+    ...field("", p2), ...field("", keysL));
+  const go = el("button", "text primary", t("Export"));
+  const cancel = el("button", "text", t("Cancel"));
+  const say = syncBar(ed, "", el("span", "grow"), cancel, go);
+  cancel.onclick = () => { syncOpen = ""; renderSync(); };
+  go.onclick = async () => {
+    if (!p1.value) return say(t("Pick a passphrase: the file is sealed with it"));
+    if (p1.value !== p2.value) return say(t("The two passphrases differ"));
+    go.classList.add("busy");
+    try {
+      const r = await api("backup/export", { pass: p1.value, keys: keys.checked });
+      ed.replaceChildren(el("div", "done", t("Saved to {path}", { path: r.path })));
+    } catch (e) {
+      go.classList.remove("busy");
+      say(e.message);
+    }
+  };
+  return ed;
+}
+
+function importForm() {
+  const ed = el("div", "editor sync-form");
+  let data = "";
+  const file = el("input");
+  file.type = "file";
+  file.accept = ".magpie-backup";
+  file.hidden = true;
+  const name = el("span", "fname", t("No file chosen"));
+  const pick = el("button", "text", t("Choose…"));
+  pick.onclick = () => file.click();
+  file.onchange = async () => {
+    const f = file.files[0];
+    if (!f) return;
+    // as base64 in JSON: the app's web view drops a File sent as the body
+    const bytes = new Uint8Array(await f.arrayBuffer());
+    let bin = "";
+    for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+    data = btoa(bin);
+    name.textContent = f.name;
+  };
+  const pf = el("div", "pair");
+  pf.append(name, pick, file);
+  const pass = input("", t("passphrase"), "password");
+  const [agentsL, agents] = tick(t("Set the agents' models too"), true);
+  ed.append(...field(t("File"), pf), ...field(t("Passphrase"), pass), ...field("", agentsL, t("Providers with the same id are replaced; one that came without a key keeps the key it has here.")));
+  const go = el("button", "text primary", t("Import"));
+  const cancel = el("button", "text", t("Cancel"));
+  const say = syncBar(ed, "", el("span", "grow"), cancel, go);
+  cancel.onclick = () => { syncOpen = ""; renderSync(); };
+  go.onclick = async () => {
+    if (!data) return say(t("Choose a file first"));
+    go.classList.add("busy");
+    try {
+      const r = await api("backup/import", { data, pass: pass.value, agents: agents.checked });
+      const lines = [t("Providers: {added} added, {replaced} replaced; {profiles} profiles; {agents} agent settings changed", { added: r.Added, replaced: r.Replaced, profiles: r.Profiles, agents: r.Agents })];
+      if (r.NeedKey?.length) lines.push(t("Needs a key: {names}", { names: r.NeedKey.join(", ") }));
+      ed.replaceChildren(...lines.map((l) => el("div", "done", l)));
+      refreshAfterSync();
+    } catch (e) {
+      go.classList.remove("busy");
+      say(e.message);
+    }
+  };
+  return ed;
 }
 
 // renderProxy: magpie's own requests to vendors follow the system proxy on

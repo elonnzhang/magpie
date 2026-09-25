@@ -12,6 +12,7 @@ import (
 
 	"github.com/yetone/magpie/internal/agent"
 	"github.com/yetone/magpie/internal/catalog"
+	"github.com/yetone/magpie/internal/davsync"
 	"github.com/yetone/magpie/internal/claudebridge"
 	"github.com/yetone/magpie/internal/gateway"
 	"github.com/yetone/magpie/internal/netproxy"
@@ -97,6 +98,8 @@ func run(args []string) error {
 	// a provider added, edited or removed, or a list fetched anew, reaches
 	// the model lists agents keep in files of their own
 	catalog.Changed = agent.SyncCatalog
+	// the setup kept the same on every computer, by whichever serves
+	gateway.WhileServing = append(gateway.WhileServing, davsync.Run)
 	if len(args) == 0 {
 		if hasGUI {
 			return runGUI(true, "")
