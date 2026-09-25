@@ -82,7 +82,7 @@ func (p devinPair) next(t *testing.T) map[string]any {
 
 func TestDevinConnCallsAndAnswers(t *testing.T) {
 	p := newDevinPair(t)
-	id, err := p.conn.send("initialize", map[string]any{"protocolVersion": 1})
+	id, reply, err := p.conn.send("initialize", map[string]any{"protocolVersion": 1})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -92,7 +92,7 @@ func TestDevinConnCallsAndAnswers(t *testing.T) {
 	}
 	// a response resolves the call
 	p.write(t, fmt.Sprintf(`{"jsonrpc":"2.0","id":%d,"result":{"protocolVersion":1}}`, id))
-	res, err := p.conn.await(context.Background(), id)
+	res, err := p.conn.await(context.Background(), reply)
 	if err != nil || !strings.Contains(string(res), "protocolVersion") {
 		t.Fatalf("await: %v %s", err, res)
 	}
@@ -128,9 +128,9 @@ func TestDevinConnCallsAndAnswers(t *testing.T) {
 		t.Fatalf("events: %v", kinds)
 	}
 	// the stream ending fails a call still open
-	id2, _ := p.conn.send("session/prompt", map[string]any{})
+	_, reply2, _ := p.conn.send("session/prompt", map[string]any{})
 	p.toConn.Close()
-	if _, err := p.conn.await(context.Background(), id2); err == nil {
+	if _, err := p.conn.await(context.Background(), reply2); err == nil {
 		t.Fatal("an open call survived the end of the stream")
 	}
 }
