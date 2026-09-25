@@ -20,6 +20,7 @@ func TestAgentOf(t *testing.T) {
 		"dsh":                                      "dsh", // a record kept by an id already
 		"pi":                                       "pi",
 		"grok-pager/0.2.1":                         "grok",
+		"ZCode/3.10.1":                             "zcode",
 		"":                                         "other",
 	}
 	for ua, want := range cases {
