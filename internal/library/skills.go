@@ -550,17 +550,35 @@ func UpdateSkill(name string) (*Result, error) {
 	if s == nil {
 		return nil, fmt.Errorf("no skill called %s", name)
 	}
-	if s.Source == nil || s.Source.Kind != "github" {
-		return nil, fmt.Errorf("%s isn't from GitHub; it's kept as it is", name)
+	src, adopt := s.Source, false
+	if src == nil || src.Kind != "github" {
+		// one CC Switch installed from GitHub becomes the library's own,
+		// fetched from there, leaving CC Switch's folder as it is
+		o, ok := ccSwitchOrigin(s)
+		if !ok {
+			return nil, fmt.Errorf("%s isn't from GitHub; it's kept as it is", name)
+		}
+		src, adopt = &o, true
 	}
-	tmp, err := fetch(*s.Source)
+	tmp, err := fetch(*src)
+	if err != nil && adopt && src.Ref != "" {
+		src.Ref = "" // the branch CC Switch recorded is gone: the default one
+		tmp, err = fetch(*src)
+	}
 	if err != nil {
 		return nil, err
 	}
 	defer os.RemoveAll(tmp)
-	from := filepath.Join(tmp, filepath.FromSlash(s.Source.Path))
+	if adopt {
+		path, ok := origin(tmp, *src, name)
+		if !ok {
+			return nil, fmt.Errorf("%s has no skill %s any more", src.Repo, name)
+		}
+		src.Path = path
+	}
+	from := filepath.Join(tmp, filepath.FromSlash(src.Path))
 	if _, ok := readMeta(from); !ok {
-		return nil, fmt.Errorf("%s has no SKILL.md at %s any more", s.Source.Repo, s.Source.Path)
+		return nil, fmt.Errorf("%s has no SKILL.md at %s any more", src.Repo, src.Path)
 	}
 	return change(func(l *Library) error {
 		next, old := skillDir("."+name+".next"), skillDir("."+name+".old")
@@ -570,13 +588,30 @@ func UpdateSkill(name string) (*Result, error) {
 			os.RemoveAll(next)
 			return err
 		}
-		if err := os.Rename(skillDir(name), old); err != nil {
+		if fi, err := os.Lstat(skillDir(name)); err == nil && fi.Mode()&fs.ModeSymlink != 0 {
+			// a link to CC Switch's folder: only the link goes
+			if err := os.Remove(skillDir(name)); err != nil {
+				os.RemoveAll(next)
+				return err
+			}
+			old = ""
+		} else if err := os.Rename(skillDir(name), old); err != nil {
 			os.RemoveAll(next)
 			return err
 		}
 		if err := os.Rename(next, skillDir(name)); err != nil {
-			os.Rename(old, skillDir(name))
+			if old != "" {
+				os.Rename(old, skillDir(name))
+			}
 			return err
+		}
+		if adopt {
+			if s := l.skill(name); s != nil {
+				s.Source = src
+			}
+		}
+		if old == "" {
+			return nil
 		}
 		return os.RemoveAll(old)
 	})

@@ -837,14 +837,14 @@
       who.append(src);
     }
     const acts = el("div", "lib-rowacts");
-    if (s.kind === "github") {
+    if (s.kind === "github" || s.origin) {
       const u = button("", "lib-icon", async (e, b) => {
         b.classList.add("busy");
         await change("skills/update", { name: s.name }, t("{name} is up to date", { name: s.name }));
         b.classList.remove("busy");
       });
       u.append(svg(GLYPH.up, 13, 1.5));
-      u.title = t("Update from GitHub");
+      u.title = s.origin ? t("Update from GitHub ({repo}, as CC Switch installed it)", { repo: s.origin.replace(/^https:\/\/github\.com\//, "") }) : t("Update from GitHub");
       acts.append(u);
     }
     const rm = button("", "lib-icon danger", () => confirmRemoveSkill(s));

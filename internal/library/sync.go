@@ -142,7 +142,8 @@ type SkillView struct {
 	Name        string            `json:"name"`
 	Description string            `json:"description"`
 	Source      string            `json:"source,omitempty"`
-	Kind        string            `json:"kind"` // github, folder, or "" for one kept in the library
+	Kind        string            `json:"kind"`             // github, folder, or "" for one kept in the library
+	Origin      string            `json:"origin,omitempty"` // on GitHub, as CC Switch installed it: it can be updated from there
 	Icon        string            `json:"icon,omitempty"`
 	Agents      []string          `json:"agents"`
 	Missing     bool              `json:"missing,omitempty"` // its folder is gone
@@ -222,6 +223,10 @@ func Read(problems []Problem) (*View, error) {
 		sv := SkillView{Name: s.Name, Agents: append([]string{}, s.Agents...), Icon: skillIcon(s), Problems: of("skill:" + s.Name)}
 		if s.Source != nil {
 			sv.Source, sv.Kind = s.Source.String(), s.Source.Kind
+		}
+		if o, ok := ccSwitchOrigin(s); ok {
+			o.Path = ""
+			sv.Origin = o.String()
 		}
 		if m, ok := readMeta(skillDir(s.Name)); ok {
 			sv.Description = m.Description

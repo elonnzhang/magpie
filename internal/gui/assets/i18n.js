@@ -829,6 +829,7 @@ const I18N = {
     "linked from": "链接自",
     "{name} is up to date": "{name} 已是最新",
     "Update from GitHub": "从 GitHub 更新",
+    "Update from GitHub ({repo}, as CC Switch installed it)": "从 GitHub 更新（{repo}，CC Switch 安装时的来源）",
     "Read {name}'s SKILL.md": "查看 {name} 的 SKILL.md",
     "Remove {name}?": "移除 {name}？",
     "It is taken out of every agent it was given to. The folder it was linked from stays where it is.": "它会从所有已启用的 Agent 中移除。它链接的原文件夹保持不动。",
