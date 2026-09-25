@@ -216,6 +216,12 @@ body.window .top.cramped .seg { position: relative; left: auto; top: auto; trans
 @keyframes view-in { from { opacity: 0; transform: translateY(5px); } }
 body.window .view { padding: 2px 16px 8px; }
 .view::-webkit-scrollbar { width: 0; }
+/* Windows and Linux draw a classic scrollbar, arrows and all; a thin rounded
+   thumb instead, like the overlay one macOS shows (left as it is there) */
+:where(body:not(.mac)) ::-webkit-scrollbar { width: 10px; height: 10px; background: transparent; }
+:where(body:not(.mac)) ::-webkit-scrollbar-thumb { background: var(--faint); border: 3px solid transparent; border-radius: 10px; background-clip: padding-box; }
+:where(body:not(.mac)) ::-webkit-scrollbar-thumb:hover { background-color: var(--muted); }
+:where(body:not(.mac)) ::-webkit-scrollbar-button, :where(body:not(.mac)) ::-webkit-scrollbar-corner { display: none; background: transparent; }
 .list { background: var(--card); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; flex: none; }
 body.panel .list { border: 0; border-radius: 10px; box-shadow: var(--card-edge); }
 .row { display: flex; align-items: center; gap: 9px; min-height: 40px; padding: 5px 9px 5px 11px; }
@@ -472,7 +478,9 @@ body.window .foot { padding-left: 18px; }
 .pop input::placeholder { color: var(--faint); }
 .picker-body { display: flex; min-height: 0; flex: 1 1 auto; }
 #pickerRail[hidden] { display: none; }
-#pickerRail { position: relative; width: 43px; padding: 6px 5px; border-right: 1px solid var(--line-2); display: flex; flex-direction: column; align-items: center; gap: 3px; flex: none; overflow-y: auto; }
+#pickerRail { position: relative; width: 43px; padding: 6px 5px; border-right: 1px solid var(--line-2); display: flex; flex-direction: column; align-items: center; gap: 3px; flex: none; overflow-y: auto; overflow-x: hidden; scrollbar-width: none; }
+/* it draws its own thumb (.rail-thumb) */
+#pickerRail::-webkit-scrollbar { width: 0; height: 0; }
 .rail-thumb { position: absolute; z-index: 0; top: 0; left: 5px; width: 31px; height: 31px; border-radius: 8px; opacity: 0; background: var(--sel); box-shadow: inset 0 0 0 1px var(--line-2), 0 1px 2px rgba(0, 0, 0, .06); pointer-events: none; transition: transform 260ms cubic-bezier(.22, 1, .36, 1), opacity 100ms ease-out; will-change: transform; }
 .rail-item { position: relative; z-index: 1; width: 31px; height: 31px; border-radius: 8px; display: inline-flex; align-items: center; justify-content: center; color: var(--muted); flex: none; transition: color 150ms ease-out, transform 150ms cubic-bezier(.25, 1, .5, 1); }
 .rail-item:hover { color: var(--fg); background: color-mix(in srgb, var(--pill) 68%, transparent); }
