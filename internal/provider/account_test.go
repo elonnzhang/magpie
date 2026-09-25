@@ -5,11 +5,13 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -321,6 +323,8 @@ func TestClaudeRefreshesToken(t *testing.T) {
 
 func TestCopilotSignAndModels(t *testing.T) {
 	signIn(t)
+	var mu sync.Mutex
+	var enabled []string
 	var api *httptest.Server
 	api = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") != "Bearer sess" || r.Header.Get("Copilot-Integration-Id") == "" {
@@ -330,11 +334,21 @@ func TestCopilotSignAndModels(t *testing.T) {
 		if r.URL.Path == "/models" {
 			io := `{"data":[
 			  {"id":"gpt-5.5","name":"GPT-5.5","model_picker_enabled":true,"capabilities":{"type":"chat","supports":{"reasoning_effort":["low","high"]}}},
-			  {"id":"claude-sonnet-5","name":"Claude Sonnet 5","policy":{"state":"disabled"},"capabilities":{"type":"chat"}},
-			  {"id":"gpt-4.1","name":"GPT-4.1","policy":{"state":"enabled"},"capabilities":{"type":"chat"}},
+			  {"id":"claude-sonnet-5","name":"Claude Sonnet 5","model_picker_category":"versatile","policy":{"state":"disabled","terms":"Enable access"},"capabilities":{"type":"chat"}},
+			  {"id":"claude-opus-5","name":"Claude Opus 5","model_picker_category":"powerful","policy":{"state":"disabled"},"capabilities":{"type":"chat"}},
+			  {"id":"gpt-4.1","name":"GPT-4.1","model_picker_category":"versatile","policy":{"state":"enabled"},"capabilities":{"type":"chat"}},
+			  {"id":"gpt-4.1-2025-04-14","name":"GPT-4.1","policy":{"state":"enabled"},"capabilities":{"type":"chat"}},
+			  {"id":"kimi-k3-base","name":"Kimi K3 (GitHub)","vendor":"Experimental","model_picker_category":"powerful","policy":{"state":"enabled"},"capabilities":{"type":"chat"}},
 			  {"id":"exec-agent-a","name":"Exec","model_picker_enabled":true,"capabilities":{"type":"chat"}},
 			  {"id":"text-embedding-3-small","name":"Emb","model_picker_enabled":true,"capabilities":{"type":"embeddings"}}]}`
 			w.Write([]byte(io))
+			return
+		}
+		if r.Method == "POST" && strings.HasSuffix(r.URL.Path, "/policy") {
+			b, _ := io.ReadAll(r.Body)
+			mu.Lock()
+			enabled = append(enabled, strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/models/"), "/policy")+" "+string(b))
+			mu.Unlock()
 			return
 		}
 		w.Write([]byte(`{"path":"` + r.URL.Path + `","initiator":"` + r.Header.Get("X-Initiator") + `"}`))
@@ -362,11 +376,11 @@ func TestCopilotSignAndModels(t *testing.T) {
 	for _, m := range ms {
 		ids = append(ids, m.ID)
 	}
-	if strings.Join(ids, ",") != "gpt-5.5,gpt-4.1" || len(ms[0].Efforts) != 2 {
+	if strings.Join(ids, ",") != "gpt-5.5,claude-sonnet-5,gpt-4.1" || len(ms[0].Efforts) != 2 {
 		t.Fatalf("models: %v %+v", ids, ms)
 	}
 	p, _ = find(All(), "copilot")
-	if got := p.Available(); len(got) != 2 || got[0].ID != "gpt-5.5" {
+	if got := p.Available(); len(got) != 3 || got[0].ID != "gpt-5.5" {
 		t.Fatalf("available after fetch: %+v", got)
 	}
 
@@ -386,6 +400,31 @@ func TestCopilotSignAndModels(t *testing.T) {
 	json.NewDecoder(res.Body).Decode(&got)
 	if got["path"] != "/chat/completions" || got["initiator"] != "agent" {
 		t.Fatalf("api saw %v", got)
+	}
+	if len(enabled) != 0 {
+		t.Fatalf("enabled an enabled model: %v", enabled)
+	}
+
+	// a model whose terms wait has them accepted on its first request only
+	for range 2 {
+		req, _ = http.NewRequest("POST", p.Chat+"/chat/completions", nil)
+		if err := p.Sign(context.Background(), req, Chat, []byte(`{"model":"claude-sonnet-5","messages":[]}`)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(enabled) != 1 || enabled[0] != `claude-sonnet-5 {"state":"enabled"}` {
+		t.Fatalf("enabled: %v", enabled)
+	}
+
+	// after a restart the list is asked again before a first request
+	copilotTerms = map[string]map[string]bool{}
+	enabled = nil
+	req, _ = http.NewRequest("POST", p.Chat+"/chat/completions", nil)
+	if err := p.Sign(context.Background(), req, Chat, []byte(`{"model":"claude-sonnet-5","messages":[]}`)); err != nil {
+		t.Fatal(err)
+	}
+	if len(enabled) != 1 {
+		t.Fatalf("enabled after restart: %v", enabled)
 	}
 }
 

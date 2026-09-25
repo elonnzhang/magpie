@@ -834,6 +834,7 @@ func copilotProvider(app copilotApp, plan string) Provider {
 				req.URL, req.Host = u, u.Host
 			}
 		}
+		copilotAccept(ctx, app, s, bodyModel(body))
 		req.Header.Set("Authorization", "Bearer "+s.Token)
 		for k, v := range s.headers() {
 			req.Header.Set(k, v)
@@ -860,6 +861,15 @@ func copilotProvider(app copilotApp, plan string) Provider {
 	// /responses alone, Claude's on /v1/messages and /chat/completions (its
 	// model list says; see Provider.APIs)
 	return Provider{ID: "copilot", Name: "Copilot", Icon: "githubcopilot", Chat: copilotBase, Responses: copilotBase, Anthropic: copilotBase, Website: "https://github.com/features/copilot", Account: acct}
+}
+
+// bodyModel is the model a request asks for.
+func bodyModel(body []byte) string {
+	var v struct {
+		Model string `json:"model"`
+	}
+	json.Unmarshal(body, &v)
+	return v.Model
 }
 
 // lastRole is the role of the last message in a chat, Anthropic or
@@ -956,6 +966,60 @@ func copilotAPIs(endpoints []string) []string {
 // internal is a Copilot model id nobody picks by hand.
 var copilotInternal = regexp.MustCompile(`^(copilot-search|exec-agent|trajectory)|-(secondary|tertiary|4th|free-auto)$`)
 
+// A model Copilot offers with terms of its own stays disabled until the
+// account accepts them, as VS Code does when one is first picked; magpie
+// lists it and accepts them the first time a request asks for it.
+var (
+	copilotTermsMu sync.Mutex
+	copilotTerms   = map[string]map[string]bool{} // by GitHub token: models whose terms wait
+)
+
+// copilotAccept enables model for the account when its terms still wait.
+// A failure is left to the request, whose answer then says why.
+func copilotAccept(ctx context.Context, app copilotApp, s copilotSession, model string) {
+	if model == "" {
+		return
+	}
+	copilotTermsMu.Lock()
+	waiting, known := copilotTerms[app.Token]
+	copilotTermsMu.Unlock()
+	if !known {
+		// not listed since magpie started; the list says which wait
+		if _, err := copilotModels(ctx, app); err != nil {
+			return
+		}
+		copilotTermsMu.Lock()
+		waiting = copilotTerms[app.Token]
+		copilotTermsMu.Unlock()
+	}
+	if !waiting[model] {
+		return
+	}
+	base := s.Endpoints.API
+	if base == "" {
+		base = copilotBase
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, base+"/models/"+url.PathEscape(model)+"/policy", strings.NewReader(`{"state":"enabled"}`))
+	if err != nil {
+		return
+	}
+	req.Header.Set("Authorization", "Bearer "+s.Token)
+	req.Header.Set("Content-Type", "application/json")
+	for k, v := range s.headers() {
+		req.Header.Set(k, v)
+	}
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return
+	}
+	res.Body.Close()
+	if res.StatusCode/100 == 2 {
+		copilotTermsMu.Lock()
+		delete(copilotTerms[app.Token], model)
+		copilotTermsMu.Unlock()
+	}
+}
+
 // copilotModels asks Copilot which chat models this account may use.
 func copilotModels(ctx context.Context, app copilotApp) ([]catalog.Model, error) {
 	s, err := app.session(ctx)
@@ -984,7 +1048,9 @@ func copilotModels(ctx context.Context, app copilotApp) ([]catalog.Model, error)
 		Data []struct {
 			ID           string   `json:"id"`
 			Name         string   `json:"name"`
+			Vendor       string   `json:"vendor"`
 			Picker       bool     `json:"model_picker_enabled"`
+			Category     string   `json:"model_picker_category"`
 			Endpoints    []string `json:"supported_endpoints"`
 			Capabilities struct {
 				Type     string `json:"type"`
@@ -994,6 +1060,7 @@ func copilotModels(ctx context.Context, app copilotApp) ([]catalog.Model, error)
 			} `json:"capabilities"`
 			Policy *struct {
 				State string `json:"state"`
+				Terms string `json:"terms"`
 			} `json:"policy"`
 		} `json:"data"`
 	}
@@ -1001,19 +1068,30 @@ func copilotModels(ctx context.Context, app copilotApp) ([]catalog.Model, error)
 		return nil, errors.New("Copilot models: " + APIError(b, res.Status))
 	}
 	var out []catalog.Model
+	waiting := map[string]bool{}
 	for _, m := range v.Data {
-		if m.Capabilities.Type != "chat" || copilotInternal.MatchString(m.ID) {
+		if m.Capabilities.Type != "chat" || copilotInternal.MatchString(m.ID) || m.Vendor == "Experimental" {
 			continue
 		}
-		// a model the account has not enabled at github.com answers 403
-		if !m.Picker && (m.Policy == nil || m.Policy.State != "enabled") {
+		// a model no picker offers is an old snapshot or Copilot's own
+		if !m.Picker && m.Category == "" {
 			continue
+		}
+		switch {
+		case m.Policy != nil && m.Policy.State == "enabled", m.Policy == nil && m.Picker:
+		case m.Policy != nil && m.Policy.Terms != "":
+			waiting[m.ID] = true
+		default:
+			continue // not the account's to enable: it answers 403
 		}
 		out = append(out, catalog.Model{ID: m.ID, Name: m.Name, Efforts: m.Capabilities.Supports.Efforts, APIs: copilotAPIs(m.Endpoints)})
 	}
 	if len(out) == 0 {
 		return nil, errors.New("Copilot lists no chat model for this account")
 	}
+	copilotTermsMu.Lock()
+	copilotTerms[app.Token] = waiting
+	copilotTermsMu.Unlock()
 	return out, nil
 }
 
