@@ -455,6 +455,7 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request, from provider.Pro
 	var skipped []string
 	again := 0        // times the last one left has been tried again
 	resealed := false // the conversation's reasoning sealed by another account taken out
+	floored := false  // the reply's length raised to what the provider takes
 	for i := 0; i < len(cands); i++ {
 		c := cands[i]
 		last := i == len(cands)-1
@@ -480,6 +481,16 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request, from provider.Pro
 			if b, ok := withoutReasoning(body); ok {
 				resealed, body = true, b
 				try.Fail = failForeign
+				s.trace.update(tr, func(t *Route) { t.Tries[len(t.Tries)-1] = try })
+				i--
+				continue
+			}
+		}
+		if !floored && !hw.passing && hw.code() == 400 {
+			// asked for fewer tokens than this provider answers with (#64)
+			if b, ok := withTokenFloor(body, tokenFloor(hw.errBody())); ok {
+				floored, body = true, b
+				try.Fail = failFloor
 				s.trace.update(tr, func(t *Route) { t.Tries[len(t.Tries)-1] = try })
 				i--
 				continue

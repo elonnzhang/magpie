@@ -88,6 +88,9 @@ const (
 	// failForeign: the conversation's reasoning was sealed by another
 	// account, and is sent again without it
 	failForeign = "foreign"
+	// failFloor: the request asked for a shorter reply than the provider
+	// gives, and is sent again asking for the least it takes
+	failFloor = "floor"
 )
 
 // failure says why a reply failed.
