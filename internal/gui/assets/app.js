@@ -2036,7 +2036,7 @@ function renderEditor(p, presetID) {
   // more provider of it, under a name and id of its own
   const another = isNew && !!pr?.added;
   draft = draft || (p
-    ? { id: p.id, name: p.name, preset: p.preset, chat: p.chat, responses: p.responses, anthropic: p.anthropic, catalog: p.catalog, key: "", api: p.anthropic && !p.chat ? "anthropic" : "openai", chosen: p.models.filter((m) => m.on).map((m) => m.id), extra: [], headers: headerRows(p.headers), icon: p.icon || "", fallback: [...(p.fallback || [])], unlisted: !!p.unlisted, balanceURL: p.balanceURL || "", balancePath: p.balancePath || "", modelsURL: p.modelsURL || "" }
+    ? { id: p.id, name: p.name, preset: p.preset, chat: p.chat, responses: p.responses, anthropic: p.anthropic, catalog: p.catalog, key: "", api: p.chat ? "openai" : p.anthropic ? "anthropic" : p.responses ? "responses" : "openai", chosen: p.models.filter((m) => m.on).map((m) => m.id), extra: [], headers: headerRows(p.headers), icon: p.icon || "", fallback: [...(p.fallback || [])], unlisted: !!p.unlisted, balanceURL: p.balanceURL || "", balancePath: p.balancePath || "", modelsURL: p.modelsURL || "" }
     : pr
       ? { id: pr.id, name: pr.name, preset: pr.id, key: "", chosen: [], extra: [], headers: [] }
       : { id: "", name: "", preset: "", chat: "", responses: "", anthropic: "", catalog: "", key: "", api: "openai", chosen: [], extra: [], headers: [], icon: "" });
@@ -2083,21 +2083,34 @@ function renderEditor(p, presetID) {
     wrap.append(name, hint);
     ed.append(el("label", "", t("Name")), wrap);
   }
+  let fillEndpoints = () => {};
   if (custom) {
     name = input(draft.name, t("e.g. My Relay"));
     name.oninput = () => { draft.name = name.value; if (isNew) draft.id = slug(name.value); };
     ed.append(...field(t("Name"), name));
 
+    // the base URL is the one the chosen protocol is asked at; a vendor
+    // that serves only the Responses API is added (and tested) with that
+    // alone, since /chat/completions would only fail (#73)
     const seg = el("div", "segs");
-    for (const [v, l, hint] of [["openai", "OpenAI compatible", "…/v1 — chat completions, and responses when the vendor has it"], ["anthropic", "Anthropic compatible", "the root URL, what ANTHROPIC_BASE_URL would take"]]) {
+    for (const [v, l, hint] of [["openai", "OpenAI compatible", "…/v1 — chat completions, and responses when the vendor has it"], ["responses", "OpenAI Responses", "…/v1 — for a vendor that serves only the Responses API, not chat completions"], ["anthropic", "Anthropic compatible", "the root URL, what ANTHROPIC_BASE_URL would take"]]) {
       const b = el("button", "opt" + (draft.api === v ? " on" : ""), t(l));
       b.title = t(hint);
-      b.onclick = () => { draft.api = v; const u = url.value; if (v === "anthropic") { draft.anthropic = u; draft.chat = ""; } else { draft.chat = u; draft.anthropic = ""; } for (const x of seg.querySelectorAll(".opt")) x.classList.toggle("on", x === b); slide(seg, "api"); url.placeholder = v === "anthropic" ? "https://…" : "https://…/v1"; };
+      b.onclick = () => {
+        if (draft.api === v) return;
+        draft[apiField[draft.api]] = "";
+        draft.api = v;
+        draft[apiField[v]] = url.value;
+        for (const x of seg.querySelectorAll(".opt")) x.classList.toggle("on", x === b);
+        slide(seg, "api");
+        url.placeholder = v === "anthropic" ? "https://…" : "https://…/v1";
+        fillEndpoints();
+      };
       seg.append(b);
     }
     queueMicrotask(() => slide(seg, "api"));
-    url = input(draft.api === "anthropic" ? draft.anthropic : draft.chat, draft.api === "anthropic" ? "https://…" : "https://…/v1", "url");
-    url.oninput = () => { if (draft.api === "anthropic") draft.anthropic = url.value; else draft.chat = url.value; };
+    url = input(draft[apiField[draft.api]], draft.api === "anthropic" ? "https://…" : "https://…/v1", "url");
+    url.oninput = () => { draft[apiField[draft.api]] = url.value; };
     const urlWrap = el("div", "stack");
     urlWrap.append(seg, url);
     ed.append(...field("Base URL", urlWrap));
@@ -2233,14 +2246,23 @@ function renderEditor(p, presetID) {
     const more = el("details", "more");
     more.append(el("summary", "", t("More endpoints")));
     const inner = el("div", "inner");
-    const add = (label, key, ph, hint) => {
-      const i = input(draft[key], ph, "url");
-      i.oninput = () => { draft[key] = i.value; };
-      inner.append(...field(t(label), i, t(hint)));
+    // the other protocols' URLs, drawn again when the base URL's changes
+    const eps = el("div");
+    eps.style.display = "contents";
+    fillEndpoints = () => {
+      eps.replaceChildren();
+      const add = (label, key, ph, hint) => {
+        if (apiField[draft.api] === key) return;
+        const i = input(draft[key], ph, "url");
+        i.oninput = () => { draft[key] = i.value; };
+        eps.append(...field(t(label), i, t(hint)));
+      };
+      add("OpenAI URL", "chat", "https://…/v1", "if the vendor also serves chat completions");
+      add("Anthropic URL", "anthropic", "https://…", "if the vendor also serves Anthropic messages");
+      add("Responses URL", "responses", "https://…/v1", "if the vendor serves the OpenAI Responses API (Codex uses it natively)");
     };
-    if (draft.api === "anthropic") add("OpenAI URL", "chat", "https://…/v1", "if the vendor also serves chat completions");
-    else add("Anthropic URL", "anthropic", "https://…", "if the vendor also serves Anthropic messages");
-    add("Responses URL", "responses", "https://…/v1", "if the vendor serves the OpenAI Responses API (Codex uses it natively)");
+    fillEndpoints();
+    inner.append(eps);
     const mu = input(draft.modelsURL, "https://…/v1/models", "url");
     mu.oninput = () => { draft.modelsURL = mu.value; };
     inner.append(...field(t("Models URL"), mu, t("Where the vendor lists its models, when that isn't under the base URL; asked with the key")));
@@ -2282,7 +2304,7 @@ function renderEditor(p, presetID) {
     if (draft.balanceToken) body.balanceToken = draft.balanceToken;
     else if (draft.clearBalanceToken) body.clearBalanceToken = true;
     if (isNew && custom && !body.name) { name.focus(); return editorError(t("Give it a name"), "warn"); }
-    if (isNew && custom && !body.chat && !body.anthropic) { url.focus(); return editorError(t("A base URL is needed"), "warn"); }
+    if (isNew && custom && !body.chat && !body.anthropic && !body.responses) { url.focus(); return editorError(t("A base URL is needed"), "warn"); }
     editorError("");
     saveBtn.classList.add("busy");
     providerAction("save", body, t(isNew ? "{name} added" : "{name} saved", { name: draft.name || draft.id }));
@@ -3251,6 +3273,10 @@ async function keyFingerprint(key) {
     return [...h.slice(0, 5)].map((b) => b.toString(16).padStart(2, "0")).join("");
   } catch { return ""; }
 }
+
+// apiField is the draft's URL a custom provider's base URL fills, by the
+// protocol chosen for it.
+const apiField = { openai: "chat", responses: "responses", anthropic: "anthropic" };
 
 async function providerAction(action, body, okMsg, base = "provider/") {
   try {

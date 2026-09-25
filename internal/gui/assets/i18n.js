@@ -156,6 +156,8 @@ const I18N = {
     "Name": "名称",
     "OpenAI compatible": "OpenAI 兼容",
     "…/v1 — chat completions, and responses when the vendor has it": "…/v1 — chat completions，供应商支持时也含 responses",
+    "OpenAI Responses": "OpenAI Responses",
+    "…/v1 — for a vendor that serves only the Responses API, not chat completions": "…/v1 — 供应商只提供 Responses API、不提供 chat completions 时选这个",
     "Anthropic compatible": "Anthropic 兼容",
     "the root URL, what ANTHROPIC_BASE_URL would take": "根地址，即 ANTHROPIC_BASE_URL 的值",
     "Account": "账号",
