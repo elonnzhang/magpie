@@ -755,10 +755,21 @@ func readAlma(path string) ([]AppImport, error) {
 	return out, nil
 }
 
+// sqlitePath is a file's path as a SQLite URI wants it: slashed, and on
+// Windows with a slash before the drive (file:///C:/…) — without it the
+// drive letter is read as a host, and the open fails.
+func sqlitePath(path string) string {
+	p := filepath.ToSlash(path)
+	if len(p) >= 2 && p[1] == ':' {
+		p = "/" + p
+	}
+	return p
+}
+
 // openReadOnly opens another app's SQLite database without writing to it,
 // waiting out the app's own writes.
 func openReadOnly(path string) (*sql.DB, error) {
-	u := url.URL{Scheme: "file", Path: filepath.ToSlash(path), RawQuery: "mode=ro&_pragma=busy_timeout(3000)"}
+	u := url.URL{Scheme: "file", Path: sqlitePath(path), RawQuery: "mode=ro&_pragma=busy_timeout(3000)"}
 	db, err := sql.Open("sqlite", u.String())
 	if err != nil {
 		return nil, err
