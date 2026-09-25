@@ -125,6 +125,7 @@ type AgentView struct {
 	SkillsAlso   []string `json:"skillsAlso,omitempty"`
 	Note         string   `json:"note,omitempty"`
 	NoSSE        bool     `json:"noSSE,omitempty"`
+	NoRemote     bool     `json:"noRemote,omitempty"`
 	MCPVia       string   `json:"mcpVia,omitempty"`
 }
 
@@ -181,6 +182,7 @@ func Read(problems []Problem) (*View, error) {
 		if t.MCP != nil {
 			av.MCP = t.MCP.Path
 			av.NoSSE = t.MCP.supports(&Server{Transport: "sse"}) != nil
+			av.NoRemote = t.MCP.supports(&Server{Transport: "http"}) != nil
 		}
 		v.Agents = append(v.Agents, av)
 	}

@@ -324,11 +324,24 @@ type Entry struct {
 	Context int `json:"context,omitempty"`
 }
 
-// Catalog lists every exposed model of every ready provider, then the
-// routing groups.
+// Catalog lists the routing groups, then every exposed model of every ready
+// provider not kept unlisted.
 func Catalog() []Entry {
 	entries := providerEntries()
-	return append(entries, groupEntries(entries)...)
+	out := groupEntries(entries)
+	for _, e := range entries {
+		if !e.Provider.Unlisted {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
+// Served is the catalog with the unlisted providers' models as well: every
+// model a routing group can be made of, or a request can name.
+func Served() []Entry {
+	entries := providerEntries()
+	return append(groupEntries(entries), entries...)
 }
 
 // providerEntries is the catalog without its groups.

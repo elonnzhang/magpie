@@ -290,7 +290,7 @@
     if (!iv.agents.length) list.append(el("div", "lib-none", t("None of your agents reads a user-wide instructions file magpie knows.")));
     body.append(list);
     const skip = lib.agents.filter((a) => !a.instructions);
-    if (skip.length) body.append(el("p", "lib-aside", t("{agents} keeps no user-wide instructions file.", { agents: skip.map((a) => a.name).join(", ") })));
+    if (skip.length) body.append(el("p", "lib-aside", t(skip.length > 1 ? "{agents} keep no user-wide instructions file." : "{agents} keeps no user-wide instructions file.", { agents: skip.map((a) => a.name).join(", ") })));
     body.append(bar);
   }
 
@@ -374,7 +374,15 @@
   }
   function quote(a) { return /^[\w@%+=:,./-]+$/.test(a) ? a : "'" + a.replace(/'/g, `'\\''`) + "'"; }
 
-  function sseBlocked(s) { return (a) => (s.transport === "sse" && a.noSSE ? t("{agent} can't reach a server over SSE — only a command or streamable HTTP", { agent: a.name }) : ""); }
+  function sseBlocked(s) {
+    return (a) => {
+      if (remote(s) && a.noRemote) return t("{agent} runs only a command from its settings — add a remote server in its Connectors instead", { agent: a.name });
+      return s.transport === "sse" && a.noSSE ? t("{agent} can't reach a server over SSE — only a command or streamable HTTP", { agent: a.name }) : "";
+    };
+  }
+  // reaches(s) says whether an agent can be given the server
+  const remote = (s) => s.transport === "http" || s.transport === "sse";
+  const reaches = (s) => (a) => !a || (!(remote(s) && a.noRemote) && !(s.transport === "sse" && a.noSSE));
 
   function renderServers(body) {
     body.append(intro(t("Add a server once and switch it on for the agents that should have it — magpie writes it into each one's config in the shape that agent reads.")));
@@ -652,7 +660,7 @@
       let last = null;
       for (const f of found.filter((x) => pick.has(x.name))) {
         try {
-          last = await api("library/servers/save", { old: "", server: { ...f, agents: f.transport === "sse" ? who.filter((id) => !agentOf(id)?.noSSE) : who } });
+          last = await api("library/servers/save", { old: "", server: { ...f, agents: who.filter((id) => reaches(f)(agentOf(id))) } });
         } catch (e) { err.textContent = f.name + ": " + e.message; go.disabled = false; if (last) { lib = last; render(); } return; }
       }
       lib = last;
@@ -1107,7 +1115,7 @@
   // A market server up close: what it is, what it needs, and who gets it.
   function serverSheet(x) {
     const all = mcpAgents();
-    let agents = all.filter((a) => !(x.transport === "sse" && a.noSSE)).map((a) => a.id);
+    let agents = all.filter(reaches(x)).map((a) => a.id);
     const values = {};
     const ed = el("div", "editor lib-editor mk-sheet");
     const head = el("div", "mk-sheethead");

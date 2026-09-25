@@ -547,3 +547,53 @@ func TestPiMCP(t *testing.T) {
 		t.Errorf("supabase written as %v", sb)
 	}
 }
+
+// Claude Desktop is given only the servers it runs itself: a remote one is
+// its Connectors', and the page says so.
+func TestClaudeDesktopMCP(t *testing.T) {
+	h := sandbox(t)
+	if targetByID("claude-desktop") != nil {
+		t.Fatal("Claude Desktop found without its folder")
+	}
+	d, _ := os.UserConfigDir()
+	p := filepath.Join(d, "Claude", "claude_desktop_config.json")
+	if !strings.HasPrefix(p, h) {
+		t.Skip("config dir outside the sandbox: " + p)
+	}
+	write(t, p, `{"globalShortcut": "Alt+Space", "mcpServers": {"mine": {"command": "x"}}}`)
+	tg := targetByID("claude-desktop")
+	if tg == nil || tg.MCP == nil || tg.MCP.Path != p || tg.Instructions != "" || tg.Skills != "" {
+		t.Fatalf("claude-desktop target: %+v", tg)
+	}
+	ok(t)(SaveServer("", Server{Name: "fs", Transport: "stdio", Command: "npx", Args: []string{"-y", "fs"}, Agents: []string{"claude-desktop"}}))
+	if r, err := SaveServer("", Server{Name: "web", Transport: "http", URL: "https://example.com/mcp", Agents: []string{"claude-desktop"}}); err != nil || len(r.Problems) != 1 || r.Problems[0].Error != "no-remote" {
+		t.Fatalf("remote server on Claude Desktop: %+v %v", r, err)
+	}
+	var doc struct {
+		GlobalShortcut string
+		MCPServers     map[string]map[string]any
+	}
+	if err := json.Unmarshal([]byte(read(t, p)), &doc); err != nil {
+		t.Fatal(err)
+	}
+	if fs := doc.MCPServers["fs"]; fs["command"] != "npx" || fs["type"] != nil {
+		t.Errorf("fs written as %v", fs)
+	}
+	if doc.MCPServers["web"] != nil || doc.MCPServers["mine"] == nil || doc.GlobalShortcut != "Alt+Space" {
+		t.Errorf("file: %s", read(t, p))
+	}
+	v, err := Read(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, a := range v.Agents {
+		if a.ID == "claude-desktop" && !a.NoRemote {
+			t.Error("claude-desktop not said to take no remote server")
+		}
+	}
+	for _, s := range v.Servers {
+		if s.Name == "web" && s.Problems["claude-desktop"] != "no-remote" {
+			t.Errorf("web problems: %v", s.Problems)
+		}
+	}
+}

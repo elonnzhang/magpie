@@ -112,9 +112,15 @@ func TestGroupAddSetRemove(t *testing.T) {
 		t.Fatal("group not in the catalog")
 	}
 
-	// the same name again is another group, as in the Routing view
-	if g2, err := addGroup("Opus anywhere", []string{"models=a/only-a"}); err != nil || g2.ID != "opus-anywhere-2" {
+	// the same name again replaces that group, keeping its id
+	if g2, err := addGroup("opus Anywhere", []string{"models=a/only-a"}); err != nil || g2.ID != "opus-anywhere" || strings.Join(g2.Members, " ") != "a/only-a" {
 		t.Fatalf("second: %+v %v", g2, err)
+	}
+	if gs := storedGroups(t); len(gs) != 1 {
+		t.Fatalf("replaced into two: %v", gs)
+	}
+	if _, err := addGroup("Opus anywhere", []string{"models=a/claude-opus-5-5,gpt-5.5", "routing=order", "stays=turn"}); err != nil {
+		t.Fatal(err)
 	}
 	if _, err := addGroup("x", []string{"models=a/m", "id=opus-anywhere"}); err == nil {
 		t.Fatal("an id taken was taken again")
@@ -172,13 +178,16 @@ func TestGroupAddSetRemove(t *testing.T) {
 		t.Fatalf("restore: %+v %v", g, err)
 	}
 
-	if _, err := removeGroup("opus-anywhere-2"); err != nil {
+	if _, err := addGroup("Second", []string{"models=a/only-a"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := findGroup("opus-anywhere-2"); err == nil {
+	if _, err := removeGroup("second"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := findGroup("second"); err == nil {
 		t.Fatal("removed group still there")
 	}
-	if _, err := removeGroup("opus-anywhere-2"); err == nil {
+	if _, err := removeGroup("second"); err == nil {
 		t.Fatal("removed twice")
 	}
 }

@@ -87,6 +87,7 @@ const (
 	fmtCrush
 	fmtGoose
 	fmtPi
+	fmtDesktop
 )
 
 // mcpFile is the file an agent keeps its user-wide MCP servers in.
@@ -110,11 +111,18 @@ func (f *mcpFile) key() string {
 
 // supports says why the agent can't reach a server, or nil when it can.
 func (f *mcpFile) supports(s *Server) error {
+	if f.Format == fmtDesktop && s.Remote() {
+		return errNoRemote
+	}
 	if s.Transport == "sse" && (f.Format == fmtCodex || f.Format == fmtGoose) {
 		return errNoSSE
 	}
 	return nil
 }
+
+// errNoRemote is what the page says of an app that reaches only a server
+// it runs itself (Claude Desktop, whose remote ones are its Connectors).
+var errNoRemote = errors.New("no-remote")
 
 // errNoSSE is what the page says of an agent that can't reach a server
 // over SSE (Codex, Goose).
@@ -207,7 +215,7 @@ func (f *mcpFile) encode(s *Server) ordered {
 			optional("environment", s.Env)
 		}
 		add("enabled", true)
-	case fmtCursor:
+	case fmtCursor, fmtDesktop:
 		if s.Remote() {
 			add("url", s.URL)
 			optional("headers", s.Headers)
@@ -426,6 +434,7 @@ var owned = map[mcpFormat][]string{
 	fmtCopilot:  {"type", "url", "headers", "command", "args", "env"},
 	fmtGoose:    {"enabled", "name", "type", "uri", "headers", "cmd", "args", "envs"},
 	fmtCodex:    {"url", "http_headers", "command", "args", "env"},
+	fmtDesktop:  {"url", "headers", "command", "args", "env"},
 	fmtPi:       {"transport", "httpTransport", "url", "headers", "command", "args", "env"},
 }
 

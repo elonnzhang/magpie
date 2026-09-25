@@ -18,7 +18,8 @@ const groupUsage = `usage:
   magpie groups                           list routing groups: yours, then those magpie found
   magpie group <id>                       show one group and its models (also: magpie group show <id>)
   magpie group add <name> models=<m1>[,m2…] [routing=…] [stays=…]
-                                          make a group; agents pick it as group/<id>, the id made from the name
+                                          make a group; agents pick it as group/<id>, the id made from the name;
+                                          a name in use replaces that group
   magpie group set <id> k=v…              change one: name, models (the whole list, in order),
                                           models+=<m> (append), models-=<m> (drop), routing, stays
   magpie group rm <id>                    remove a group (one magpie found is hidden instead)
@@ -113,7 +114,7 @@ func splitList(v string) []string {
 func memberResolver(keep []string) func(string) (string, error) {
 	var ids []string
 	byModel := map[string][]string{}
-	for _, e := range provider.Catalog() {
+	for _, e := range provider.Served() {
 		if e.Group != "" {
 			continue
 		}
@@ -329,11 +330,17 @@ func groupCmd(args []string) error {
 		if len(rest) == 0 || strings.Contains(rest[0], "=") {
 			return fmt.Errorf("magpie group add <name> models=<m1>[,m2…] [routing=…] [stays=…]\n\n%s", groupUsage)
 		}
+		verb := "added"
+		if slices.ContainsFunc(provider.Groups(), func(o provider.Group) bool {
+			return !o.Hidden && strings.EqualFold(o.Name, strings.TrimSpace(rest[0])) && !slices.ContainsFunc(rest[1:], func(kv string) bool { return strings.HasPrefix(kv, "id=") })
+		}) {
+			verb = "replaced"
+		}
 		g, err := addGroup(rest[0], rest[1:])
 		if err != nil {
 			return err
 		}
-		fmt.Println(green.Render("✓"), "added", bold.Render(g.Name), muted.Render("· agents pick it as "+provider.GroupPrefix+g.ID))
+		fmt.Println(green.Render("✓"), verb, bold.Render(g.Name), muted.Render("· agents pick it as "+provider.GroupPrefix+g.ID))
 		return showGroup(g)
 	case "set", "edit":
 		if len(rest) < 2 {
@@ -399,7 +406,15 @@ func addGroup(name string, pairs []string) (provider.Group, error) {
 			return g, fmt.Errorf("there is a group %s already: magpie group set %s k=v… changes it", g.ID, g.ID)
 		}
 	} else {
+		// a group is known by its name: adding one under a name taken
+		// replaces that group (its id stays), rather than making name-2
 		g.ID = newGroupID(g.Name)
+		for _, o := range provider.Groups() {
+			if !o.Hidden && strings.EqualFold(o.Name, g.Name) {
+				g.ID = o.ID
+				break
+			}
+		}
 	}
 	if strings.TrimSpace(g.Name) == "" {
 		g.Name = g.ID
@@ -488,7 +503,7 @@ func memberLabel(id string, names map[string]provider.Entry) (string, bool) {
 
 func catalogByID() map[string]provider.Entry {
 	out := map[string]provider.Entry{}
-	for _, e := range provider.Catalog() {
+	for _, e := range provider.Served() {
 		if e.Group == "" {
 			out[e.ID] = e
 		}

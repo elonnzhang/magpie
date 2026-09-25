@@ -30,6 +30,7 @@ const providerUsage = `usage:
   magpie provider icon <id> <file|name>   give a custom provider a picture (PNG, JPEG, SVG…) or a built-in icon
   magpie provider fallback <id> <provider/model>…   where requests go when it's out of quota or down (none clears)
   magpie provider models <id> [ids…]      fetch the vendor's model list, or choose which models to expose
+  magpie provider listed <id> yes|no      no: its models serve only through routing groups, not in the list
   magpie provider test <id>               send a tiny request through each endpoint
   magpie provider rm <id>                 remove a provider
 
@@ -299,6 +300,26 @@ func providerCmd(args []string) error {
 		}
 		if !ok {
 			os.Exit(1)
+		}
+		return nil
+	case "listed":
+		// no: the provider's models leave the list agents see and serve
+		// only through the routing groups they are in
+		if len(rest) != 2 || (rest[1] != "yes" && rest[1] != "no") {
+			return fmt.Errorf("magpie provider listed <id> yes|no")
+		}
+		p, err := provider.Find(rest[0])
+		if err != nil {
+			return err
+		}
+		p.Unlisted = rest[1] == "no"
+		if err := provider.Save(*p); err != nil {
+			return err
+		}
+		if p.Unlisted {
+			fmt.Println(green.Render("✓"), p.Name, muted.Render("serves only through routing groups"))
+		} else {
+			fmt.Println(green.Render("✓"), p.Name, muted.Render("its models are listed"))
 		}
 		return nil
 	case "models":

@@ -55,6 +55,7 @@ type providerJSON struct {
 	Affinity  string             `json:"affinity"` // how long a conversation stays with who answered it
 	Models    []modelJSON        `json:"models"`   // everything the vendor lists, exposed ones flagged
 	Exposed   int                `json:"exposed"`  // how many reach the agents
+	Unlisted  bool               `json:"unlisted"` // its models serve only through routing groups
 	Fetched   string             `json:"fetched"`  // "3h ago" when the list came from the vendor
 	Agents    []providerAgent    `json:"agents"`   // detected agents, current ones flagged
 	Sponsored bool               `json:"sponsored"`
@@ -144,7 +145,7 @@ func providerInfo(p provider.Provider, agents []*agent.Agent) providerJSON {
 		Catalog: p.Catalog, Website: p.Website, KeysURL: p.KeysURL,
 		Headers: p.Headers, BalanceURL: p.BalanceURL, BalancePath: p.BalancePath,
 		Ready: p.Ready(), Chosen: p.Models, Models: []modelJSON{}, Agents: []providerAgent{},
-		Fallback: p.Fallback, Routing: p.Routing, Affinity: p.Affinity,
+		Fallback: p.Fallback, Routing: p.Routing, Affinity: p.Affinity, Unlisted: p.Unlisted,
 	}
 	if out.Fallback == nil {
 		out.Fallback = []string{}
@@ -418,6 +419,12 @@ func providerRoutes(mux *http.ServeMux, w Windows, gw *gateway.Server) {
 				Provider providerJSON      `json:"provider"`
 			}{p.Test(ctx), providerInfo(*p, agent.Detected())})
 			return
+		case "unfetch":
+			// the vendor's list, forgotten until the next Refresh
+			if err := catalog.SaveLive(in.ID, "", nil); err != nil {
+				fail(rw, err)
+				return
+			}
 		case "models":
 			p, err := provider.Find(in.ID)
 			if err != nil {

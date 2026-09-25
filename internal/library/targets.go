@@ -116,17 +116,36 @@ func targetOf(a *agent.Agent) *Target {
 		t.MCP = &mcpFile{Path: a.Path, Format: fmtCrush}
 		t.Skills = filepath.Join(filepath.Dir(a.Path), "skills")
 		t.SkillsAlso = []string{"claude"}
+	case "claude-desktop":
+		// Claude Desktop reads only commands from its file: a remote server
+		// is added in its own Connectors settings
+		t.MCP = &mcpFile{Path: filepath.Join(filepath.Dir(a.Path), "claude_desktop_config.json"), Format: fmtDesktop}
 	default:
 		return nil
 	}
 	return t
 }
 
+// apps are what the library can give MCP servers to that aren't agents
+// magpie sets up: known by the folder they keep their settings in.
+func apps() []*agent.Agent {
+	d, err := os.UserConfigDir()
+	if err != nil {
+		return nil
+	}
+	return []*agent.Agent{
+		{ID: "claude-desktop", Name: "Claude Desktop", Icon: "claude-color", Dir: filepath.Join(d, "Claude"), Path: filepath.Join(d, "Claude", "claude_desktop_config.json")},
+	}
+}
+
 // Targets are the agents on this machine that magpie can give any of the
 // three to, in the order the rest of magpie lists them.
 func Targets() []*Target {
 	var out []*Target
-	for _, a := range agent.Detected() {
+	for _, a := range append(agent.Detected(), apps()...) {
+		if !a.Detected() {
+			continue
+		}
 		if t := targetOf(a); t != nil {
 			out = append(out, t)
 		}

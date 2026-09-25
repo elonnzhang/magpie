@@ -111,7 +111,7 @@ func isCatalogID(model string) bool {
 	if !strings.Contains(model, "/") {
 		return false
 	}
-	for _, e := range provider.Catalog() {
+	for _, e := range provider.Served() {
 		if e.ID == model {
 			return true
 		}
