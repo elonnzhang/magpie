@@ -1,11 +1,11 @@
 package netproxy
 
-import "os/exec"
+import "github.com/yetone/magpie/internal/proc"
 
 // system reads what System Settings → Network → Proxies says, through
 // scutil (the same dictionary CFNetwork uses).
 func system() Proxy {
-	out, err := exec.Command("scutil", "--proxy").Output()
+	out, err := proc.Command("scutil", "--proxy").Output()
 	if err != nil {
 		return Proxy{}
 	}

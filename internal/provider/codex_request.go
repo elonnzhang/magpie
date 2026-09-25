@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"runtime"
@@ -18,6 +17,7 @@ import (
 
 	"github.com/yetone/magpie/internal/catalog"
 	"github.com/yetone/magpie/internal/codexcat"
+	"github.com/yetone/magpie/internal/proc"
 )
 
 // A ChatGPT account's requests are made the way Codex CLI makes them, as
@@ -89,7 +89,7 @@ func codexOS() string {
 	run := func(name string, args ...string) string {
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()
-		out, _ := exec.CommandContext(ctx, name, args...).Output()
+		out, _ := proc.CommandContext(ctx, name, args...).Output()
 		return versionRE.FindString(string(out))
 	}
 	three := func(v string) string {

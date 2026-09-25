@@ -38,6 +38,7 @@ import (
 	"time"
 
 	"github.com/yetone/magpie/internal/netproxy"
+	"github.com/yetone/magpie/internal/proc"
 	"github.com/yetone/magpie/internal/provider"
 )
 
@@ -172,7 +173,7 @@ func (b *subscriptionBridge) start(ctx context.Context, req *Request, model, oau
 		"magpie": map[string]any{"command": exe, "args": []string{"claude-mcp-helper", callback, toolsPath}},
 	}})
 	args := claudeCLIArgs(model, string(mcpConfig), req.Effort)
-	cmd := exec.CommandContext(context.Background(), binary, args...)
+	cmd := proc.CommandContext(context.Background(), binary, args...)
 	cmd.Dir = tmp
 	cmd.Env = netproxy.Env(cleanClaudeEnv(os.Environ()))
 	if oauth != "" {

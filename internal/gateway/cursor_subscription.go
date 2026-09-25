@@ -21,7 +21,6 @@ import (
 	"errors"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -29,6 +28,7 @@ import (
 	"time"
 
 	"github.com/yetone/magpie/internal/netproxy"
+	"github.com/yetone/magpie/internal/proc"
 	"github.com/yetone/magpie/internal/provider"
 )
 
@@ -92,7 +92,7 @@ func (b *subscriptionBridge) startCursor(ctx context.Context, req *Request, mode
 	if len(tools) > 0 {
 		args = append(args, "--approve-mcps")
 	}
-	cmd := exec.CommandContext(context.Background(), binary, args...)
+	cmd := proc.CommandContext(context.Background(), binary, args...)
 	cmd.Dir = ws
 	cmd.Env = netproxy.Env(cursorEnv(os.Environ(), home))
 	stdin, err := cmd.StdinPipe()

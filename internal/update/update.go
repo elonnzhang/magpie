@@ -19,13 +19,14 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/yetone/magpie/internal/proc"
 )
 
 // Site is magpie's home; its /api/latest is the update feed.
@@ -213,7 +214,7 @@ func Stage(ctx context.Context, rel *Release, bundle string) (string, error) {
 		return "", err
 	}
 	out := filepath.Join(dir, "app")
-	if b, err := exec.CommandContext(ctx, "ditto", "-x", "-k", zip, out).CombinedOutput(); err != nil {
+	if b, err := proc.CommandContext(ctx, "ditto", "-x", "-k", zip, out).CombinedOutput(); err != nil {
 		os.RemoveAll(dir)
 		return "", fmt.Errorf("unzip: %v: %s", err, b)
 	}
@@ -229,7 +230,7 @@ func Stage(ctx context.Context, rel *Release, bundle string) (string, error) {
 // sameSigner accepts app only if its signature is intact and made by the
 // team that signed the bundle it replaces.
 func sameSigner(ctx context.Context, bundle, app string) error {
-	if b, err := exec.CommandContext(ctx, "codesign", "--verify", "--deep", "--strict", app).CombinedOutput(); err != nil {
+	if b, err := proc.CommandContext(ctx, "codesign", "--verify", "--deep", "--strict", app).CombinedOutput(); err != nil {
 		return fmt.Errorf("the downloaded app's signature is broken: %s", strings.TrimSpace(string(b)))
 	}
 	want, got := team(ctx, bundle), team(ctx, app)
@@ -240,7 +241,7 @@ func sameSigner(ctx context.Context, bundle, app string) error {
 }
 
 func team(ctx context.Context, app string) string {
-	b, _ := exec.CommandContext(ctx, "codesign", "-dv", app).CombinedOutput()
+	b, _ := proc.CommandContext(ctx, "codesign", "-dv", app).CombinedOutput()
 	for _, l := range strings.Split(string(b), "\n") {
 		if v, ok := strings.CutPrefix(l, "TeamIdentifier="); ok && v != "not set" {
 			return v
@@ -293,7 +294,7 @@ func InstallAsAdmin(staged, bundle string) error {
 // Relaunch opens bundle again once this process (pid) has exited.
 func Relaunch(bundle string) error {
 	script := fmt.Sprintf(`while kill -0 %d 2>/dev/null; do sleep 0.2; done; open %q`, os.Getpid(), bundle)
-	cmd := exec.Command("/bin/sh", "-c", script)
+	cmd := proc.Command("/bin/sh", "-c", script)
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = nil, nil, nil
 	return cmd.Start()
 }
@@ -378,7 +379,7 @@ func InstallBinaryAsAdmin(staged, exe string) error {
 // for this one to exit before it takes the gateway's port; see
 // AwaitPredecessor.
 func RelaunchBinary(exe string) error {
-	cmd := exec.Command(exe, "tray")
+	cmd := proc.Command(exe, "tray")
 	cmd.Env = append(os.Environ(), "MAGPIE_REPLACES="+strconv.Itoa(os.Getpid()))
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = nil, nil, nil
 	detach(cmd)

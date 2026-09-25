@@ -14,7 +14,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"runtime"
@@ -22,6 +21,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/yetone/magpie/internal/proc"
 )
 
 var (
@@ -63,7 +64,7 @@ func claudeClaimedVersion() string {
 	}
 	claudeVersionAt = time.Now()
 	if path := claudeExecutable(); path != "" {
-		if out, err := exec.Command(path, "--version").Output(); err == nil {
+		if out, err := proc.Command(path, "--version").Output(); err == nil {
 			if installed := claudeSemverRE.FindString(string(out)); installed != "" && compareClaudeVersion(installed, claudeVersionFloor) > 0 {
 				claudeVersion = installed
 			} else {

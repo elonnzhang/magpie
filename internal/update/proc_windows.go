@@ -24,7 +24,11 @@ func alive(pid int) bool {
 }
 
 // detach starts a relaunched magpie outside this one's console, so it
-// outlives it.
+// outlives it. It gets no console at all, so Windows ignores the
+// CREATE_NO_WINDOW proc may have set.
 func detach(cmd *exec.Cmd) {
-	cmd.SysProcAttr = &syscall.SysProcAttr{CreationFlags: detachedProc | newProcGroup}
+	if cmd.SysProcAttr == nil {
+		cmd.SysProcAttr = &syscall.SysProcAttr{}
+	}
+	cmd.SysProcAttr.CreationFlags |= detachedProc | newProcGroup
 }

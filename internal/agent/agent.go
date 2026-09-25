@@ -9,6 +9,8 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+
+	"github.com/yetone/magpie/internal/proc"
 )
 
 // Option is one value the picker offers for a field.
@@ -68,7 +70,7 @@ func Running(patterns ...string) bool {
 		return false
 	}
 	for _, pat := range patterns {
-		if err := exec.Command("pgrep", "-f", pat).Run(); err == nil {
+		if err := proc.Command("pgrep", "-f", pat).Run(); err == nil {
 			return true
 		}
 	}

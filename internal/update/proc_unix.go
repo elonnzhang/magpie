@@ -20,4 +20,9 @@ func alive(pid int) bool {
 
 // detach keeps a relaunched magpie out of this one's process group, so it
 // outlives it.
-func detach(cmd *exec.Cmd) { cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true} }
+func detach(cmd *exec.Cmd) {
+	if cmd.SysProcAttr == nil {
+		cmd.SysProcAttr = &syscall.SysProcAttr{}
+	}
+	cmd.SysProcAttr.Setsid = true
+}

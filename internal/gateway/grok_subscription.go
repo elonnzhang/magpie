@@ -22,7 +22,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -31,6 +30,7 @@ import (
 	"time"
 
 	"github.com/yetone/magpie/internal/netproxy"
+	"github.com/yetone/magpie/internal/proc"
 	"github.com/yetone/magpie/internal/provider"
 )
 
@@ -82,7 +82,7 @@ func (b *subscriptionBridge) startGrok(ctx context.Context, req *Request, model,
 	// only the ways to the magpie server's tools: no shell, files or web
 	args := []string{"--prompt-file", promptPath, "--output-format", "streaming-messages-json", "--include-partial-messages",
 		"-m", model, "--tools", "search_tool,use_tool", "--disable-web-search", "--no-subagents", "--no-plan"}
-	cmd := exec.CommandContext(context.Background(), binary, args...)
+	cmd := proc.CommandContext(context.Background(), binary, args...)
 	cmd.Dir = ws
 	cmd.Env = netproxy.Env(append(grokEnv(os.Environ(), home, auth), "MAGPIE_MCP_CALLBACK="+callback, "MAGPIE_MCP_TOOLS="+toolsPath))
 	stdout, err := cmd.StdoutPipe()
@@ -172,7 +172,7 @@ func grokHome(exe, binary, auth, userHome string) (string, error) {
 	_ = os.Remove(filepath.Join(dir, "auth.json"))
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, binary, "login")
+	cmd := proc.CommandContext(ctx, binary, "login")
 	cmd.Dir = home
 	cmd.Env = netproxy.Env(grokEnv(os.Environ(), home, auth))
 	out, err := cmd.CombinedOutput()

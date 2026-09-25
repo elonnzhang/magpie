@@ -23,7 +23,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -32,6 +31,7 @@ import (
 	"time"
 
 	"github.com/yetone/magpie/internal/netproxy"
+	"github.com/yetone/magpie/internal/proc"
 	"github.com/yetone/magpie/internal/provider"
 )
 
@@ -81,7 +81,7 @@ func (b *subscriptionBridge) startDevin(ctx context.Context, req *Request, model
 		return nil, nil, err
 	}
 
-	cmd := exec.CommandContext(context.Background(), binary, "acp", "--model", model)
+	cmd := proc.CommandContext(context.Background(), binary, "acp", "--model", model)
 	cmd.Dir = ws
 	cmd.Env = netproxy.Env(devinEnv(os.Environ(), home))
 	stdin, err := cmd.StdinPipe()

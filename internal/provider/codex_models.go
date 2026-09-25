@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/yetone/magpie/internal/catalog"
+	"github.com/yetone/magpie/internal/proc"
 )
 
 // codexClientVersion is the Codex CLI version the models list is asked for
@@ -89,7 +90,7 @@ func codexVersion() string {
 	}
 	if exe := codexExecutable(); exe != "" {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		if out, err := exec.CommandContext(ctx, exe, "--version").Output(); err == nil {
+		if out, err := proc.CommandContext(ctx, exe, "--version").Output(); err == nil {
 			newer(string(out)) // "codex-cli 0.155.1"
 		}
 		cancel()

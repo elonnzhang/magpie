@@ -29,6 +29,7 @@ import (
 	"time"
 
 	"github.com/yetone/magpie/internal/catalog"
+	"github.com/yetone/magpie/internal/proc"
 )
 
 // Account is the signed-in agent behind a provider.
@@ -250,7 +251,7 @@ func readClaudeCredential() (claudeCredentials, claudeCredentialLocation, bool) 
 	if !claudeKeychain {
 		return claudeCredentials{}, claudeCredentialLocation{}, false
 	}
-	out, err := exec.Command("security", "find-generic-password", "-s", "Claude Code-credentials", "-w").Output()
+	out, err := proc.Command("security", "find-generic-password", "-s", "Claude Code-credentials", "-w").Output()
 	if err != nil {
 		return claudeCredentials{}, claudeCredentialLocation{}, false
 	}
@@ -297,7 +298,7 @@ func saveClaudeCredential(loc claudeCredentialLocation, c claudeCredentials) err
 			args = append(args, "-a", loc.account)
 		}
 		args = append(args, "-w", string(b))
-		if out, err := exec.Command("security", args...).CombinedOutput(); err != nil {
+		if out, err := proc.Command("security", args...).CombinedOutput(); err != nil {
 			return fmt.Errorf("save Claude Code credentials: %v: %s", err, strings.TrimSpace(string(out)))
 		}
 	}
@@ -341,7 +342,7 @@ func claudeIdentity() (user, plan string, signedOut bool) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	// signed out, `claude auth status` exits 1 but still prints the JSON
-	out, _ := exec.CommandContext(ctx, path, "auth", "status", "--json").Output()
+	out, _ := proc.CommandContext(ctx, path, "auth", "status", "--json").Output()
 	var status struct {
 		LoggedIn         *bool  `json:"loggedIn"`
 		Email            string `json:"email"`

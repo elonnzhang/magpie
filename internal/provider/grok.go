@@ -23,6 +23,7 @@ import (
 
 	"github.com/yetone/magpie/internal/catalog"
 	"github.com/yetone/magpie/internal/netproxy"
+	"github.com/yetone/magpie/internal/proc"
 )
 
 // GrokExecutable finds the Grok Build CLI; a var so tests can fake it.
@@ -124,7 +125,7 @@ func grokModels(ctx context.Context, home string) ([]catalog.Model, error) {
 	}
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, path, "models")
+	cmd := proc.CommandContext(ctx, path, "models")
 	cmd.Dir, _ = os.UserHomeDir()
 	cmd.Env = netproxy.Env(grokOwnEnv(os.Environ(), home))
 	out, err := cmd.Output()
@@ -174,7 +175,7 @@ func grokAccessToken(home, binary string, expired bool) (grokCredential, error) 
 	if ok && (expired || time.Until(c.ExpiresAt) < grokRefreshMargin) && binary != "" {
 		grokRefresh.Lock()
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		cmd := exec.CommandContext(ctx, binary, "models")
+		cmd := proc.CommandContext(ctx, binary, "models")
 		cmd.Dir = filepath.Dir(home)
 		cmd.Env = netproxy.Env(grokOwnEnv(os.Environ(), home))
 		_ = cmd.Run()
@@ -236,7 +237,7 @@ func startGrokSignIn(s *signInFlow) error {
 
 // agentCommand runs an agent's CLI with magpie's proxy.
 func agentCommand(ctx context.Context, path string, args ...string) *exec.Cmd {
-	cmd := exec.CommandContext(ctx, path, args...)
+	cmd := proc.CommandContext(ctx, path, args...)
 	cmd.Env = netproxy.Env(nil)
 	return cmd
 }
@@ -248,7 +249,7 @@ func agentCommand(ctx context.Context, path string, args ...string) *exec.Cmd {
 // finish left behind.
 func runCLISignIn(s *signInFlow, what string, env []string, using bool, failed func(), identity func() (user, plan string, ok bool), path string, args ...string) error {
 	ctx, cancel := context.WithCancel(context.Background())
-	cmd := exec.CommandContext(ctx, path, args...)
+	cmd := proc.CommandContext(ctx, path, args...)
 	cmd.Dir, _ = os.UserHomeDir()
 	cmd.Env = netproxy.Env(env)
 	out, err := cmd.StdoutPipe()

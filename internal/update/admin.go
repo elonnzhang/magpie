@@ -7,6 +7,8 @@ import (
 	"runtime"
 	"strings"
 	"syscall"
+
+	"github.com/yetone/magpie/internal/proc"
 )
 
 // ErrCanceled is the administrator's password prompt dismissed.
@@ -46,7 +48,7 @@ func Stuck(bundle string) string {
 
 // run runs a command as administrator; a test stands in for it.
 var run = func(name string, args ...string) ([]byte, error) {
-	return exec.Command(name, args...).CombinedOutput()
+	return proc.Command(name, args...).CombinedOutput()
 }
 
 // asAdmin runs a shell script as root, after the system's password prompt.

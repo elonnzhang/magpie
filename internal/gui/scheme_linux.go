@@ -2,9 +2,10 @@ package gui
 
 import (
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/yetone/magpie/internal/proc"
 )
 
 // registerScheme makes magpie:// links open this executable: a desktop
@@ -41,6 +42,6 @@ Terminal=false
 	if err := os.WriteFile(path, []byte(entry), 0o644); err != nil {
 		return err
 	}
-	_ = exec.Command("update-desktop-database", dir).Run()
-	return exec.Command("xdg-mime", "default", "magpie.desktop", "x-scheme-handler/magpie").Run()
+	_ = proc.Command("update-desktop-database", dir).Run()
+	return proc.Command("xdg-mime", "default", "magpie.desktop", "x-scheme-handler/magpie").Run()
 }

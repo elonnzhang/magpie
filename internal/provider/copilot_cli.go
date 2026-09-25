@@ -21,6 +21,8 @@ import (
 	"time"
 
 	"github.com/tidwall/jsonc"
+
+	"github.com/yetone/magpie/internal/proc"
 )
 
 // copilotCLIHeaders are what the CLI sends with its token.
@@ -109,10 +111,10 @@ var copilotCLISecret = func(account string) string {
 	var out []byte
 	switch runtime.GOOS {
 	case "darwin":
-		out, _ = exec.Command("security", "find-generic-password", "-s", "copilot-cli", "-a", account, "-w").Output()
+		out, _ = proc.Command("security", "find-generic-password", "-s", "copilot-cli", "-a", account, "-w").Output()
 	case "linux":
 		if p, err := exec.LookPath("secret-tool"); err == nil {
-			out, _ = exec.Command(p, "lookup", "service", "copilot-cli", "account", account).Output()
+			out, _ = proc.Command(p, "lookup", "service", "copilot-cli", "account", account).Output()
 		}
 	}
 	c.at[account], c.tok[account] = time.Now(), string(bytes.TrimSpace(out))
