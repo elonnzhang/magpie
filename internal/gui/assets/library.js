@@ -71,6 +71,8 @@
     return b;
   }
   function fileManager() { return /^Mac/.test(navigator.platform) ? "Finder" : /^Win/.test(navigator.platform) ? "Explorer" : t("the file manager"); }
+  // the app's webview opens no new windows: a link goes to the system browser
+  function browse(u) { api("open", { url: u }).catch((e) => status(e.message, "err")); }
   function reveal(p) { api("library/reveal", { path: p }).catch((e) => status(e.message, "err")); }
 
   // A switch: on or off, nothing between.
@@ -819,9 +821,7 @@
       if (s.kind === "github") {
         const a = el("a", "lib-srclink", s.source.replace(/^https:\/\/github\.com\//, ""));
         a.href = s.source;
-        a.target = "_blank";
-        a.rel = "noopener";
-        a.onclick = (e) => e.stopPropagation();
+        a.onclick = (e) => { e.preventDefault(); e.stopPropagation(); browse(s.source); };
         src.append(a);
       } else {
         src.append(el("span", "", t("linked from")), pathLink(s.source));
@@ -1163,10 +1163,8 @@
   function extLink(href, text) {
     const a = el("a", "mk-ext");
     a.href = href;
-    a.target = "_blank";
-    a.rel = "noopener";
     a.append(el("span", "", text), svg(GLYPH.out, 11, 1.5));
-    a.onclick = (e) => e.stopPropagation();
+    a.onclick = (e) => { e.preventDefault(); e.stopPropagation(); browse(href); };
     return a;
   }
 

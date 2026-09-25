@@ -294,20 +294,21 @@ func expand(p string) string {
 }
 
 // tarballURL is where GitHub hands out a repository's files; a variable
-// for tests.
+// for tests. It is codeload, what github.com's own "Download ZIP" uses,
+// rather than the API's /tarball: the API allows 60 requests an hour to an
+// address without a token, which a few installs, or a network shared with
+// others, used up.
 var tarballURL = func(repo, ref string) string {
-	u := "https://api.github.com/repos/" + repo + "/tarball"
-	if ref != "" {
-		u += "/" + url.PathEscape(ref)
+	if ref == "" {
+		ref = "HEAD"
 	}
-	return u
+	return "https://codeload.github.com/" + repo + "/tar.gz/" + url.PathEscape(ref)
 }
 
 // fetch downloads the repository into a new folder and gives it back.
 func fetch(src Source) (string, error) {
 	req, _ := http.NewRequest("GET", tarballURL(src.Repo, src.Ref), nil)
 	req.Header.Set("User-Agent", "magpie")
-	req.Header.Set("Accept", "application/vnd.github+json")
 	c := &http.Client{Timeout: 2 * time.Minute}
 	resp, err := c.Do(req)
 	if err != nil {
