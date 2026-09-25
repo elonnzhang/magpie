@@ -193,6 +193,16 @@ function renderAgents() {
       b.onclick = (ev) => openPicker(a, f, b, ev);
       fields.append(b);
     }
+    // a folded one says why it is there and gives its way back in words,
+    // rather than a greyed row whose way back is its menu
+    if (inFold) {
+      const back = el("button", "ag-show");
+      back.type = "button";
+      back.title = t(isHidden(a) ? "Hidden by you · show it in the list again" : "Nothing is set on it · show it in the list");
+      back.append(svg(EYE, 12, 1.5), el("span", "", t("Show")));
+      back.onclick = (e) => { e.stopPropagation(); setAgentHidden(a, false); };
+      who.append(back);
+    }
     row.append(agentHandle(a, row, inFold), who, fields);
     return row;
   };
@@ -208,11 +218,21 @@ function renderAgents() {
     const inner = el("div", "agent-fold-inner");
     inner.inert = !showAllAgents;
     fold.style.setProperty("--n", folded.length);
-    folded.forEach((a, i) => {
-      const row = agentRow(a, true);
-      row.style.setProperty("--i", i);
-      inner.append(row);
-    });
+    // the ones hidden by hand, then the ones nothing is set on, each under
+    // a line that says which they are
+    const byHand = folded.filter(isHidden), unset = folded.filter((a) => !isHidden(a));
+    let i = 0;
+    for (const [group, cap] of [[byHand, "Hidden"], [unset, "Not set up"]]) {
+      if (!group.length) continue;
+      const c = el("div", "agent-fold-cap", t(cap));
+      c.style.setProperty("--i", i);
+      inner.append(c);
+      for (const a of group) {
+        const row = agentRow(a, true);
+        row.style.setProperty("--i", i++);
+        inner.append(row);
+      }
+    }
     fold.append(inner);
     const more = el("button", "agent-more");
     const label = el("span", "", "");
@@ -220,9 +240,11 @@ function renderAgents() {
     chev.append(svg(CHEV, 10, 1.8));
     more.append(label, chev);
     const labelFor = () => {
-      // only the ones put away by hand: "N hidden"; else nothing set on them
-      const byHand = folded.every((a) => (state.settings.agentsHidden || []).includes(a.id));
-      label.textContent = showAllAgents ? t("Show less") : t(byHand ? "{n} hidden" : "Show {n} more", { n: folded.length });
+      // what is folded, and how many of them were hidden by hand
+      label.textContent = showAllAgents ? t("Show less")
+        : !unset.length ? t("{n} hidden agents", { n: byHand.length })
+        : byHand.length ? t("Show {n} more ({h} hidden)", { n: folded.length, h: byHand.length })
+        : t("Show {n} more", { n: folded.length });
       more.setAttribute("aria-expanded", String(showAllAgents));
     };
     labelFor();
@@ -281,6 +303,7 @@ function renderAgents() {
 let agentsGlide = null; // how the panel's edge moves after the next render
 
 const agentUsed = (a) => a.fields.some((f) => f.value);
+const isHidden = (a) => (state.settings?.agentsHidden || []).includes(a.id);
 
 // arrangeAgents: the rows in view, in order, and the folded rest. Folded is
 // what was hidden by hand, and what nothing is set on — noise in a picker —
@@ -333,11 +356,13 @@ function setAgentHidden(a, hide) {
   // the rows that change go on the panel's edge, as the fold does
   agentsGlide = hide ? ROLLUP : UNROLL;
   saveArrangement(all.map((x) => x.id), hidden, shown);
-  status(t(hide ? "{agent} hidden" : "{agent} shown", { agent: a.name }), "ok", 1800);
+  // hidden, it says where it went, since the row goes out of sight
+  status(t(hide ? "{agent} hidden · find it under Hidden at the bottom" : "{agent} shown", { agent: a.name }), "ok", hide ? 4000 : 1800);
 }
 
 const ALT = /^Mac/.test(navigator.platform) ? "⌥" : "Alt+";
 const GRIP = "M6 4h.01M10 4h.01M6 8h.01M10 8h.01M6 12h.01M10 12h.01";
+const EYE = "M1.75 8S4.25 3.5 8 3.5 14.25 8 14.25 8 11.75 12.5 8 12.5 1.75 8 1.75 8ZM8 9.75a1.75 1.75 0 1 0 0-3.5 1.75 1.75 0 0 0 0 3.5Z";
 
 // agentHandle is the row's logo, which is also its handle: drag it to move
 // the row, click it (or right-click the row) for Move up, Move down and
@@ -347,7 +372,7 @@ function agentHandle(a, row, inFold) {
   b.type = "button";
   b.setAttribute("aria-label", t("Arrange {agent}", { agent: a.name }));
   b.setAttribute("aria-haspopup", "menu");
-  b.title = inFold ? t("Show {agent}", { agent: a.name }) : t("Drag to reorder · click for more");
+  b.title = inFold ? t("Show {agent}", { agent: a.name }) : t("Drag to reorder · click to move or hide");
   const grip = el("span", "grip");
   grip.append(svg(GRIP, 14, 2.4));
   b.append(icon(a.icon), grip);
@@ -440,7 +465,7 @@ function openAgentMenu(anchor, a, inFold) {
   const { shown } = arrangeAgents();
   const i = shown.findIndex((x) => x.id === a.id);
   const acts = inFold
-    ? [{ name: "Show", icon: "M1.75 8S4.25 3.5 8 3.5 14.25 8 14.25 8 11.75 12.5 8 12.5 1.75 8 1.75 8ZM8 9.75a1.75 1.75 0 1 0 0-3.5 1.75 1.75 0 0 0 0 3.5Z", run: () => setAgentHidden(a, false) }]
+    ? [{ name: "Show", icon: EYE, run: () => setAgentHidden(a, false) }]
     : [
         { name: "Move up", icon: "M8 12.5v-9M4 7.25l4-3.75 4 3.75", key: ALT + "↑", off: i <= 0, run: () => moveAgent(a.id, i - 1) },
         { name: "Move down", icon: "M8 3.5v9M4 8.75l4 3.75 4-3.75", key: ALT + "↓", off: i < 0 || i >= shown.length - 1, run: () => moveAgent(a.id, i + 1) },
