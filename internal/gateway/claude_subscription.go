@@ -894,7 +894,10 @@ func (s *Server) serveSubscription(w http.ResponseWriter, r *http.Request, from 
 		}
 		// before the reply's last event, which the agent may answer at once
 		run.ended(req, said, stop, failed == "" && r.Context().Err() == nil)
-		enc.finish()
+		// an error event already ended the reply in the client's protocol
+		if failed == "" {
+			enc.finish()
+		}
 		return 200, failed
 	}
 	var col collector
