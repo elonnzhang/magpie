@@ -41,6 +41,9 @@ type Group struct {
 	Members  []string `json:"members"`            // "provider/model", in order
 	Routing  string   `json:"routing,omitempty"`  // as Provider.Routing, over all the members' keys and accounts
 	Affinity string   `json:"affinity,omitempty"` // as Provider.Affinity
+	// Rules send the requests they match to one member first, in order:
+	// the first that matches decides (see Rule).
+	Rules []Rule `json:"rules,omitempty"`
 	// Auto is set on a group magpie found: one model served by several
 	// providers. It is derived, never stored.
 	Auto bool `json:"auto,omitempty"`
@@ -215,6 +218,7 @@ func groupEntries(entries []Entry) []Entry {
 		if e.ImageInput != nil && !*e.ImageInput {
 			e.Images = false
 		}
+		ruledEntry(&e, g, ms, entries)
 		out = append(out, e)
 	}
 	return out
@@ -245,6 +249,11 @@ func SaveGroup(g Group) error {
 	if !slices.Contains(Affinities, g.Affinity) {
 		g.Affinity = ""
 	}
+	rules, err := cleanRules(g.Rules, g.Members)
+	if err != nil {
+		return err
+	}
+	g.Rules = rules
 	g.Auto, g.Hidden = false, false
 	f := load()
 	for i := range f.Groups {

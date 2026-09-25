@@ -166,6 +166,14 @@
       <tr><td>一轮之内 <code>turn</code></td><td>Agent 回传工具结果时不换；你再次发言时，路由重新决定。</td></tr>
       <tr><td>关闭 <code>off</code></td><td>每个请求都重新路由。</td></tr>
     </table></div>
+    <h3 id="rules">规则 · 把某类对话交给指定模型</h3>
+    <p>路由组的 <span class="ui">规则</span> 把符合条件的一轮对话交给组里指定的模型：够长（<code>tokens ≥ N</code>）、带图片、要求推理（开启，或不低于某个强度）、来自某些 Agent。每次你发新消息时从上往下检查，第一条命中的规则把它的模型排在最前，其余成员排在后面做故障转移。没有命中任何规则的一轮照组本来的方式路由，并保持在原来的账号上。</p>
+    <ul>
+      <li>规则只在一轮开始时决定；Agent 回传工具结果的过程中一直留在那个模型上，不会半途换掉而丢掉厂商的缓存。唯一例外：这一轮涨到超过所在模型的上下文，会换到装得下的成员。</li>
+      <li>token 数取请求大小的估算与厂商对这个会话上一个请求的计数中较大的一个。请留出余量：给 200k 的模型设 150k，而不是 199k。</li>
+      <li>子 Agent 是单独的会话，规则可以把它发到别处，主 Agent 仍留在原处。</li>
+      <li>路由标签页会显示每一轮是被哪条规则送到哪里的。</li>
+    </ul>
     <p><span class="ui">路由</span> 标签页实时显示网关的决定：每个请求由谁回答、为什么。在终端里也能管理路由组：</p>
     <div class="code">
       <span class="lang">终端</span>
@@ -173,6 +181,8 @@
       <pre id="ex-group">magpie groups                        <span class="c"># 先列你建的，再列 magpie 自动发现的</span>
 magpie group add <span class="s">"Opus anywhere"</span> models=claude/claude-opus-5-5,copilot/claude-opus-5.5 routing=order stays=session
 magpie group set opus-anywhere models+=openrouter/anthropic/claude-opus-5.5
+magpie group rule add opus-anywhere use=openrouter/anthropic/claude-opus-5.5 tokens=150k  <span class="c"># 长对话优先发给它</span>
+magpie group rule opus-anywhere      <span class="c"># 查看规则；rule rm|mv &lt;n&gt;</span>
 magpie group rm opus-anywhere        <span class="c"># 自动发现的组会被隐藏；magpie group restore &lt;id&gt; 恢复</span>
 magpie claude group/opus-anywhere    <span class="c"># 使用它</span></pre>
     </div>

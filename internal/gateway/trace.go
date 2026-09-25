@@ -28,6 +28,7 @@ type Route struct {
 	Model    string    `json:"model"`              // as the agent asked
 	Provider string    `json:"provider"`           // the provider the model resolved to
 	Group    *GroupRef `json:"group,omitempty"`    // the routing group the agent asked for
+	Rule     *RuleHit  `json:"rule,omitempty"`     // the group's rules for it, when it has any
 	Affinity *Affinity `json:"affinity,omitempty"` // its conversation, and whether it stayed put
 	Order    []Weighed `json:"order"`              // who was to try it, first first
 	Left     []Weighed `json:"left,omitempty"`

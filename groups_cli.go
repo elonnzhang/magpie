@@ -24,6 +24,8 @@ const groupUsage = `usage:
                                           models+=<m> (append), models-=<m> (drop), routing, stays
   magpie group rm <id>                    remove a group (one magpie found is hidden instead)
   magpie group restore <id>               bring back a group magpie found that you removed
+  magpie group rule add|rm|mv <id> …      rules: which model a turn goes to first, by its length, an image,
+                                          the reasoning asked for or the agent (magpie group rule help)
 
   magpie finds a group for each model two or more providers serve (auto-<model>, never stored);
   removing one stores {"id":…,"hidden":true} in providers.json, which is what keeps it removed:
@@ -370,6 +372,8 @@ func groupCmd(args []string) error {
 			fmt.Println(green.Render("✓"), "removed", bold.Render(g.Name))
 		}
 		return nil
+	case "rule", "rules":
+		return ruleCmd(rest)
 	case "show":
 		if len(rest) != 1 {
 			return fmt.Errorf("magpie group show <id>")
@@ -450,6 +454,7 @@ func setGroup(ref string, pairs []string) (provider.Group, error) {
 	if len(g.Members) == 0 {
 		return g, fmt.Errorf("a group needs a model in it; magpie group rm %s removes it", g.ID)
 	}
+	pruneRules(&g)
 	if err := provider.SaveGroup(g); err != nil { // one magpie found is the user's now
 		return g, err
 	}
@@ -565,6 +570,9 @@ func groups() error {
 		if g.Affinity != "" {
 			r.how += muted.Render(" · stays " + staysName(g.Affinity))
 		}
+		if n := len(g.Rules); n > 0 {
+			r.how += muted.Render(fmt.Sprintf(" · %d rule%s", n, map[bool]string{true: "", false: "s"}[n == 1]))
+		}
 		sep, ready := muted.Render(" · "), false
 		if g.Routing == provider.Ordered {
 			sep = muted.Render(" → ")
@@ -635,6 +643,13 @@ func showGroup(g provider.Group) error {
 			line = faint.Render(line) + amber.Render("  not served now, skipped")
 		}
 		kv(k, line)
+	}
+	for i, r := range g.Rules {
+		k := ""
+		if i == 0 {
+			k = "rules"
+		}
+		kv(k, fmt.Sprintf("%d %s", i+1, ruleLine(r)))
 	}
 	if u := groupUses()[g.ID]; len(u) > 0 {
 		kv("used by", green.Render(strings.Join(u, ", ")))

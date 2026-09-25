@@ -217,6 +217,8 @@
     const out = [];
     const aff = affWhy(r, true) ? null : affWhy(r, false);
     if (aff) out.push(aff);
+    const rule = ruleWhy(r, false);
+    if (rule) out.push(rule);
     const smart = (x) => !x.routing && x.kind === "account";
     const someKnown = r.order.some((x) => x.known);
     for (const x of r.order.slice(1)) {
@@ -258,8 +260,38 @@
       case "no-cache": return t("{who} answered this conversation last, but the vendor read only {n} tokens of it from its cache then — not worth staying for.", { who: last, n: tokens(a.cacheRead || 0) });
       case "cold": return t("{who} answered this conversation {d} ago, longer than the 5 minutes a vendor keeps a prompt cached — so routing decides afresh.", { who: last, d: ago });
       case "off": return t("Affinity is off: each request is routed afresh, whoever answered its conversation before.");
+      case "rule": return t("{who} answered this conversation last, but a new turn begins and the group's rule {n} puts {use} first.", { who: last, n: r.rule?.n, use: r.rule?.use });
     }
     return null;
+  }
+
+  // ruleWhy tells what the group's rules did with a request. With lead,
+  // only when a rule put the first where it is.
+  function ruleWhy(r, lead) {
+    const x = r.rule;
+    if (!x) return null;
+    const when = (x.when || []).map(condText).join(", ");
+    if (x.use && !x.unready) {
+      const held = t("Rule {n} ({when}) sent turn {turn} to {use} as it began; the turn stays there.", { n: x.n, when, turn: x.turn, use: x.use });
+      if (x.held) return lead || affWhy(r, true) ? held : null;
+      if (x.grown) return lead ? t("Within turn {turn} the conversation grew to about {tokens} tokens, more than the model it was on takes, so rule {n} ({when}) moves it to {use}.", { turn: x.turn, tokens: tokens(x.tokens), n: x.n, when, use: x.use }) : null;
+      return lead ? t("Turn {turn} begins and rule {n} matches — {when} — so {use} goes first; the group's others stay behind it if it fails.", { turn: x.turn, n: x.n, when, use: x.use }) : null;
+    }
+    if (lead) return null;
+    if (x.use) return t("Rule {n} matches, but {use} has nothing ready now, so the group's order stands.", { n: x.n, use: x.use });
+    if (x.waits) return t("This turn began before magpie saw it, so the rules wait for the next one.");
+    if (x.held) return null;
+    return t("No rule matches turn {turn} (about {n} tokens{img}), so the group routes it as usual.", { turn: x.turn, n: tokens(x.tokens), img: x.images ? t(", with an image") : "" });
+  }
+  // a rule's condition as the gateway writes it, in the page's words
+  function condText(c) {
+    let m;
+    if ((m = /^tokens ≥ (\d+)$/.exec(c))) return t("≥ {n} tokens", { n: Number(m[1]).toLocaleString() });
+    if (c === "images") return t("has an image");
+    if (c === "reasoning") return t("reasoning on");
+    if ((m = /^effort ≥ (\w+)$/.exec(c))) return t("reasoning ≥ {level}", { level: m[1] });
+    if ((m = /^agent (.+)$/.exec(c))) return m[1].split("|").map(agentName).join(" / ");
+    return c;
   }
 
   function tryWhy(r, i) {
@@ -636,7 +668,7 @@
       : main && main.model !== r.model
       ? t("{agent} asked for {model}: {name} serves it, and the vendor is asked for {sent}", { agent: agentName(r.agent), model: r.model, name: main.name, sent: main.model })
       : t("{agent} asked for {model}", { agent: agentName(r.agent), model: r.model }) + " → " + (main?.name || r.provider), ""]);
-    items.push([affWhy(r, true) || firstWhy(r), "why"]);
+    items.push([affWhy(r, true) || ruleWhy(r, true) || firstWhy(r), "why"]);
     for (const a of asides(r)) items.push([a, "aside"]);
     r.tries.forEach((_, i) => items.push([tryWhy(r, i), r.tries[i].done ? (r.tries[i].status < 400 ? "ok" : "bad") : "wait"]));
     if (r.done && !r.tries.length) items.push([t("Nothing was tried: {error}", { error: r.error || r.status }), "bad"]);
@@ -650,7 +682,7 @@
     for (const p of sky.querySelectorAll(".pkt, .rt-flier")) p.remove();
     cur = r;
     sync(true); renderAll();
-    say(affWhy(r, true) || firstWhy(r));
+    say(affWhy(r, true) || ruleWhy(r, true) || firstWhy(r));
     if (pinned) { scrollOnPurpose(); box.scrollIntoView({ block: "nearest", behavior: still() ? "auto" : "smooth" }); }
   }
 
@@ -822,7 +854,7 @@
     playing.add(id);
     cur = r;
     sync();
-    say(affWhy(r, true) || firstWhy(r));
+    say(affWhy(r, true) || ruleWhy(r, true) || firstWhy(r));
     const aside = asides(r).find((s) => s);
     if (aside) say(aside, true);
     renderAll();
@@ -1033,7 +1065,7 @@
         if (first) {
           offline("");
           const r = newest();
-          if (r) { cur = r; sync(true); say(affWhy(r, true) || firstWhy(r)); renderAll(); } else empty();
+          if (r) { cur = r; sync(true); say(affWhy(r, true) || ruleWhy(r, true) || firstWhy(r)); renderAll(); } else empty();
         } else {
           if (cur && routes.has(cur.id)) cur = routes.get(cur.id);
           if (pinned && routes.has(pinned.id)) pinned = routes.get(pinned.id);
@@ -1054,7 +1086,7 @@
     for (const s of stats.children) s.lastChild.textContent = t(s.dataset.label);
     hubText();
     // the caption said before, said again in these words: it was set as text
-    if (loaded) { if (cur) { sync(true); renderAll(); capQ = []; say(affWhy(cur, true) || firstWhy(cur)); } else empty(); }
+    if (loaded) { if (cur) { sync(true); renderAll(); capQ = []; say(affWhy(cur, true) || ruleWhy(cur, true) || firstWhy(cur)); } else empty(); }
     renderGroups();
   }
   new MutationObserver(words).observe(document.documentElement, { attributes: true, attributeFilter: ["lang"] });
@@ -1084,6 +1116,16 @@
     rotate: "In turn: each conversation's next turn goes to the next member's account or key, spreading the load.",
     usage: "Least used first: the account or key with the most of its allowance left goes first.",
   };
+  const EFFORTS = ["low", "medium", "high", "xhigh", "max"]; // provider.Efforts
+  // what a rule matches, in words
+  function ruleText(r) {
+    const bits = [];
+    if (r.tokens) bits.push(t("≥ {n} tokens", { n: r.tokens.toLocaleString() }));
+    if (r.images) bits.push(t("has an image"));
+    if (r.effort) bits.push(r.effort === "on" ? t("reasoning on") : t("reasoning ≥ {level}", { level: r.effort }));
+    if (r.agents?.length) bits.push(r.agents.map((id) => (state.clients || state.agents || []).find((a) => a.id === id)?.name || id).join(" / "));
+    return bits.join(" · ");
+  }
   const slug = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
   let groups = null, gEdit = null; // gEdit: { id: "" for a new one, draft }
   async function loadGroups() {
@@ -1110,7 +1152,7 @@
   }
   function drawGroups() {
     const newBtn = el("button", "text", t("New group"));
-    newBtn.onclick = () => { gEdit = { id: "", draft: { name: "", members: [], routing: "", affinity: "" } }; renderGroups(); };
+    newBtn.onclick = () => { gEdit = { id: "", draft: { name: "", members: [], routing: "", affinity: "", rules: [] } }; renderGroups(); };
     gHead.replaceChildren(el("span", "label", t("Routing groups")), el("span", "grow"), el("span", "note", t("models agents pick as one")), newBtn);
     const rows = [];
     if (gEdit && !gEdit.id) rows.push(groupEditor(null));
@@ -1146,10 +1188,15 @@
     const tags = el("span", "tags");
     tags.append(el("span", "tag", t(m[1])));
     if (g.affinity) tags.append(el("span", "tag", t(AFF_OPTS.find(([id]) => id === g.affinity)?.[1] || "")));
+    if (g.rules?.length) {
+      const r = el("span", "tag", t(g.rules.length === 1 ? "1 rule" : "{n} rules", { n: g.rules.length }));
+      r.title = g.rules.map((x, i) => `${i + 1}. ${ruleText(x)} → ${memberLabel(g, x.use)}`).join("\n");
+      tags.append(r);
+    }
     if (!g.ready) tags.append(el("span", "tag bad", t("no member ready")));
     const edit = el("button", "text", t("Edit"));
     edit.onclick = (e) => { e.stopPropagation(); open(); };
-    const open = () => { gEdit = { id: g.id, draft: { name: g.name, members: [...g.members], routing: g.routing || "", affinity: g.affinity || "" } }; renderGroups(); };
+    const open = () => { gEdit = { id: g.id, draft: { name: g.name, members: [...g.members], routing: g.routing || "", affinity: g.affinity || "", rules: (g.rules || []).map((r) => ({ ...r, agents: [...(r.agents || [])] })) } }; renderGroups(); };
     row.onclick = open;
     row.append(ics, main, tags, edit);
     return row;
@@ -1196,7 +1243,7 @@
         if (!m) { row.classList.add("off"); row.title = t("No provider serves {id} now; it is skipped", { id }); }
         if (i) { const up = el("button", "text", t("Up")); up.onclick = () => { d.members.splice(i - 1, 0, d.members.splice(i, 1)[0]); draw(); }; row.append(up); }
         const rm = el("button", "text", t("Remove"));
-        rm.onclick = () => { d.members.splice(i, 1); draw(); };
+        rm.onclick = () => { d.members.splice(i, 1); d.rules = d.rules.filter((r) => d.members.includes(r.use)); draw(); drawRules(); };
         row.append(rm);
         list.append(row);
       });
@@ -1207,7 +1254,7 @@
         .map((x) => ({ value: x.id, label: x.name || x.id, note: x.providerName, icon: x.icon, group: x.providerName, ref: x.id }));
       openPicker({ id: "", name: "", fields: [] }, { key: "member", label: "model", value: "", options, onPick: (id) => {
         if (id && !d.members.includes(id)) d.members.push(id);
-        draw();
+        draw(); drawRules();
       } }, addBtn, ev);
     };
     box.append(list, addBtn);
@@ -1225,6 +1272,85 @@
     aw.append(segs(AFF_OPTS.map(([id, n]) => [id, t(n)]), d.affinity, (v) => { d.affinity = v; aHint.textContent = t(AFF_HINT[v] || AFF_HINT[""]); }), aHint);
     ed.append(el("label", "", t("Stays")), aw);
 
+    // rules: which member a turn goes to first, by what the request shows
+    const rbox = el("div", "fallback rt-rules");
+    const rlist = el("div", "fbl");
+    const rAdd = el("button", "rt-gadd");
+    rAdd.append(svg(PLUS, 11, 1.8), el("span", "", t("Add a rule")));
+    const infoOf = (id) => g?.memberInfo?.find((x) => x.id === id);
+    const pickFrom = (label, anchor, ev, options, onPick) => openPicker({ id: "", name: "", fields: [] }, { key: "rule", label, value: "", menu: true, options, onPick }, anchor, ev);
+    const rHint2 = el("div", "hint");
+    const drawRules = () => {
+      rlist.replaceChildren();
+      rAdd.hidden = d.members.length < 2;
+      rHint2.textContent = t(d.members.length < 2 ? "With two models or more, a rule can send some turns to one of them first." : "Checked top first when you send a message: the first that matches sends that turn to its model first; the rest stay behind it if it fails. A turn under way is never moved.");
+      d.rules.forEach((r, i) => {
+        const row = el("div", "rt-rule");
+        const when = el("div", "when");
+        when.append(el("span", "w", t("When")));
+        // tokens: at least this long
+        const tk = el("span", "rt-cond tk" + (r.tokens ? " on" : ""));
+        tk.onclick = () => ti.focus();
+        const ti = input(r.tokens ? String(r.tokens) : "", "", "number");
+        ti.min = "0"; ti.step = "1000";
+        ti.oninput = () => { r.tokens = Math.max(0, parseInt(ti.value, 10) || 0); tk.classList.toggle("on", !!r.tokens); warn(); };
+        ti.onkeydown = (e) => e.stopPropagation();
+        tk.append(el("span", "", "≥"), ti, el("span", "", t("tokens")));
+        // images
+        const im = el("button", "rt-cond" + (r.images ? " on" : ""), t("has an image"));
+        im.onclick = () => { r.images = !r.images; im.classList.toggle("on", r.images); warn(); };
+        // reasoning
+        const effortName = (v) => v === "on" ? t("reasoning on") : v ? t("reasoning ≥ {level}", { level: v }) : t("any reasoning");
+        const ef = el("button", "rt-cond" + (r.effort ? " on" : ""), effortName(r.effort));
+        ef.onclick = (ev) => pickFrom("reasoning", ef, ev, [
+          { value: "", label: t("any reasoning"), note: t("not a condition") },
+          { value: "on", label: t("reasoning on"), note: t("thinking or any effort level") },
+          ...EFFORTS.map((v) => ({ value: v, label: t("reasoning ≥ {level}", { level: v }) })),
+        ], (v) => { r.effort = v; ef.textContent = effortName(v); ef.classList.toggle("on", !!v); });
+        // agents
+        const clients = state.clients || state.agents || [];
+        const agentsName = () => r.agents.length ? r.agents.map((id) => clients.find((a) => a.id === id)?.name || id).join(", ") : t("any agent");
+        const ag = el("button", "rt-cond" + (r.agents.length ? " on" : ""), agentsName());
+        ag.onclick = (ev) => pickFrom("agent", ag, ev, [
+          { value: "", label: t("any agent"), note: t("not a condition") },
+          ...clients.map((a) => ({ value: a.id, label: a.name, icon: a.icon, note: r.agents.includes(a.id) ? "✓" : "" })),
+        ], (v) => {
+          r.agents = !v ? [] : r.agents.includes(v) ? r.agents.filter((x) => x !== v) : [...r.agents, v];
+          ag.textContent = agentsName(); ag.classList.toggle("on", r.agents.length > 0);
+        });
+        when.append(tk, im, ef, ag);
+        // the member it sends to
+        const use = el("div", "rt-use");
+        const ub = el("button", "rt-cond on");
+        const drawUse = () => { const m = modelOf(r.use); ub.replaceChildren(icon(m?.icon || "generic"), el("span", "", m ? `${m.name || m.id} · ${m.providerName}` : r.use)); };
+        drawUse();
+        ub.onclick = (ev) => pickFrom("member", ub, ev, d.members.map((id) => { const m = modelOf(id); return { value: id, label: m ? m.name || m.id : id, note: m?.providerName, icon: m?.icon }; }),
+          (v) => { r.use = v; drawUse(); warn(); });
+        const hint = el("span", "rt-rwarn");
+        const warn = () => {
+          const m = infoOf(r.use), bits = [];
+          if (r.images && m && m.ready && !m.images) bits.push(t("it doesn't take images"));
+          if (r.tokens && m?.context && m.context < r.tokens) bits.push(t("it takes {n} tokens", { n: m.context.toLocaleString() }));
+          hint.textContent = bits.join(" · ");
+        };
+        warn();
+        use.append(el("span", "w", t("send to")), ub, hint);
+        const ctl = el("span", "ctl");
+        if (i) { const up = el("button", "text", t("Up")); up.onclick = () => { d.rules.splice(i - 1, 0, d.rules.splice(i, 1)[0]); drawRules(); }; ctl.append(up); }
+        const rm = el("button", "text", t("Remove"));
+        rm.onclick = () => { d.rules.splice(i, 1); drawRules(); };
+        ctl.append(rm);
+        row.append(el("span", "i", String(i + 1)), when, use, ctl);
+        rlist.append(row);
+      });
+    };
+    rAdd.onclick = () => { d.rules.push({ use: d.members[d.members.length - 1], tokens: 0, images: false, effort: "", agents: [] }); drawRules(); };
+    rbox.append(rlist, rAdd);
+    const rw2 = el("div");
+    rw2.append(rbox, rHint2);
+    ed.append(el("label", "", t("Rules")), rw2);
+    drawRules();
+
     const bar = el("div", "bar");
     if (g) {
       const del = el("button", "text danger", t("Remove"));
@@ -1237,8 +1363,10 @@
     const saveBtn = el("button", "text primary", t(g ? "Save" : "Add"));
     const save = () => {
       if (!d.members.length) { addBtn.focus({ preventScroll: true }); return status(t("A group needs a model in it"), "warn"); }
+      const bare = d.rules.findIndex((r) => !r.tokens && !r.images && !r.effort && !r.agents.length);
+      if (bare >= 0) return status(t("Rule {n} needs a condition", { n: bare + 1 }), "warn");
       saveBtn.classList.add("busy");
-      groupAction("save", { id: idOf(), name: d.name.trim() || idOf(), members: d.members, routing: d.routing, affinity: d.affinity }, t(g ? "{name} saved" : "{name} added", { name: d.name.trim() || idOf() }));
+      groupAction("save", { id: idOf(), name: d.name.trim() || idOf(), members: d.members, routing: d.routing, affinity: d.affinity, rules: d.rules }, t(g ? "{name} saved" : "{name} added", { name: d.name.trim() || idOf() }));
     };
     saveBtn.onclick = save;
     bar.append(cancel, saveBtn);

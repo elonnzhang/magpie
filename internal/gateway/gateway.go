@@ -378,16 +378,26 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request, from provider.Pro
 		s.record(call)
 		return
 	}
+	// a routing group's rules pick the member that goes first, looked at
+	// before any image is taken out of the request: one may be for images
+	g, ms, isGroup := provider.FindGroup(call.Model)
+	var hit *RuleHit
+	var ruled provider.Member
+	var ruleOK bool
+	var ruleAt, words string
+	if isGroup && len(g.Rules) > 0 {
+		if req, err := parse(from, body); err == nil {
+			ruleAt, words = ruleKey(g, r.Header, req), firstWords(req)
+			hit = ruleFor(ruleAt, g, ms, req, call.Agent)
+			ruled, ruleOK = ruleMember(hit, ms)
+		}
+	}
 	// Some clients send images even when the selected model is known to
 	// accept text only. Reject a new image and omit images from history.
 	var imageInput *bool
-	if strings.HasPrefix(call.Model, provider.GroupPrefix) {
-		for _, e := range provider.Catalog() {
-			if e.ID == call.Model {
-				imageInput = e.ImageInput
-				break
-			}
-		}
+	if isGroup {
+		// the member a rule put first, or what every member takes
+		imageInput = membersImageInput(ms, ruled, ruleOK)
 	} else {
 		for _, m := range p.Available() {
 			if m.ID == model {
@@ -424,7 +434,7 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request, from provider.Pro
 	// own, and an agent's side requests (a title, a summary) to a smaller
 	// model leave the conversation where it is
 	scope, mode, rotate := p.ID+"/"+model, p.Affinity, p.Routing == provider.Rotate
-	if g, ms, ok := provider.FindGroup(call.Model); ok {
+	if isGroup {
 		// a routing group: every member's keys or accounts weighed together
 		cands, pl = s.planGroup(g, ms, from)
 		group = &GroupRef{ID: g.ID, Name: g.Name, Routing: g.Routing, Affinity: g.Affinity, Auto: g.Auto}
@@ -432,6 +442,11 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request, from provider.Pro
 			group.Members = append(group.Members, m.Provider.ID+"/"+m.Model)
 		}
 		scope, mode, rotate = provider.GroupPrefix+g.ID, g.Affinity, g.Routing == provider.Rotate
+		if words != "" {
+			// a subagent a rule sends elsewhere mustn't take its agent's
+			// conversation with it: each keeps where it is on its own
+			scope += "|" + words
+		}
 	} else {
 		cands, pl = s.plan(p, model, from)
 	}
@@ -449,11 +464,25 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request, from provider.Pro
 	// (#63): its reasoning, sealed by the account that wrote it, is refused
 	// by another.
 	cands, pl, aff, stuck := affine(scope, mode, rotate, r.Header, from, body, cands, pl)
+	if hit != nil && hit.Use != "" && !(hit.Held && aff.Kept) {
+		// the rule's member first, over whoever answered last, as a turn
+		// begins; within it, whoever answered last stays — the rule's
+		// member, or who took over when it failed
+		was := cands[0]
+		ok := false
+		if ruleOK {
+			cands, pl, ok = ruleFirst(ruled, cands, pl)
+		}
+		hit.Unready = !ok
+		if ok && aff.Kept && cands[0].rest != was.rest {
+			aff.Kept, aff.Why = false, "rule"
+		}
+	}
 	shown := aff
 	if len(cands) == 1 {
 		shown = nil // nobody else to stay away from
 	}
-	tr := s.trace.begin(Route{Time: start, Agent: call.Agent, Model: call.Model, Provider: p.ID, Group: group, Affinity: shown, Order: pl.order, Left: pl.left})
+	tr := s.trace.begin(Route{Time: start, Agent: call.Agent, Model: call.Model, Provider: p.ID, Group: group, Rule: hit, Affinity: shown, Order: pl.order, Left: pl.left})
 	var skipped []string
 	again := 0        // times the last one left has been tried again
 	resealed := false // the conversation's reasoning sealed by another account taken out
@@ -525,6 +554,9 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request, from provider.Pro
 		if call.Status < 400 {
 			served(c.rest, call.Usage.Input+call.Usage.Output+call.Usage.CacheRead+call.Usage.CacheWrite)
 			answered(stuck, c, aff.Turn, call.Usage.CacheRead)
+			if ruleAt != "" {
+				ruleAnswered(ruleAt, call.Usage)
+			}
 		} else {
 			try.Fail = failure(call.Status, []byte(call.Error))
 		}

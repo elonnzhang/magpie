@@ -30,6 +30,9 @@ type memberJSON struct {
 	Icon     string `json:"icon,omitempty"`
 	Model    string `json:"model,omitempty"` // what the vendor is asked for
 	On       int    `json:"on"`              // its keys or accounts on
+	// what a rule may send it: the tokens it takes, when known, and images
+	Context int  `json:"context,omitempty"`
+	Images  bool `json:"images,omitempty"`
 }
 
 type modelRef struct {
@@ -99,7 +102,8 @@ func keyPools(p provider.Provider) []poolJSON {
 
 func groupsState() groupsJSON {
 	out := groupsJSON{Groups: []groupJSON{}, Models: []modelRef{}, Pools: []poolJSON{}}
-	for _, e := range provider.Served() {
+	served := provider.Served()
+	for _, e := range served {
 		if e.Group == "" {
 			out.Models = append(out.Models, modelRef{ID: e.ID, Name: e.Name, Provider: e.Provider.ID, PName: e.Provider.Name, Icon: e.Provider.Icon})
 		}
@@ -111,6 +115,12 @@ func groupsState() groupsJSON {
 			if p, model, ok := provider.Resolve(id); ok {
 				_, who := onOf(p)
 				m.Ready, m.Provider, m.Name, m.Icon, m.Model, m.On = true, p.ID, p.Name, p.Icon, model, max(len(who), 1)
+				for _, e := range served {
+					if e.Group == "" && e.Provider.ID == p.ID && e.Model == model {
+						m.Context, m.Images = e.Context, e.Images && (e.ImageInput == nil || *e.ImageInput)
+						break
+					}
+				}
 				gj.Ready = true
 			}
 			gj.Info = append(gj.Info, m)

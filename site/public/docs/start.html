@@ -166,6 +166,14 @@
       <tr><td>Within a turn <code>turn</code></td><td>While the agent sends tool results back; when you speak again, routing decides afresh.</td></tr>
       <tr><td>Off <code>off</code></td><td>Every request is routed afresh.</td></tr>
     </table></div>
+    <h3 id="rules">Rules · a turn to a chosen model</h3>
+    <p>A group’s <span class="ui">Rules</span> send a turn to one of its models when the turn is of a kind you name: long (<code>tokens ≥ N</code>), carrying an image, asking for reasoning (on, or at least a level), or from certain agents. They are looked at top first when you send a message; the first that matches puts its model first, with the group’s others behind it if it fails. A turn no rule matches is routed as the group always routes, and keeps to where it was.</p>
+    <ul>
+      <li>A rule decides as a turn begins, and the turn stays on that model while the agent sends tool results back, so what the vendor cached isn’t lost halfway. The one exception: a turn that grows past its model’s context moves to a member that takes it.</li>
+      <li>Tokens are estimated from the request’s size, or what the vendor counted for the conversation’s last request, whichever is more. Leave some margin: a rule at 150k for a 200k model, not 199k.</li>
+      <li>A subagent is a conversation of its own, so a rule can send it elsewhere while its agent keeps where it is.</li>
+      <li>The Routing tab says which rule sent each turn where.</li>
+    </ul>
     <p>The <span class="ui">Routing</span> tab shows the gateway’s decisions live: who answered each request, and why. The same groups from a terminal:</p>
     <div class="code">
       <span class="lang">Terminal</span>
@@ -173,6 +181,8 @@
       <pre id="ex-group">magpie groups                        <span class="c"># yours, then those magpie found</span>
 magpie group add <span class="s">"Opus anywhere"</span> models=claude/claude-opus-5-5,copilot/claude-opus-5.5 routing=order stays=session
 magpie group set opus-anywhere models+=openrouter/anthropic/claude-opus-5.5
+magpie group rule add opus-anywhere use=openrouter/anthropic/claude-opus-5.5 tokens=150k  <span class="c"># long turns to it first</span>
+magpie group rule opus-anywhere      <span class="c"># its rules; rule rm|mv &lt;n&gt;</span>
 magpie group rm opus-anywhere        <span class="c"># one magpie found is hidden; magpie group restore &lt;id&gt;</span>
 magpie claude group/opus-anywhere    <span class="c"># use it</span></pre>
     </div>

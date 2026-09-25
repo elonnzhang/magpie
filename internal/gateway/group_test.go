@@ -43,6 +43,9 @@ func fresh(t *testing.T) {
 	sticks.Lock()
 	sticks.m = map[string]stick{}
 	sticks.Unlock()
+	turnRules.Lock()
+	turnRules.m = map[string]turnRule{}
+	turnRules.Unlock()
 }
 
 func serveOn(t *testing.T, id, key string, models []string, v http.Handler, keys ...string) {

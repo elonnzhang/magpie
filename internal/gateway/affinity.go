@@ -73,7 +73,14 @@ func turnOf(from provider.Protocol, body []byte) (turn int, within bool) {
 	if err != nil {
 		return 0, false
 	}
-	for i, m := range req.Messages {
+	return turnIn(req)
+}
+
+// turnIn is turnOf for a request already parsed. The last of the user's
+// messages tells whether the turn goes on: an agent may put its own notes
+// after it (Claude Code a system message after the tool results).
+func turnIn(req *Request) (turn int, within bool) {
+	for _, m := range req.Messages {
 		if m.Role != "user" {
 			continue
 		}
@@ -89,9 +96,7 @@ func turnOf(from provider.Protocol, body []byte) (turn int, within bool) {
 		if text && !result {
 			turn++
 		}
-		if i == len(req.Messages)-1 {
-			within = result
-		}
+		within = result
 	}
 	return turn, within
 }

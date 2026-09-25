@@ -230,3 +230,27 @@
 }
 .rt-gadd:hover, .rt-gadd.open { color: var(--fg); border-color: var(--muted); background: var(--card); }
 .rt-gadd svg { flex: none; }
+/* a group's rules: when, and the model it sends that turn to first */
+.rt-rules .fbl { gap: 6px; }
+.rt-rule { display: grid; grid-template-columns: 14px minmax(0, 1fr) auto; align-items: center; gap: 4px 8px; padding: 6px 0; border-top: 1px solid var(--line); font-size: 12.5px; }
+.rt-rule:first-child { border-top: 0; padding-top: 0; }
+.rt-rule > .i { color: var(--muted); font-variant-numeric: tabular-nums; }
+.rt-rule .when, .rt-rule .rt-use { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; min-width: 0; }
+.rt-rule .rt-use { grid-column: 2; }
+.rt-rule .ctl { grid-column: 3; grid-row: 1; display: flex; }
+.rt-rule .w { color: var(--muted); font-size: 12px; }
+.rt-cond {
+  display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 10px; border-radius: 999px;
+  border: 1px dashed var(--line); background: transparent; color: var(--muted);
+  font: inherit; font-size: 12px; cursor: pointer; white-space: nowrap; max-width: 100%;
+  transition: color .15s, border-color .15s, background .15s;
+}
+.rt-cond:hover { color: var(--fg); border-color: var(--muted); }
+.rt-cond.on { border-style: solid; color: var(--fg); background: var(--card-2); }
+.rt-cond .ic { width: 14px; height: 14px; flex: none; }
+.rt-cond > span { overflow: hidden; text-overflow: ellipsis; }
+.rt-cond.tk { cursor: text; }
+.rt-cond input { width: 7ch; height: 20px; padding: 0 2px; border: 0; background: transparent; color: inherit; font: inherit; font-variant-numeric: tabular-nums; outline: none; -moz-appearance: textfield; }
+.rt-cond input::-webkit-outer-spin-button, .rt-cond input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.rt-rwarn { color: var(--amber, var(--muted)); font-size: 11.5px; }
+.rt-rwarn:empty { display: none; }
