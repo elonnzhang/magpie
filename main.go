@@ -213,7 +213,7 @@ func set(a *agent.Agent, key, value string) error {
 	if err != nil {
 		return err
 	}
-	if err := f.Set(value); err != nil {
+	if err := a.Apply(f.Key, value); err != nil {
 		return err
 	}
 	if value == "" {

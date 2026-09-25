@@ -63,6 +63,8 @@ type agentJSON struct {
 	Icon   string      `json:"icon"`
 	Path   string      `json:"path"`
 	Fields []fieldJSON `json:"fields"`
+	// Drift: its config no longer does what magpie set, and how to set it again
+	Drift *agent.Drift `json:"drift,omitempty"`
 }
 
 // clientJSON is an agent, or another client the gateway knows, as a
@@ -152,7 +154,45 @@ func Handler(w Windows, gw *gateway.Server) http.Handler {
 			http.Error(rw, "unknown field", http.StatusBadRequest)
 			return
 		}
-		if err := f.Set(strings.TrimSpace(in.Value)); err != nil {
+		if err := a.Apply(f.Key, strings.TrimSpace(in.Value)); err != nil {
+			fail(rw, err)
+			return
+		}
+		s := state()
+		if a.Notice != nil {
+			s.Notice = a.Notice()
+		}
+		writeJSON(rw, s)
+	})
+	// reapply sets again what magpie set on an agent something else
+	// rewrote; keep takes the agent as it is now
+	// what drifted, per agent: cheap enough to ask while the window is up,
+	// so a config rewritten elsewhere shows without a reload
+	mux.HandleFunc("GET /api/drift", func(rw http.ResponseWriter, r *http.Request) {
+		out := map[string]*agent.Drift{}
+		for _, a := range agent.Detected() {
+			if d := a.Drift(); d != nil {
+				out[a.ID] = d
+			}
+		}
+		writeJSON(rw, out)
+	})
+	mux.HandleFunc("POST /api/agents/{action}/{id}", func(rw http.ResponseWriter, r *http.Request) {
+		a, err := agent.Find(r.PathValue("id"))
+		if err != nil {
+			fail(rw, err)
+			return
+		}
+		switch r.PathValue("action") {
+		case "reapply":
+			err = a.Reapply()
+		case "keep":
+			a.Keep()
+		default:
+			http.NotFound(rw, r)
+			return
+		}
+		if err != nil {
 			fail(rw, err)
 			return
 		}
@@ -306,6 +346,7 @@ func state() stateJSON {
 			}
 			aj.Fields = append(aj.Fields, fieldJSON{Key: f.Key, Label: f.Label, Value: vals[f.Key], Options: opts})
 		}
+		aj.Drift = a.Drift()
 		s.Agents = append(s.Agents, aj)
 	}
 	if ps, err := profile.Load(); err == nil {

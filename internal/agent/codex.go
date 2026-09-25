@@ -222,6 +222,42 @@ func codex(home string) *Agent {
 			}
 			return nil
 		},
+		Check: func() string {
+			if !isMagpie(get("model")) {
+				return ""
+			}
+			// a profile's settings win over the top level's, magpie's included
+			if p := get("profile"); p != "" {
+				t := edit.GetTOMLTable(path, "profiles."+p)
+				for _, k := range []string{"model", "model_provider", "openai_base_url", "model_catalog_json"} {
+					if v, ok := t[k]; ok && v != get(k) {
+						return "Codex's profile " + p + " sets its own " + k + " (" + v + "), which Codex takes over magpie's"
+					}
+				}
+			}
+			switch {
+			case asProvider():
+				t := edit.GetTOMLTable(path, "model_providers."+magpieID)
+				if t["base_url"] != gatewayV1() || t["experimental_bearer_token"] != gateway.Token || t["wire_api"] != "responses" {
+					return "Codex's [model_providers.magpie] no longer points at magpie's gateway (" + gatewayV1() + ")"
+				}
+				if c := get("model_catalog_json"); c != catalogPath {
+					return "Codex's model_catalog_json is no longer magpie's list"
+				}
+				if _, err := os.Stat(catalogPath); err != nil {
+					return "magpie's model list for Codex (" + catalogPath + ") is gone"
+				}
+			case viaBase():
+				if u := get("openai_base_url"); strings.TrimSuffix(u, "/") != codexGatewayURL() {
+					return "Codex's openai_base_url is " + u + ", not magpie's gateway at " + codexGatewayURL()
+				}
+			default:
+				return "Codex's config no longer sends its model through magpie (no openai_base_url or model_provider of magpie's), so Codex asks OpenAI for a model OpenAI doesn't have"
+			}
+			return ""
+		},
+		// every prompt typed into Codex goes into history.jsonl
+		LastUsed: func() time.Time { return lastJSONLTime(filepath.Join(dir, "history.jsonl"), "ts") },
 		// the app-server behind the Codex app (and every codex TUI) builds
 		// its model list once, at start-up.
 		Notice: func() string {

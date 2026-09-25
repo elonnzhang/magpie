@@ -211,6 +211,12 @@ function renderAgents() {
       back.onclick = (e) => { e.stopPropagation(); setAgentHidden(a, false); };
       who.append(back);
     }
+    // on the name's own line, so the row keeps its height and the pickers
+    // their columns
+    if (a.drift) {
+      row.classList.add("drifted");
+      who.append(driftFix(a));
+    }
     row.append(agentHandle(a, row, inFold), who, fields);
     return row;
   };
@@ -305,6 +311,53 @@ function renderAgents() {
   }
   fit(0, agentsGlide);
   agentsGlide = null;
+}
+
+// driftNote: under the name of an agent whose config something else
+// rewrote since magpie set it — the row still shows a magpie model while the
+// agent no longer reaches magpie, or it was put back on a model of its own —
+// what happened, and the one click that sets it again.
+// driftFix is the one thing a drifted agent shows: an amber pill after its
+// name that sets magpie's settings again. What is off is its tooltip; taking
+// the config as it is now is in the row's menu.
+function driftFix(a) {
+  const d = a.drift, f = a.fields.find((x) => x.key === d.field);
+  const want = (f && optionFor(f, d.want)?.label) || d.want;
+  const fix = el("button", "ag-fix");
+  fix.type = "button";
+  fix.title = `${t(DRIFT_WHY[d.kind] || DRIFT_WHY.unwired, { agent: a.name, model: want })}\n${d.detail}`;
+  fix.setAttribute("aria-label", t("Apply again"));
+  fix.append(svg(REAPPLY, 11, 1.8), el("span", "", t("Apply again")));
+  fix.onclick = (e) => { e.stopPropagation(); reapplyAgent(a, fix); };
+  return fix;
+}
+
+const DRIFT_WHY = {
+  unwired: "{agent} no longer goes through magpie — its config was changed",
+  replaced: "{agent} was switched off {model} outside magpie",
+  bypassed: "{agent} was used without going through magpie — restart it after applying",
+};
+
+const REAPPLY = "M13.5 8a5.5 5.5 0 1 1-1.6-3.9M13.5 2.5v3.25h-3.25";
+
+async function keepAgent(a) {
+  try { state = await api("agents/keep/" + a.id, {}); renderAgents(); } catch (e) { status(e.message, "err"); }
+}
+
+// reapplyAgent writes what magpie set on the agent into its config again.
+async function reapplyAgent(a, btn) {
+  btn?.classList.add("busy");
+  try {
+    state = await api("agents/reapply/" + a.id, {});
+    renderAgents();
+    document.querySelector(`.agent[data-id="${CSS.escape(a.id)}"] .field`)?.classList.add("flash");
+    const msg = t("{agent} goes through magpie again", { agent: a.name });
+    if (state.notice) status(`${msg}. ${state.notice}`, "warn", 9000);
+    else status(msg, "ok");
+  } catch (e) {
+    btn?.classList.remove("busy");
+    status(e.message, "err");
+  }
 }
 
 // ---------- the agents' order, and the ones put away ----------
@@ -483,6 +536,9 @@ function openAgentMenu(anchor, a, inFold) {
     : [
         { name: "Move up", icon: "M8 12.5v-9M4 7.25l4-3.75 4 3.75", key: ALT + "↑", off: i <= 0, run: () => moveAgent(a.id, i - 1) },
         { name: "Move down", icon: "M8 3.5v9M4 8.75l4 3.75 4-3.75", key: ALT + "↓", off: i < 0 || i >= shown.length - 1, run: () => moveAgent(a.id, i + 1) },
+        // for a config rewritten in a way magpie can't see: set it again anyway
+        ...(a.drift || a.fields.some((f) => optionFor(f, f.value)?.ref) ? [{ name: "Apply again", icon: REAPPLY, sep: true, run: () => reapplyAgent(a) }] : []),
+        ...(a.drift?.kind === "replaced" ? [{ name: "Keep current settings", icon: CHECK, run: () => keepAgent(a) }] : []),
         { name: "Hide", icon: EYE_OFF, sep: true, run: () => setAgentHidden(a, true) },
       ];
   const box = el("div", "pop row-menu");
@@ -4096,6 +4152,20 @@ if (mode === "window") new ResizeObserver(() => {
 document.fonts?.ready.then(fitTop);
 
 document.addEventListener("visibilitychange", () => { if (!document.hidden) { load(); wag(); } });
+// an agent's config can be rewritten, or the agent run round magpie, while the
+// window is up: ask what drifted now and then, and redraw only on a change —
+// never under an open menu
+setInterval(async () => {
+  if (document.hidden || !state?.agents || document.querySelector(".pop:not([hidden])")) return;
+  let drift;
+  try { drift = await api("drift"); } catch { return; }
+  let changed = false;
+  for (const a of state.agents) {
+    const d = drift[a.id] || undefined;
+    if (JSON.stringify(d) !== JSON.stringify(a.drift)) { a.drift = d; changed = true; }
+  }
+  if (changed) renderAgents();
+}, 15000);
 window.addEventListener("focus", load);
 setInterval(renderUpdateBadge, 15 * 60 * 1000); // a window left open still hears of a new version
 // Opened on a magpie://import link: fetch what it describes (once — the

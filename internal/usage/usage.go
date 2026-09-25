@@ -334,3 +334,41 @@ func summarize(p Period, now time.Time, recs []Record) Summary {
 	byTokens(s.Models)
 	return s
 }
+
+// ---- last seen --------------------------------------------------------------
+
+// seen is when each agent's latest request reached the gateway in this
+// process — at its start, where a record is written only once it is answered.
+var seen sync.Map // agent id → time.Time
+
+// Saw notes a request from an agent arriving now.
+func Saw(agent string) { seen.Store(agent, time.Now()) }
+
+// LastSeen is when a request from the agent last reached the gateway: this
+// process's own, else the newest in the log's last stretch. Zero if none.
+func LastSeen(agent string) time.Time {
+	var last time.Time
+	if t, ok := seen.Load(agent); ok {
+		last = t.(time.Time)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	f, err := os.Open(Path())
+	if err != nil {
+		return last
+	}
+	defer f.Close()
+	const tail = 256 << 10
+	if st, err := f.Stat(); err == nil && st.Size() > tail {
+		f.Seek(st.Size()-tail, 0)
+	}
+	sc := bufio.NewScanner(f)
+	sc.Buffer(make([]byte, 64<<10), 1<<20)
+	for sc.Scan() {
+		var r Record
+		if json.Unmarshal(sc.Bytes(), &r) == nil && r.Agent == agent && r.Time.After(last) {
+			last = r.Time
+		}
+	}
+	return last
+}

@@ -123,6 +123,7 @@ func isCatalogID(model string) bool {
 // Codex would have sent it.
 func (s *Server) codexUpstream(w http.ResponseWriter, r *http.Request, rest string, body []byte) {
 	start := time.Now()
+	usage.Saw(usage.AgentOf(r.Header.Get("User-Agent")))
 	base := provider.CodexBase
 	if apiKey(r.Header) && rest != "/models" {
 		base = codexAPIBase

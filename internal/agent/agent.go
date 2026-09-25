@@ -9,6 +9,7 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/yetone/magpie/internal/proc"
 )
@@ -61,6 +62,15 @@ type Agent struct {
 	// rather than asking the gateway, rewrites that list as the catalog is
 	// now — where magpie wrote one; nothing else changes (see SyncCatalog).
 	Sync func() error
+	// Check, for an agent magpie wires in beyond its model field, says what
+	// of that wiring is gone while the model is still one of magpie's —
+	// something else rewrote the config — or "" when it is all there
+	// (see Drift).
+	Check func() string
+	// LastUsed, for an agent that keeps a log of its own prompts, is when
+	// it was last used — each prompt a request the gateway should have
+	// seen, so one it didn't went round magpie (see Drift). Zero if unknown.
+	LastUsed func() time.Time
 }
 
 // Running reports whether a process whose command line matches any pattern

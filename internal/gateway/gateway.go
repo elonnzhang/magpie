@@ -358,6 +358,7 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request, from provider.Pro
 	w = capture
 	call := Call{Time: start, From: from, Model: modelOf(body), Agent: usage.AgentOf(r.Header.Get("User-Agent")),
 		RequestBody: requestBody, RequestTruncated: requestTruncated}
+	usage.Saw(call.Agent)
 	finishCapture := func() {
 		call.ResponseBody = capture.body.text()
 		call.ResponseTruncated = capture.body.truncated
