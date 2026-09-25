@@ -40,9 +40,12 @@
   const nameOf = (id) => agentOf(id)?.name || id;
   // An agent with no MCP of its own (Pi) reads its servers through an
   // extension, which each of its chips says.
-  const mcpAgents = () => lib.agents.filter((a) => a.mcp)
+  // An agent hidden on the Agents page is left out here too (#71): what it
+  // already has stays with it, and a new server or skill isn't given to it.
+  const shownAgents = () => lib.agents.filter((a) => !isHidden(a));
+  const mcpAgents = () => shownAgents().filter((a) => a.mcp)
     .map((a) => a.mcpVia ? { ...a, aside: t("{agent} reads MCP servers through the {ext} extension", { agent: a.name, ext: a.mcpVia }) } : a);
-  const skillAgents = () => lib.agents.filter((a) => a.skills);
+  const skillAgents = () => shownAgents().filter((a) => a.skills);
 
   function glyph(d, cls = "lib-glyph") {
     const g = el("span", cls);
@@ -94,6 +97,7 @@
     for (const a of all) {
       const has = on.includes(a.id);
       const c = el("button", "lib-ag" + (has ? " on" : ""));
+      c.dataset.agent = a.id;
       c.append(icon(a.icon));
       if (opts.names) c.append(el("span", "n", a.name));
       const problem = opts.problems?.[a.id];
@@ -113,6 +117,45 @@
       box.append(c);
     }
     return box;
+  }
+
+  // A row's chips switched in place: the page isn't drawn again, which
+  // lost the chips' hover (they folded back together and spread again under
+  // the pointer) and blinked their icons (#69). The chip shows the click at
+  // once; what magpie wrote is then painted onto the same buttons, and the
+  // page is drawn again only when more than this row changed.
+  function chipsChange(path, name, list, rowOf) {
+    return async (next, c) => {
+      const box = c.parentElement;
+      c.classList.toggle("on", next.includes(c.dataset.agent));
+      c.classList.remove("via");
+      const before = rest(list);
+      try {
+        const v = await api("library/" + path, { name, agents: next });
+        lib = v;
+        report(v.result);
+      } catch (e) {
+        status(e.message, "err", 6000);
+      }
+      const x = lib[list].find((y) => y.name === name);
+      const fresh = x && rowOf(x).querySelector(":scope > .lib-agents");
+      if (!fresh || rest(list) !== before || !box.isConnected || !morphChips(box, fresh)) render();
+    };
+  }
+  // what the page shows besides a row's chips
+  const rest = (list) => JSON.stringify([lib[list].map((y) => y.name), lib.foundServers, lib.foundSkills, lib.instructions.agents.map((a) => a.on)]);
+  function morphChips(box, fresh) {
+    const was = [...box.children], now = [...fresh.children];
+    if (was.length !== now.length || was.some((c, i) => c.dataset.agent !== now[i].dataset.agent)) return false;
+    was.forEach((c, i) => {
+      const n = now[i];
+      c.className = n.className;
+      c.title = n.title;
+      c.disabled = n.disabled;
+      c.setAttribute("aria-pressed", n.getAttribute("aria-pressed"));
+      c.onclick = n.onclick;
+    });
+    return true;
   }
 
   // ---------- loading and changing ----------
@@ -286,10 +329,11 @@
     rh.append(el("span", "label", t("Agents")), el("span", "grow"), el("span", "note", t("magpie writes its part between two marker lines — the rest of each file stays yours")));
     body.append(rh);
     const list = el("div", "list lib-list");
-    for (const a of iv.agents) list.append(...instructionsRow(a));
-    if (!iv.agents.length) list.append(el("div", "lib-none", t("None of your agents reads a user-wide instructions file magpie knows.")));
+    const rows = iv.agents.filter((a) => !isHidden({ id: a.agent }));
+    for (const a of rows) list.append(...instructionsRow(a));
+    if (!rows.length) list.append(el("div", "lib-none", t("None of your agents reads a user-wide instructions file magpie knows.")));
     body.append(list);
-    const skip = lib.agents.filter((a) => !a.instructions);
+    const skip = shownAgents().filter((a) => !a.instructions);
     if (skip.length) body.append(el("p", "lib-aside", t(skip.length > 1 ? "{agents} keep no user-wide instructions file." : "{agents} keeps no user-wide instructions file.", { agents: skip.map((a) => a.name).join(", ") })));
     body.append(bar);
   }
@@ -406,7 +450,7 @@
       for (const f of lib.foundServers) list.append(foundServerRow(f));
       body.append(list);
     }
-    const skip = lib.agents.filter((a) => !a.mcp);
+    const skip = shownAgents().filter((a) => !a.mcp);
     if (skip.length) body.append(el("p", "lib-aside", t("{agents} has no MCP servers magpie can write.", { agents: skip.map((a) => a.name).join(", ") })));
     body.append(discover("mcp"));
   }
@@ -419,7 +463,7 @@
     sub.title = serverLine(s);
     who.append(sub);
     row.append(mark(s.icon, s.transport === "stdio" ? GLYPH.cmd : GLYPH.web), who,
-      agentChips(all, s.agents, (next) => change("servers/agents", { name: s.name, agents: next }), { problems: s.problems, blocked: sseBlocked(s) }));
+      agentChips(all, s.agents, chipsChange("servers/agents", s.name, "servers", (x) => serverRow(x, all)), { problems: s.problems, blocked: sseBlocked(s) }));
     row.onclick = () => editServer(s);
     row.title = t("Edit {name}", { name: s.name });
     return row;
@@ -697,7 +741,7 @@
       for (const f of lib.foundSkills) list.append(foundSkillRow(f));
       body.append(list);
     }
-    const skip = lib.agents.filter((a) => !a.skills);
+    const skip = shownAgents().filter((a) => !a.skills);
     if (skip.length) body.append(el("p", "lib-aside", t("{agents} has no skills folder.", { agents: skip.map((a) => a.name).join(", ") })));
     body.append(discover("skills"));
   }
@@ -851,7 +895,7 @@
     rm.append(svg(GLYPH.trash, 13, 1.4));
     rm.title = t("Remove");
     acts.append(rm);
-    row.append(mark(s.icon, GLYPH.skill), who, acts, agentChips(all, s.agents, (next) => change("skills/agents", { name: s.name, agents: next }), { problems: s.problems, via: viaFor(s) }));
+    row.append(mark(s.icon, GLYPH.skill), who, acts, agentChips(all, s.agents, chipsChange("skills/agents", s.name, "skills", (x) => skillRow(x, all)), { problems: s.problems, via: viaFor(s) }));
     row.onclick = () => viewSkill(s);
     row.title = t("Read {name}'s SKILL.md", { name: s.name });
     return row;
