@@ -81,3 +81,25 @@ func TestReasoningSentUnderBothNames(t *testing.T) {
 		t.Fatalf("thinking = %q", think.String())
 	}
 }
+
+// The ChatGPT backend's completed response lists no output, so a streamed
+// function call alone says the turn stopped for a tool.
+func TestStreamedCallStopsForTool(t *testing.T) {
+	var d responsesDecoder
+	var stop string
+	for _, c := range []string{
+		`{"type":"response.created","response":{"id":"r1"}}`,
+		`{"type":"response.output_item.added","item":{"type":"function_call","call_id":"c1","name":"get_weather"}}`,
+		`{"type":"response.function_call_arguments.delta","delta":"{\"city\":\"Paris\"}"}`,
+		`{"type":"response.completed","response":{"id":"r1","status":"completed","output":[]}}`,
+	} {
+		d.decode(c, func(e Event) {
+			if e.Kind == KStop {
+				stop = e.Stop
+			}
+		})
+	}
+	if stop != "tool" {
+		t.Fatalf("stop %q", stop)
+	}
+}

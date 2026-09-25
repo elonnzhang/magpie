@@ -281,6 +281,7 @@ func (u Usage) responses() map[string]any {
 type responsesDecoder struct {
 	started  bool
 	argsSeen bool // arguments of the open function call arrived as deltas
+	called   bool // a function call was streamed
 }
 
 func (d *responsesDecoder) decode(data string, emit func(Event)) error {
@@ -317,7 +318,7 @@ func (d *responsesDecoder) decode(data string, emit func(Event)) error {
 		}
 	case "response.output_item.added":
 		if ev.Item.Type == "function_call" {
-			d.argsSeen = false
+			d.argsSeen, d.called = false, true
 			emit(Event{Kind: KToolStart, ID: ev.Item.CallID, Name: ev.Item.Name})
 		}
 	case "response.output_text.delta":
@@ -342,6 +343,9 @@ func (d *responsesDecoder) decode(data string, emit func(Event)) error {
 			if ev.Response.IncompleteDetails != nil && ev.Response.IncompleteDetails.Reason == "content_filter" {
 				stop = "filter"
 			}
+		} else if d.called {
+			// the ChatGPT backend's completed response lists no output
+			stop = "tool"
 		} else {
 			for _, it := range ev.Response.Output {
 				if it.Type == "function_call" {
