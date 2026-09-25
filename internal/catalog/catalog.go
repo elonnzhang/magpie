@@ -170,21 +170,21 @@ func load() map[string]mdProvider {
 				for _, p := range m {
 					for id, x := range p.Models {
 						if e := x.efforts(); len(e) > 0 {
-							if levels[bareID(id)] == nil {
-								levels[bareID(id)] = map[string]int{}
+							if levels[BareID(id)] == nil {
+								levels[BareID(id)] = map[string]int{}
 							}
-							levels[bareID(id)][strings.Join(e, ",")]++
+							levels[BareID(id)][strings.Join(e, ",")]++
 						}
 						if slices.Contains(x.Modalities.Input, "image") {
-							votes[bareID(id)]++
+							votes[BareID(id)]++
 						} else {
-							votes[bareID(id)]--
+							votes[BareID(id)]--
 						}
 						if w := x.window(); w > 0 {
-							if sizes[bareID(id)] == nil {
-								sizes[bareID(id)] = map[int]int{}
+							if sizes[BareID(id)] == nil {
+								sizes[BareID(id)] = map[int]int{}
 							}
-							sizes[bareID(id)][w]++
+							sizes[BareID(id)][w]++
 						}
 					}
 				}
@@ -331,7 +331,7 @@ func ProviderName(id string) string {
 // glm-5.3).
 func SeesImages(id string) bool {
 	load()
-	return images[bareID(id)]
+	return images[BareID(id)]
 }
 
 // ContextOf is the context window models.dev gives a model of this id, as
@@ -342,7 +342,7 @@ func SeesImages(id string) bool {
 // otherwise leave at the agent's default.
 func ContextOf(id string) int {
 	load()
-	b := bareID(id)
+	b := BareID(id)
 	if w, ok := windows[b]; ok {
 		return w
 	}
@@ -366,7 +366,7 @@ func ContextOf(id string) int {
 // reason, and an agent offer no levels for it.
 func EffortsOf(id string) []string {
 	load()
-	b := bareID(id)
+	b := BareID(id)
 	if e, ok := efforts[b]; ok {
 		return slices.Clone(e)
 	}
@@ -406,8 +406,8 @@ func mostGiven(by map[int]int) int {
 	return best
 }
 
-// bareID is a model's id without the vendor's prefix, lowercase.
-func bareID(id string) string {
+// BareID is a model's id without the vendor's prefix, lowercase.
+func BareID(id string) string {
 	id = strings.ToLower(id)
 	if i := strings.LastIndexByte(id, '/'); i >= 0 {
 		id = id[i+1:]

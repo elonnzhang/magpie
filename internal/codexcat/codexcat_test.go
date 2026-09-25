@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/yetone/magpie/internal/catalog"
@@ -30,14 +31,15 @@ func TestCodexCatalogKeepsOwnEntries(t *testing.T) {
 		t.Fatalf("%v %v", err, got)
 	}
 	third, own := got.Models[0], got.Models[1]
-	if third["slug"] != "deepseek/deepseek-chat" || third["base_instructions"] != Prompt || len(third["input_modalities"].([]any)) != 1 {
+	if third["slug"] != "deepseek/deepseek-chat" || third["base_instructions"] != Prompt("deepseek/deepseek-chat") ||
+		len(third["input_modalities"].([]any)) != 1 {
 		t.Errorf("third-party entry: %v", third)
 	}
 	if own["slug"] != "codex/gpt-5.5" || own["display_name"] != "GPT-5.5 · Codex" || own["priority"] != float64(2) ||
 		own["context_window"] != float64(272000) || len(own["input_modalities"].([]any)) != 2 {
 		t.Errorf("own entry: %v", own)
 	}
-	if own["base_instructions"] != Prompt {
+	if own["base_instructions"] != Prompt("codex/gpt-5.5") {
 		t.Error("own entry without base_instructions")
 	}
 	if _, ok := own["upgrade"]; ok {
@@ -45,6 +47,16 @@ func TestCodexCatalogKeepsOwnEntries(t *testing.T) {
 	}
 	if _, ok := own["availability_nux"]; ok {
 		t.Error("start-up notice kept")
+	}
+}
+
+func TestCodexPrompt(t *testing.T) {
+	modelIDs := []string{"customprovider/custom-model", "codex/gpt-5.5", "moonshot/kimi-k2"}
+	want := []string{"custom-model", "gpt-5.5.", "kimi-k2"}
+	for i, id := range modelIDs {
+		if got := Prompt(id); !strings.Contains(got, want[i]) {
+			t.Errorf("Prompt(%q) = %q", id, got)
+		}
 	}
 }
 

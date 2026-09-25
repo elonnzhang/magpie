@@ -217,7 +217,7 @@ func codexInstructions(model string) string {
 	if s, ok := codexCLIPrompts.get(filepath.Join(dir, "models_cache.json"), model, codexPrompts); ok {
 		return s
 	}
-	return codexcat.Prompt
+	return codexcat.Prompt(model)
 }
 
 // codexBody makes a Responses request the one Codex CLI would send: it

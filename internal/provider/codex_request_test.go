@@ -142,7 +142,7 @@ func TestCodexInstructionsSaved(t *testing.T) {
 	if got := codexInstructions("gpt-5.5"); got != "cli copy" {
 		t.Fatalf("before a fetch: %q", got)
 	}
-	if got := codexInstructions("gpt-9"); got != codexcat.Prompt {
+	if got := codexInstructions("gpt-9"); got != codexcat.Prompt("gpt-9") {
 		t.Fatalf("unknown model: %q", got)
 	}
 	saveCodexPrompts([]byte(`{"models":[{"slug":"gpt-5.5","model_messages":{"instructions_template":"fetched"}},{"slug":"gpt-4","base_instructions":"base"}]}`))

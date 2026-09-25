@@ -4,6 +4,7 @@
 package codexcat
 
 import (
+	"bytes"
 	"crypto/sha256"
 	_ "embed"
 	"encoding/hex"
@@ -12,6 +13,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"text/template"
 
 	"github.com/yetone/magpie/internal/catalog"
 )
@@ -21,7 +23,28 @@ import (
 // bundled catalog only carries prompts for OpenAI models.
 //
 //go:embed codex_prompt.md
-var Prompt string
+var promptTpl string
+
+// promptVar is what codex_prompt.md can name. Add a field here when the
+// prompt needs more than the model.
+type promptVar struct {
+	Model string
+}
+
+var prompt = template.Must(template.New("codex_prompt").Parse(promptTpl))
+
+// Prompt is the prompt for a model, naming that model rather than
+// the GPT-5 the original prompt is written for. The id is magpie's,
+// "<provider>/<model>"; the prompt names the model alone.
+func Prompt(id string) string {
+	// TODO some models have a base prompt that is not the generic one;
+	// the catalog should carry it and this tool should use it.
+	var b bytes.Buffer
+	if err := prompt.Execute(&b, promptVar{Model: catalog.BareID(id)}); err != nil {
+		return promptTpl
+	}
+	return b.String()
+}
 
 // DefaultEffort picks the middle of the road: "medium" or "high" when
 // offered, else whatever the list starts with.
@@ -83,9 +106,11 @@ func Entries(ms []catalog.Model, after int) []any {
 			entries = append(entries, ownEntry(raw, m.ID, m.Name, after+i+1))
 			continue
 		}
+		// m.ID is "<provider>/<model>"
+		// m.Name is "<model> · <provider>"
 		e := model{
 			Slug: m.ID, DisplayName: m.Name, Description: m.Name + " via magpie",
-			Instructions: Prompt, Efforts: []level{},
+			Instructions: Prompt(m.ID), Efforts: []level{},
 			Shell: "unified_exec", Visibility: "list", InAPI: true, Priority: after + i + 1,
 			ApplyPatch: "freeform", Tools: []string{}, Modalities: []string{"text"},
 		}
@@ -144,7 +169,7 @@ func ownEntry(raw map[string]any, id, name string, priority int) map[string]any 
 	delete(e, "upgrade")
 	e["slug"], e["display_name"], e["priority"], e["visibility"] = id, name, priority, "list"
 	if s, _ := e["base_instructions"].(string); s == "" {
-		e["base_instructions"] = Prompt
+		e["base_instructions"] = Prompt(id)
 	}
 	return e
 }
