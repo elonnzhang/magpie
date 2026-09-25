@@ -80,6 +80,12 @@ func (p Provider) Fetch(ctx context.Context) ([]catalog.Model, error) {
 
 // fetchOne asks the first endpoint that answers, with p's key.
 func (p Provider) fetchOne(ctx context.Context) ([]catalog.Model, string, error) {
+	if u := strings.TrimSpace(p.ModelsURL); u != "" {
+		// asked where the user said, and nowhere else: the base URLs
+		// list nothing, or the wrong thing
+		ms, err := catalog.FetchURL(ctx, u, p.Key, p.Chat == "" && p.Responses == "", p.Headers)
+		return ms, u, err
+	}
 	var lastErr error
 	for _, proto := range p.Speaks() {
 		base := p.Base(proto)

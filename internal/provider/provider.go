@@ -92,6 +92,11 @@ type Provider struct {
 	BalanceURL  string `json:"balanceURL,omitempty"`
 	BalancePath string `json:"balancePath,omitempty"`
 
+	// ModelsURL, when set, is where the vendor lists its models, for one
+	// that lists them away from the base URL requests go to (Xiaomi MiMo's
+	// plans are served at their own hosts, the list at api.xiaomimimo.com).
+	ModelsURL string `json:"modelsURL,omitempty"`
+
 	// Models the user chose to expose. Empty means "the preset's picks, or
 	// everything the vendor lists when that list is short".
 	Models []string `json:"models,omitempty"`

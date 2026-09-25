@@ -43,6 +43,7 @@ type providerJSON struct {
 	// where a custom provider's balance is asked (see provider.Balance)
 	BalanceURL  string `json:"balanceURL,omitempty"`
 	BalancePath string `json:"balancePath,omitempty"`
+	ModelsURL   string `json:"modelsURL,omitempty"`
 	Key         struct {
 		Set      bool   `json:"set"`
 		Masked   string `json:"masked"`
@@ -143,7 +144,7 @@ func providerInfo(p provider.Provider, agents []*agent.Agent) providerJSON {
 		ID: p.ID, Name: p.Name, Icon: p.Icon, Preset: p.Preset, Host: p.Host(),
 		Chat: p.Chat, Responses: p.Responses, Anthropic: p.Anthropic,
 		Catalog: p.Catalog, Website: p.Website, KeysURL: p.KeysURL,
-		Headers: p.Headers, BalanceURL: p.BalanceURL, BalancePath: p.BalancePath,
+		Headers: p.Headers, BalanceURL: p.BalanceURL, BalancePath: p.BalancePath, ModelsURL: p.ModelsURL,
 		Ready: p.Ready(), Chosen: p.Models, Models: []modelJSON{}, Agents: []providerAgent{},
 		Fallback: p.Fallback, Routing: p.Routing, Affinity: p.Affinity, Unlisted: p.Unlisted,
 	}

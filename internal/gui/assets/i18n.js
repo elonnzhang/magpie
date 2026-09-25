@@ -312,6 +312,8 @@ const I18N = {
     "Catalog": "目录",
     "Display names and reasoning levels for the models; for a gateway that serves several vendors, list them all, first match wins": "模型的显示名称与推理等级；网关同时提供多家厂商的模型时，把它们都列上，按顺序先匹配到的为准",
     "Balance URL": "余额查询地址",
+    "Models URL": "模型列表地址",
+    "Where the vendor lists its models, when that isn't under the base URL; asked with the key": "供应商的模型列表接口，不在基础地址下时填写；请求时会带上 Key",
     "Where the vendor tells what is left on the key, asked with it like a chat request; shown on the Usage page": "供应商查询该 Key 余额的接口，按对话请求的方式带上 Key 请求；结果显示在用量页",
     "Balance field": "余额字段",
     "Where the amount is in the reply, e.g. data.balance; \"$\" in front adds the sign, \"/ 500000\" after it divides": "金额在返回 JSON 中的位置，例如 data.balance；前面加 \"$\" 显示币种符号，后面加 \"/ 500000\" 表示除以该数",

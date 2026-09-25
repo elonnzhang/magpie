@@ -135,6 +135,15 @@ func FetchAt(ctx context.Context, base, key string, anthropic bool, headers map[
 	return nil, "", lastErr
 }
 
+// FetchURL asks for the model list at exactly url.
+func FetchURL(ctx context.Context, url, key string, anthropic bool, headers map[string]string) ([]Model, error) {
+	ms, err := fetchOne(ctx, strings.TrimSpace(url), key, anthropic, headers)
+	if err == nil && len(ms) == 0 {
+		err = errors.New(url + ": no models listed")
+	}
+	return ms, err
+}
+
 func fetchOne(ctx context.Context, url, key string, anthropic bool, headers map[string]string) ([]Model, error) {
 	ctx, cancel := context.WithTimeout(ctx, 8*time.Second)
 	defer cancel()

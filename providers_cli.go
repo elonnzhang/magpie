@@ -25,7 +25,7 @@ const providerUsage = `usage:
   magpie provider <id>                    show one provider and its models
   magpie provider add <preset> <key>      add a preset vendor   e.g. magpie provider add deepseek sk-…
                                           again, it adds another (deepseek-2); k=v pairs too: id, name, header.X-Foo
-  magpie provider add <name> k=v…         add a custom vendor   k: url, anthropic, responses, key, models, catalog, icon, header.X-Foo, balance, balance.path
+  magpie provider add <name> k=v…         add a custom vendor   k: url, anthropic, responses, key, models, catalog, icon, header.X-Foo, balance, balance.path, models.url
   magpie provider key <id> <key>          change the API key
   magpie provider icon <id> <file|name>   give a custom provider a picture (PNG, JPEG, SVG…) or a built-in icon
   magpie provider fallback <id> <provider/model>…   where requests go when it's out of quota or down (none clears)
@@ -522,6 +522,8 @@ func applyPairs(p *provider.Provider, pairs []string) error {
 			p.BalanceURL = v
 		case "balance.path":
 			p.BalancePath = v
+		case "models.url":
+			p.ModelsURL = v
 		case "icon":
 			// a picture on disk is kept by magpie; anything else is one of
 			// the built-in icons' names
