@@ -220,9 +220,10 @@ func Handler(w Windows, gw *gateway.Server) http.Handler {
 			return
 		}
 		// the Settings page sends its own choices; how the agents are
-		// arranged is the Agents page's, and stays as it is
+		// arranged is the Agents page's, and the window's size its own; both stay as they are
 		cur := settings.Load()
 		in.AgentOrder, in.AgentsHidden, in.AgentsShown = cur.AgentOrder, cur.AgentsHidden, cur.AgentsShown
+		in.Window = cur.Window // the window's own, as it was last resized
 		if err := settings.Save(in); err != nil {
 			fail(rw, err)
 			return

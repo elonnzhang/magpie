@@ -164,12 +164,17 @@ func Run(version string, showMain bool, link string) error {
 		Windows: application.WindowsWindow{HiddenOnTaskbar: true},
 	})
 
+	// the window opens at the size it was last given
+	width, height := 660, 600
+	if s := settings.Load().Window; len(s) == 2 && s[0] >= 560 && s[1] >= 420 {
+		width, height = s[0], s[1]
+	}
 	h.main = h.app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Name:      "main",
 		Title:     "magpie",
 		URL:       "/?" + theme,
-		Width:     660,
-		Height:    600,
+		Width:     width,
+		Height:    height,
 		MinWidth:  560,
 		MinHeight: 420,
 		Hidden:    true,
@@ -178,6 +183,32 @@ func Run(version string, showMain bool, link string) error {
 			// it, tabs included; the header marks what drags instead
 			TitleBar: application.MacTitleBarHiddenInset,
 		},
+	})
+	// A resize is kept once it settles; a maximised or full-screen window
+	// is the screen's size, not one the user gave it.
+	var resized *time.Timer
+	h.main.OnWindowEvent(events.Common.WindowDidResize, func(*application.WindowEvent) {
+		if resized != nil {
+			resized.Stop()
+		}
+		resized = time.AfterFunc(500*time.Millisecond, func() {
+			if h.main.IsMaximised() || h.main.IsFullscreen() || h.main.IsMinimised() {
+				return
+			}
+			w, ht := h.main.Size()
+			if w < 560 || ht < 420 {
+				return
+			}
+			// macOS reports a window a pixel short of the size it was
+			// opened at; kept as it is, the window would shrink a pixel at
+			// every start
+			s := settings.Load()
+			if len(s.Window) == 2 && abs(s.Window[0]-w) <= 2 && abs(s.Window[1]-ht) <= 2 {
+				return
+			}
+			s.Window = []int{w, ht}
+			settings.Save(s)
+		})
 	})
 	// Closing the window keeps the tray alive; quitting is a menu action.
 	h.main.RegisterHook(events.Common.WindowClosing, func(e *application.WindowEvent) {
@@ -323,4 +354,11 @@ func singleInstance(h *host) *application.SingleInstanceOptions {
 			}
 		},
 	}
+}
+
+func abs(n int) int {
+	if n < 0 {
+		return -n
+	}
+	return n
 }

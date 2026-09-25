@@ -34,6 +34,9 @@ type Settings struct {
 	AgentOrder   []string `json:"agentOrder,omitempty"`
 	AgentsHidden []string `json:"agentsHidden,omitempty"`
 	AgentsShown  []string `json:"agentsShown,omitempty"`
+	// The main window's size when it was last resized, width and height,
+	// so it opens at it again after a restart.
+	Window []int `json:"window,omitempty"`
 }
 
 // Arrange puts items in the order the user gave the agents, those named
