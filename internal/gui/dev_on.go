@@ -162,6 +162,10 @@ func (c remoteWindows) ShowMain(view string)   { c.do("main", view) }
 func (c remoteWindows) Quit()                  { c.do("quit", "") }
 func (c remoteWindows) OpenURL(u string)       { c.do("open", u) }
 func (c remoteWindows) OpenFolder(path string) { c.do("reveal", path) }
+func (c remoteWindows) Copy(text string) bool {
+	return c.post("copy", url.Values{"arg": {text}}) == "ok"
+}
+
 // The glide rides beside the height, so a shell from before it still sizes.
 func (c remoteWindows) FitPanel(height int, g Glide) {
 	c.post("fit", url.Values{"arg": {strconv.Itoa(height)}, "ms": {strconv.Itoa(g.MS)}, "ease": {g.ease()}})
@@ -212,6 +216,11 @@ func devShell(h *host) http.Handler {
 			h.OpenURL(arg)
 		case "reveal":
 			h.OpenFolder(arg)
+		case "copy":
+			if h.Copy(arg) {
+				rw.Write([]byte("ok"))
+				return
+			}
 		case "fit":
 			q := url.Values{"h": {arg}, "ms": {r.FormValue("ms")}, "ease": {r.FormValue("ease")}}
 			if n, g, ok := parseFit(q); ok {

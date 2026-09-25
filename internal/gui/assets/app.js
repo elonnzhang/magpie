@@ -917,8 +917,14 @@ function accountPlan(a) {
 // page that gets anything else connected to it: base URL, key, model ids,
 // and a snippet in whichever language the reader is holding.
 
+// copy asks magpie to put text on the clipboard, as the page's own
+// clipboard API is refused inside the app's window; a browser tab on the
+// dev UI falls back to it.
 async function copy(text, what, btn) {
-  try { await navigator.clipboard.writeText(text); status(t("{what} copied", { what }), "ok"); flashCopied(btn); }
+  const done = () => { status(t("{what} copied", { what }), "ok"); flashCopied(btn); };
+  const res = await fetch("/api/copy", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text }) }).catch(() => null);
+  if (res && res.ok) return done();
+  try { await navigator.clipboard.writeText(text); done(); }
   catch { status(text); }
 }
 

@@ -521,6 +521,17 @@ func providerRoutes(mux *http.ServeMux, w Windows, gw *gateway.Server) {
 		provider.CancelSignIn(r.PathValue("id"))
 		rw.WriteHeader(http.StatusNoContent)
 	})
+	// the page copies through here first: in the app's window the
+	// clipboard API is refused or missing, depending on the system
+	mux.HandleFunc("POST /api/copy", func(rw http.ResponseWriter, r *http.Request) {
+		var in struct{ Text string }
+		_ = json.NewDecoder(r.Body).Decode(&in)
+		if in.Text == "" || !w.Copy(in.Text) {
+			http.Error(rw, "", http.StatusNotImplemented)
+			return
+		}
+		rw.WriteHeader(http.StatusNoContent)
+	})
 	mux.HandleFunc("POST /api/open", func(rw http.ResponseWriter, r *http.Request) {
 		var in struct{ URL string }
 		_ = json.NewDecoder(r.Body).Decode(&in)

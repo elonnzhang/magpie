@@ -38,6 +38,9 @@ type Windows interface {
 	OpenURL(url string)
 	// OpenFolder shows a folder in the system file manager.
 	OpenFolder(path string)
+	// Copy puts text on the system clipboard, which the page's own
+	// navigator.clipboard can't always reach from inside the app.
+	Copy(text string) bool
 	// FitPanel asks for the panel to be tall enough for its content.
 	FitPanel(height int, g Glide)
 	// TintPanel paints the panel's tint behind the page, where the system

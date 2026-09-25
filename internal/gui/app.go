@@ -37,7 +37,7 @@ type host struct {
 
 	panelHeight int
 	glides      atomic.Int64 // the newest panel glide; older ones stop
-	query       string // what the windows' URLs carry (a forced theme)
+	query       string       // what the windows' URLs carry (a forced theme)
 
 	ready     chan struct{} // closed once the main window can be shown
 	readyOnce sync.Once
@@ -74,6 +74,7 @@ func (h *host) Import(link string) {
 func (h *host) Quit()                  { h.app.Quit() }
 func (h *host) OpenURL(url string)     { _ = h.app.Browser.OpenURL(url) }
 func (h *host) OpenFolder(path string) { _ = h.app.Env.OpenFileManager(path, false) }
+func (h *host) Copy(text string) bool  { return h.app.Clipboard.SetText(text) }
 
 const panelWidth, panelMin, panelMax = 440, 220, 720
 
