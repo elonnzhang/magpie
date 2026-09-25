@@ -94,6 +94,11 @@ var presets = []PresetDef{
 	{ID: "groq", Name: "Groq", Icon: "groq", Kind: KindVendor, Catalog: "groq",
 		Chat: "https://api.groq.com/openai/v1", Responses: "https://api.groq.com/openai/v1",
 		Website: "https://console.groq.com", KeysURL: "https://console.groq.com/keys"},
+	// Ollama's own hosted models: the local server's API, at ollama.com with a key
+	{ID: "ollama-cloud", Name: "Ollama Cloud", Icon: "ollama", Kind: KindVendor, Catalog: "ollama-cloud",
+		Chat: "https://ollama.com/v1", Anthropic: "https://ollama.com",
+		Note:    "cloud models, with an API key",
+		Website: "https://docs.ollama.com/cloud", KeysURL: "https://ollama.com/settings/keys"},
 
 	{ID: "openrouter", Name: "OpenRouter", Icon: "openrouter", Kind: KindRelay, Catalog: "openrouter",
 		Chat: "https://openrouter.ai/api/v1", Anthropic: "https://openrouter.ai/api",
