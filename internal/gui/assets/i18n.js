@@ -464,6 +464,8 @@ const I18N = {
     "At each model's list price on models.dev": "按 models.dev 上各模型的标价计算",
     "no price for these models": "这些模型没有价格信息",
     "5 hours": "5 小时",
+    "MCP · Month": "MCP · 本月",
+    "this key has no OpenCode Go subscription": "这个 Key 没有订阅 OpenCode Go",
     "7 days · Opus": "7 天 · Opus",
     "7 days · Sonnet": "7 天 · Sonnet",
     "Auto + Composer": "Auto + Composer",
