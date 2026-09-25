@@ -50,6 +50,9 @@ func hermes(home string) *Agent {
 		ID: "hermes", Name: "Hermes Agent", Icon: "hermes", Aliases: []string{"hermes-agent"},
 		UA:  []string{"hermes-agent"},
 		Bin: "hermes", Dir: dir, Path: path,
+		Sync: func() error {
+			return syncYAML(path, "providers."+magpieID, func() any { return hermesProvider() })
+		},
 		Notice: func() string {
 			if Running(`(^|/)hermes( |$)`) {
 				return "Hermes reads its settings at start-up — restart open Hermes sessions to use this."

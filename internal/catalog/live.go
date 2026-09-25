@@ -50,13 +50,33 @@ func SaveLive(provider, base string, models []Model) error {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil
 		}
+		if err == nil {
+			Touched()
+		}
 		return err
 	}
 	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
 		return err
 	}
 	b, _ := json.MarshalIndent(liveFile{Fetched: time.Now(), Base: base, Models: models}, "", "  ")
-	return os.WriteFile(p, b, 0o644)
+	if err := os.WriteFile(p, b, 0o644); err != nil {
+		return err
+	}
+	Touched()
+	return nil
+}
+
+// Changed, when set, is told that the models magpie offers may be others
+// now: a provider added, edited or removed, a vendor's list fetched anew.
+// The agent package sets it, to bring the model lists agents keep in files
+// of their own up to date.
+var Changed func()
+
+// Touched tells Changed, if set.
+func Touched() {
+	if Changed != nil {
+		Changed()
+	}
 }
 
 // Fetch asks an endpoint for its models. base is an API base URL of any
@@ -193,6 +213,9 @@ func Decorate(live []Model, known []Model) []Model {
 			}
 			m.Efforts, m.Released, m.Provider = k.Efforts, k.Released, k.Provider
 			m.Images = m.Images || k.Images
+			if m.Context == 0 {
+				m.Context = k.Context
+			}
 			if k.Temperature != nil {
 				m.Temperature = k.Temperature
 			}

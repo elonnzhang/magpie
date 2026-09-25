@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/klauspost/compress/zstd"
+	"github.com/yetone/magpie/internal/codexcat"
 	"github.com/yetone/magpie/internal/provider"
 	"github.com/yetone/magpie/internal/usage"
 )
@@ -175,15 +176,38 @@ func TestCodexModelList(t *testing.T) {
 			fake = m
 		}
 	}
-	// Other sign-ins found on the machine (Cursor's, say) may follow.
+	// Other sign-ins found on the machine (Cursor's, say) may follow. The
+	// ETag is the backend's with magpie's list in it.
+	tag := codexcat.Tag(provider.CodexListed())
 	if rec.Code != 200 || len(slugs) < 2 || slugs[0] != "gpt-5.5" || fake == nil || fake["base_instructions"] == "" ||
-		rec.Header().Get("ETag") != `"v1"` || auth != "Bearer chatgpt-token" {
+		rec.Header().Get("ETag") != `"v1+magpie-`+tag+`"` || auth != "Bearer chatgpt-token" {
 		t.Errorf("%d %v %q %q", rec.Code, slugs, rec.Header().Get("ETag"), auth)
 	}
 	for _, s := range slugs {
 		if strings.HasPrefix(s, "codex/") {
 			t.Errorf("Codex's own models twice: %v", slugs)
 		}
+	}
+}
+
+// A reply's X-Models-Etag carries magpie's list too: Codex refetches its
+// model list on a new one, and only on the backend's it never would when a
+// provider was added.
+func TestCodexModelsEtagTagged(t *testing.T) {
+	setup(t, provider.Chat, &fake{t: t})
+	chatgpt(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Models-Etag", `W/"v1"`)
+		io.WriteString(w, sse(
+			`data: {"type":"response.created","response":{"id":"r1"}}`,
+			`data: {"type":"response.completed","response":{"id":"r1"}}`))
+	})
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest("POST", CodexPath+"/responses", strings.NewReader(`{"model":"gpt-5.5","stream":true,"input":[]}`))
+	req.Header.Set("Authorization", "Bearer chatgpt-token")
+	New().Handler().ServeHTTP(rec, req)
+	tag := codexcat.Tag(provider.CodexListed())
+	if got := rec.Header().Get("X-Models-Etag"); got != `W/"v1+magpie-`+tag+`"` || !codexcat.Tagged(got, tag) {
+		t.Errorf("%d X-Models-Etag %q", rec.Code, got)
 	}
 }
 

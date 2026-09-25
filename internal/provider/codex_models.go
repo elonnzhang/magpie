@@ -123,6 +123,7 @@ func parseCodexModels(b []byte) []catalog.Model {
 			Levels      []struct {
 				Effort string `json:"effort"`
 			} `json:"supported_reasoning_levels"`
+			Context int `json:"context_window"`
 		} `json:"models"`
 	}
 	if json.Unmarshal(b, &list) != nil {
@@ -134,7 +135,7 @@ func parseCodexModels(b []byte) []catalog.Model {
 		if m.Slug == "" || m.Visibility == "hide" {
 			continue
 		}
-		mm := catalog.Model{ID: m.Slug, Name: m.DisplayName, Provider: "openai"}
+		mm := catalog.Model{ID: m.Slug, Name: m.DisplayName, Provider: "openai", Context: m.Context}
 		for _, l := range m.Levels {
 			mm.Efforts = append(mm.Efforts, l.Effort)
 		}
@@ -176,4 +177,23 @@ func codexFetchSaved(ctx context.Context) {
 			catalog.SaveLive(accountModels("codex", user), CodexBase, ms)
 		}
 	}
+}
+
+// CodexListed is the catalog as a Codex signed in to ChatGPT is handed it,
+// after the backend's own models: all but a ChatGPT account's in magpie,
+// which the backend lists already. A group answers for its first member
+// but is not that provider's.
+func CodexListed() []catalog.Model {
+	var ms []catalog.Model
+	for _, e := range Catalog() {
+		if e.Provider.Account != nil && e.Provider.Account.Agent == "codex" {
+			continue
+		}
+		by := e.Provider.Name
+		if e.Group != "" {
+			by = "routing group"
+		}
+		ms = append(ms, catalog.Model{ID: e.ID, Name: e.Name + " · " + by, Efforts: e.Efforts, Images: e.Images, Context: e.Context})
+	}
+	return ms
 }

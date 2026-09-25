@@ -89,6 +89,9 @@ func run(args []string) error {
 	}
 	settings.Migrate()
 	agent.RenameLegacy()
+	// a provider added, edited or removed, or a list fetched anew, reaches
+	// the model lists agents keep in files of their own
+	catalog.Changed = agent.SyncCatalog
 	if len(args) == 0 {
 		if hasGUI {
 			return runGUI(true, "")

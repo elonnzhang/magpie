@@ -89,3 +89,39 @@ func TestImages(t *testing.T) {
 		t.Error("SeesImages")
 	}
 }
+
+// A model's window is models.dev's input limit where it gives one (what a
+// prompt may hold), else its context; looked up by bare id, it is the size
+// most providers give, so a relay's model finds it too.
+func TestContextOf(t *testing.T) {
+	writeCatalog(t, `{
+	  "openai": {"models": {
+	    "gpt-5.5": {"id":"gpt-5.5","limit":{"context":1050000,"input":922000,"output":128000}},
+	    "gpt-4.1": {"id":"gpt-4.1","limit":{"context":1047576,"output":32768}}
+	  }},
+	  "zai": {"models": {"glm-4.6": {"id":"glm-4.6","limit":{"context":204800}}}},
+	  "a": {"models": {"zai/glm-4.6": {"id":"zai/glm-4.6","limit":{"context":204800}}}},
+	  "b": {"models": {"glm-4.6": {"id":"glm-4.6","limit":{"context":128000}}}}
+	}`)
+	for id, want := range map[string]int{
+		"gpt-5.5":        922000,
+		"openai/gpt-5.5": 922000,
+		"gpt-5.5(high)":  922000,
+		"gpt-4.1":        1047576,
+		"GLM-4.6":        204800,
+		"glm-4.6:free":   204800,
+		"unknown-model":  0,
+	} {
+		if got := ContextOf(id); got != want {
+			t.Errorf("ContextOf(%q) = %d, want %d", id, got, want)
+		}
+	}
+	for _, m := range Provider("openai") {
+		if m.ID == "gpt-5.5" && m.Context != 922000 {
+			t.Errorf("Provider: %+v", m)
+		}
+	}
+	if out := Decorate([]Model{{ID: "gpt-5.5"}}, Provider("openai")); out[0].Context != 922000 {
+		t.Errorf("Decorate: %+v", out[0])
+	}
+}

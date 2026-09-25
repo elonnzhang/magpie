@@ -4,7 +4,9 @@
 package codexcat
 
 import (
+	"crypto/sha256"
 	_ "embed"
+	"encoding/hex"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -72,6 +74,7 @@ func Entries(ms []catalog.Model, after int) []any {
 		} `json:"truncation_policy"`
 		Tools      []string `json:"experimental_supported_tools"`
 		Modalities []string `json:"input_modalities"`
+		Context    *int     `json:"context_window,omitempty"`
 	}
 	own := CacheEntries()
 	var entries []any
@@ -88,6 +91,9 @@ func Entries(ms []catalog.Model, after int) []any {
 		}
 		if m.Images {
 			e.Modalities = append(e.Modalities, "image")
+		}
+		if c := m.Context; c > 0 {
+			e.Context = &c
 		}
 		e.Truncation.Mode, e.Truncation.Limit = "tokens", 10000
 		for _, ef := range m.Efforts {
@@ -141,4 +147,36 @@ func ownEntry(raw map[string]any, id, name string, priority int) map[string]any 
 		e["base_instructions"] = Prompt
 	}
 	return e
+}
+
+// Codex keeps the model list it was handed in models_cache.json, with the
+// list's ETag, and asks again only once the cache has aged (minutes) — or
+// when a reply's X-Models-Etag differs from it; the same one only makes the
+// cache young again. Passed on as the ChatGPT backend gave it, the ETag
+// said nothing of magpie's models, so a provider added since stayed out of
+// Codex's /model for as long as Codex kept getting replies. The ETag magpie
+// hands on carries a tag of its models too.
+
+// Tag names a list of magpie's models: another list, another tag.
+func Tag(ms []catalog.Model) string {
+	b, _ := json.Marshal(ms)
+	sum := sha256.Sum256(b)
+	return hex.EncodeToString(sum[:6])
+}
+
+// tagMark is where a tag starts in an ETag magpie made.
+const tagMark = "+magpie-"
+
+// WithTag is an ETag of the backend's (or none) with magpie's tag in it:
+// W/"abc" becomes W/"abc+magpie-<tag>".
+func WithTag(etag, tag string) string {
+	if strings.HasSuffix(etag, `"`) && len(etag) > 1 {
+		return strings.TrimSuffix(etag, `"`) + tagMark + tag + `"`
+	}
+	return etag + tagMark + tag
+}
+
+// Tagged reports whether an ETag carries this tag.
+func Tagged(etag, tag string) bool {
+	return strings.Contains(etag, tagMark+tag)
 }

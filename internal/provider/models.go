@@ -240,6 +240,9 @@ type Entry struct {
 	Group    string   `json:"group,omitempty"`  // set on a routing group (group.go)
 	Icons    []string `json:"-"`                // a group's: its providers' icons, one per provider
 	Images   bool     `json:"images,omitempty"` // takes images as input (a group's: every member does)
+	// Context is the tokens a prompt may hold, when known (a group's: the
+	// least of its members')
+	Context int `json:"context,omitempty"`
 }
 
 // Catalog lists every exposed model of every ready provider, then the
@@ -257,8 +260,14 @@ func providerEntries() []Entry {
 			continue
 		}
 		for _, m := range p.Exposed() {
+			// a vendor models.dev doesn't list (a custom provider, a proxy)
+			// serves models it knows from others
+			ctx := m.Context
+			if ctx == 0 {
+				ctx = catalog.ContextOf(m.ID)
+			}
 			out = append(out, Entry{ID: p.ID + "/" + m.ID, Model: m.ID, Name: m.Name, Efforts: m.Efforts, Provider: p,
-				Images: m.Images || catalog.SeesImages(m.ID)})
+				Images: m.Images || catalog.SeesImages(m.ID), Context: ctx})
 		}
 	}
 	return out

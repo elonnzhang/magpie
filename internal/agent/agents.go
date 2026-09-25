@@ -193,7 +193,11 @@ func magpieProviderJSON(shape string) any {
 	case "crush":
 		var ms []map[string]any
 		for _, m := range models {
-			ms = append(ms, map[string]any{"id": m.ID, "name": m.Name, "context_window": 200000, "default_max_tokens": 16384,
+			window := m.Context
+			if window == 0 {
+				window = 200000
+			}
+			ms = append(ms, map[string]any{"id": m.ID, "name": m.Name, "context_window": window, "default_max_tokens": 16384,
 				"can_reason": len(m.Efforts) > 0})
 		}
 		if ms == nil {
@@ -207,6 +211,11 @@ func magpieProviderJSON(shape string) any {
 			e := map[string]any{"id": m.ID, "name": m.Name, "reasoning": len(m.Efforts) > 0}
 			if levels := piThinkingLevels(m.Efforts); levels != nil {
 				e["thinkingLevelMap"] = levels
+			}
+			// without it Pi takes every model for a 128K one, and compacts
+			// a 272K or 922K one long before it has to
+			if m.Context > 0 {
+				e["contextWindow"] = m.Context
 			}
 			ms = append(ms, e)
 		}
@@ -270,6 +279,9 @@ func opencode(home, cfg string) *Agent {
 		ID: "opencode", Name: "OpenCode", Icon: "opencode", Aliases: []string{"oc"},
 		UA:  []string{"opencode"},
 		Bin: "opencode", Dir: dir, Path: path,
+		Sync: func() error {
+			return syncJSON(path, "provider."+magpieID, func() any { return magpieProviderJSON("opencode") })
+		},
 		Fields: []Field{
 			{Key: "model", Label: "model", Get: jsonGet(path, "model"), Set: set("model"), Options: opts("model")},
 			{Key: "small", Label: "small", Get: jsonGet(path, "small_model"), Set: set("small_model"), Options: opts("small")},
@@ -291,6 +303,9 @@ func pi(home string) *Agent {
 	return &Agent{
 		ID: "pi", Name: "Pi", Icon: "pi", Bin: "pi", Dir: dir, Path: path,
 		UA: []string{"pi-"},
+		Sync: func() error {
+			return syncJSON(modelsPath, "providers."+magpieID, func() any { return magpieProviderJSON("pi") })
+		},
 		Fields: []Field{
 			{
 				Key: "model", Label: "model",
@@ -470,6 +485,9 @@ func crush(home, cfg string) *Agent {
 	return &Agent{
 		ID: "crush", Name: "Crush", Icon: "crush", Bin: "crush", Dir: filepath.Dir(path), Path: path,
 		UA: []string{"crush"},
+		Sync: func() error {
+			return syncJSON(path, "providers."+magpieID, func() any { return magpieProviderJSON("crush") })
+		},
 		Fields: []Field{
 			{Key: "model", Label: "large", Get: pairGet(get, "models.large.provider", "models.large.model"), Set: setter("models.large.provider", "models.large.model"), Options: opts("model")},
 			{Key: "small", Label: "small", Get: pairGet(get, "models.small.provider", "models.small.model"), Set: setter("models.small.provider", "models.small.model"), Options: opts("small")},

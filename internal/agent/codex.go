@@ -199,6 +199,19 @@ func codex(home string) *Agent {
 	return &Agent{
 		ID: "codex", Name: "Codex", Icon: "codex-color", Bin: "codex", Dir: dir, Path: path,
 		UA: []string{"codex"},
+		Sync: func() error {
+			switch {
+			case asProvider() && get("model_catalog_json") == catalogPath:
+				b := codexcat.Catalog(magpieModels())
+				if cur, _ := edit.Read(catalogPath); string(cur) == string(b) {
+					return nil
+				}
+				return edit.WriteAtomic(catalogPath, b)
+			case viaBase():
+				return codexStaleCache(filepath.Join(dir, "models_cache.json"), codexcat.Tag(provider.CodexListed()))
+			}
+			return nil
+		},
 		// the app-server behind the Codex app (and every codex TUI) builds
 		// its model list once, at start-up.
 		Notice: func() string {
@@ -289,6 +302,37 @@ func codexGatewayURL() string { return gateway.URL() + gateway.CodexPath }
 // whichever port it listened on then.
 func isCodexGateway(u string) bool {
 	return strings.HasPrefix(u, "http://127.0.0.1:") && strings.HasSuffix(strings.TrimSuffix(u, "/"), gateway.CodexPath)
+}
+
+// codexStaleCache ages Codex's cached model list if it isn't the one magpie
+// would hand out now (its ETag carries the list's tag), so the next Codex to
+// start asks the gateway again rather than showing the old one until the
+// cache ages on its own; the rest of the cache stays as Codex wrote it.
+func codexStaleCache(path, tag string) error {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	var c map[string]json.RawMessage
+	if json.Unmarshal(b, &c) != nil {
+		return nil
+	}
+	var etag string
+	json.Unmarshal(c["etag"], &etag)
+	if codexcat.Tagged(etag, tag) {
+		return nil
+	}
+	old := time.Unix(0, 0).UTC().Format(time.RFC3339)
+	var at string
+	if json.Unmarshal(c["fetched_at"], &at) == nil && at == old {
+		return nil
+	}
+	c["fetched_at"], _ = json.Marshal(old)
+	out, err := json.MarshalIndent(c, "", "  ")
+	if err != nil {
+		return err
+	}
+	return edit.WriteAtomic(path, out)
 }
 
 // codexUsedUp reports whether the ChatGPT account Codex is signed in to

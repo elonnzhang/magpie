@@ -55,6 +55,10 @@ type Agent struct {
 	// UA is what the agent's User-Agent begins with, lower-case: how the
 	// gateway tells its requests from others'
 	UA []string
+	// Sync, for an agent that reads magpie's models from a file of its own
+	// rather than asking the gateway, rewrites that list as the catalog is
+	// now — where magpie wrote one; nothing else changes (see SyncCatalog).
+	Sync func() error
 }
 
 // Running reports whether a process whose command line matches any pattern

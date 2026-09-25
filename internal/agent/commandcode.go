@@ -34,6 +34,9 @@ func commandCode(home string) *Agent {
 		ID: "commandcode", Name: "Command Code", Icon: "commandcode", Aliases: []string{"command-code", "cmd"},
 		UA:  []string{"command-code", "commandcode"},
 		Bin: "command-code", Dir: dir, Path: path,
+		Sync: func() error {
+			return syncJSON(providers, "provider."+magpieID, func() any { return ccProviderJSON() })
+		},
 		Notice: func() string {
 			notes := []string{"Command Code wants its own sign-in (cmd login) even for models through magpie."}
 			if Running(`(^|/)(cmd|cmdc|command-code|commandcode)( |$)`) {

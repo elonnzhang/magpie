@@ -193,13 +193,16 @@ func groupEntries(entries []Entry) []Entry {
 				e.Icons = append(e.Icons, m.Provider.Icon) // each provider once, "" for one without
 			}
 			var efforts []string
-			images := false
+			images, ctx := false, 0
 			for _, x := range entries {
 				if x.Provider.ID == m.Provider.ID && x.Model == m.Model {
-					efforts, images = x.Efforts, x.Images
+					efforts, images, ctx = x.Efforts, x.Images, x.Context
 				}
 			}
 			e.Images = e.Images && images
+			if ctx > 0 && (e.Context == 0 || ctx < e.Context) {
+				e.Context = ctx
+			}
 			if i == 0 {
 				e.Efforts = efforts
 				continue

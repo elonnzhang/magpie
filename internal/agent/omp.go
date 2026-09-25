@@ -57,6 +57,9 @@ func omp(home string) *Agent {
 		ID: "omp", Name: "omp", Icon: "omp", Aliases: []string{"oh-my-pi"},
 		UA:  []string{"oh-my-pi"},
 		Bin: "omp", Dir: dir, Path: path,
+		Sync: func() error {
+			return syncYAML(pick("models"), "providers."+magpieID, func() any { return ompProvider() })
+		},
 		Notice: func() string {
 			if Running(`(^|/)omp( |$)`, `@oh-my-pi/pi-coding-agent`) {
 				return "omp reads its settings at start-up — restart open omp sessions to use this."
@@ -96,6 +99,7 @@ type ompModel struct {
 	Name      string       `yaml:"name,omitempty"`
 	Reasoning bool         `yaml:"reasoning"`
 	Thinking  *ompThinking `yaml:"thinking,omitempty"`
+	Context   int          `yaml:"contextWindow,omitempty"`
 }
 
 type ompThinking struct {
@@ -115,7 +119,7 @@ type ompProviderEntry struct {
 func ompProvider() ompProviderEntry {
 	ms := []ompModel{}
 	for _, m := range magpieModels() {
-		e := ompModel{ID: m.ID, Name: m.Name}
+		e := ompModel{ID: m.ID, Name: m.Name, Context: m.Context}
 		var efforts []string
 		for _, x := range ompEfforts { // in omp's order
 			if slices.Contains(m.Efforts, x) {

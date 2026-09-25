@@ -51,6 +51,7 @@ func dsh(home string) *Agent {
 		ID: "dsh", Name: "DeepSeek Harness", Icon: "deepseek-color", Aliases: []string{"deepseek-harness"},
 		UA:  []string{"deepseek-harness"},
 		Bin: "dsh", Dir: dir, Path: path,
+		Sync: func() error { return dshSync(dir) },
 		Notice: func() string {
 			var notes []string
 			if Running(`(^|/)dsh( |$)`) {
@@ -379,6 +380,42 @@ func dshRouteLines(model string) []string {
 		"    provider: deepseek-official",
 		"    model: " + yamlQuote(model),
 	}
+}
+
+// dshSync puts the catalog as it is now into each llm-deepseek entry magpie
+// wrote, keyed as that entry is; nothing else in the patch lists changes.
+func dshSync(dir string) error {
+	files := dshProfiles(dir)
+	if len(files) == 0 {
+		files = []string{filepath.Join(dir, "config.yaml")}
+	}
+	for _, f := range files {
+		head, items, err := dshRead(f)
+		if err != nil {
+			continue
+		}
+		i := dshFind(items, "llm-deepseek")
+		if i < 0 || !items[i].magpie {
+			continue
+		}
+		modern := false
+		for _, l := range items[i].lines {
+			modern = modern || strings.HasPrefix(strings.TrimSpace(l), "apiKeyEnv:")
+		}
+		lines := dshProviderLines(modern)
+		if strings.Join(lines, "\n") == strings.Join(items[i].lines, "\n") {
+			continue
+		}
+		items[i].lines = lines
+		out := append([]string{}, head...)
+		for _, it := range items {
+			out = append(out, it.lines...)
+		}
+		if err := edit.WriteAtomic(f, []byte(strings.Join(out, "\n")+"\n")); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // dshSettingsEndpoint reports whether dsh's own settings carry an

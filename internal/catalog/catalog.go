@@ -35,6 +35,9 @@ type Model struct {
 	APIs []string `json:",omitempty"`
 	// Images is set on a model that takes images as input.
 	Images bool `json:",omitempty"`
+	// Context is how many tokens a prompt may hold, when known: models.dev's
+	// input limit, else its context window.
+	Context int `json:",omitempty"`
 }
 
 // Price is what a model costs, in USD per million tokens.
@@ -72,7 +75,20 @@ type mdModel struct {
 		Input  []string `json:"input"`
 		Output []string `json:"output"`
 	} `json:"modalities"`
-	Cost *Price `json:"cost"`
+	Cost  *Price `json:"cost"`
+	Limit struct {
+		Context int `json:"context"`
+		Input   int `json:"input"`
+	} `json:"limit"`
+}
+
+// window is the tokens a prompt to m may hold: the input limit where
+// models.dev gives one (gpt-5's 272K of its 400K), else the whole context.
+func (m mdModel) window() int {
+	if m.Limit.Input > 0 {
+		return m.Limit.Input
+	}
+	return m.Limit.Context
 }
 
 const modelsDevURL = "https://models.dev/api.json"
@@ -83,6 +99,9 @@ var (
 	// images are the models, by bare id, most of the providers serving
 	// them say take images (a few mislabel a text model)
 	images map[string]bool
+	// windows are the models' context windows, by bare id, as most of the
+	// providers serving them give it
+	windows map[string]int
 
 	syncMu sync.Mutex
 )
@@ -122,6 +141,7 @@ func load() map[string]mdProvider {
 			if json.Unmarshal(b, &m) == nil && len(m) > 0 {
 				mdev = m
 				votes := map[string]int{}
+				sizes := map[string]map[int]int{}
 				for _, p := range m {
 					for id, x := range p.Models {
 						if slices.Contains(x.Modalities.Input, "image") {
@@ -129,7 +149,17 @@ func load() map[string]mdProvider {
 						} else {
 							votes[bareID(id)]--
 						}
+						if w := x.window(); w > 0 {
+							if sizes[bareID(id)] == nil {
+								sizes[bareID(id)] = map[int]int{}
+							}
+							sizes[bareID(id)][w]++
+						}
 					}
+				}
+				windows = map[string]int{}
+				for id, by := range sizes {
+					windows[id] = mostGiven(by)
 				}
 				images = map[string]bool{}
 				for id, v := range votes {
@@ -147,7 +177,7 @@ func load() map[string]mdProvider {
 // Reset forgets the loaded catalog so the next call re-reads the cache.
 func Reset() {
 	once = sync.Once{}
-	mdev, images = nil, nil
+	mdev, images, windows = nil, nil, nil
 }
 
 // Sync downloads the models.dev catalog into CachePath. It serializes with
@@ -184,6 +214,7 @@ func Sync(ctx context.Context) error {
 		return err
 	}
 	Reset()
+	Touched() // names, reasoning levels and context windows may be others
 	return nil
 }
 
@@ -240,7 +271,7 @@ func Provider(id string) []Model {
 			continue
 		}
 		mm := Model{ID: m.ID, Name: m.Name, Provider: id, Released: m.ReleaseDate, Price: m.Cost, Temperature: m.Temperature,
-			Images: slices.Contains(m.Modalities.Input, "image")}
+			Images: slices.Contains(m.Modalities.Input, "image"), Context: m.window()}
 		for _, r := range m.Reasoning {
 			if r.Type == "effort" {
 				mm.Efforts = r.Values
@@ -270,6 +301,42 @@ func ProviderName(id string) string {
 func SeesImages(id string) bool {
 	load()
 	return images[bareID(id)]
+}
+
+// ContextOf is the context window models.dev gives a model of this id, as
+// most of the providers it lists serving it do, or 0 when it doesn't know
+// the model. Like SeesImages it reaches a vendor models.dev doesn't list: a
+// proxy serving "openai/gpt-5.4", or "gpt-5.4(high)" with the reasoning
+// level CLIProxyAPI takes in the id, which a static model list would
+// otherwise leave at the agent's default.
+func ContextOf(id string) int {
+	load()
+	b := bareID(id)
+	if w, ok := windows[b]; ok {
+		return w
+	}
+	if i := strings.IndexByte(b, '('); i > 0 && strings.HasSuffix(b, ")") {
+		b = b[:i]
+		if w, ok := windows[b]; ok {
+			return w
+		}
+	}
+	if i := strings.IndexByte(b, ':'); i > 0 { // ":free", ":batch"
+		return windows[b[:i]]
+	}
+	return 0
+}
+
+// mostGiven is the size most providers give; a tie goes to the smaller,
+// which a prompt fits either way.
+func mostGiven(by map[int]int) int {
+	best, n := 0, 0
+	for w, c := range by {
+		if c > n || c == n && w < best {
+			best, n = w, c
+		}
+	}
+	return best
 }
 
 // bareID is a model's id without the vendor's prefix, lowercase.

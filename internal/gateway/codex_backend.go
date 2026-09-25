@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/klauspost/compress/zstd"
-	"github.com/yetone/magpie/internal/catalog"
 	"github.com/yetone/magpie/internal/codexcat"
 	"github.com/yetone/magpie/internal/provider"
 	"github.com/yetone/magpie/internal/usage"
@@ -151,6 +150,7 @@ func (s *Server) codexUpstream(w http.ResponseWriter, r *http.Request, rest stri
 			w.Header()[k] = vs
 		}
 	}
+	modelsEtag(w.Header())
 	w.WriteHeader(res.StatusCode)
 	var sniff *usageSniffer
 	if rest == "/responses" {
@@ -254,23 +254,19 @@ func (s *Server) codexModels(w http.ResponseWriter, r *http.Request) {
 			own = append(own, e)
 		}
 	}
-	var ms []catalog.Model
-	for _, e := range provider.Catalog() {
-		// a ChatGPT account in magpie offers the models listed already
-		if e.Provider.Account != nil && e.Provider.Account.Agent == "codex" {
-			continue
-		}
-		// a group answers for its first member but is not that provider's
-		by := e.Provider.Name
-		if e.Group != "" {
-			by = "routing group"
-		}
-		ms = append(ms, catalog.Model{ID: e.ID, Name: e.Name + " · " + by, Efforts: e.Efforts, Images: e.Images})
-	}
-	if etag != "" {
-		w.Header().Set("ETag", etag)
-	}
+	ms := provider.CodexListed()
+	// the list is the backend's and magpie's, and so is its ETag
+	w.Header().Set("ETag", codexcat.WithTag(etag, codexcat.Tag(ms)))
 	writeJSON(w, 200, map[string]any{"models": append(own, codexcat.Entries(ms, len(own)+100)...)})
+}
+
+// modelsEtag is the X-Models-Etag of a backend reply as Codex should read
+// it: with magpie's models in it, as the list's own ETag has them, so a
+// change to either has Codex ask for the list again.
+func modelsEtag(h http.Header) {
+	if v := h.Get("X-Models-Etag"); v != "" {
+		h.Set("X-Models-Etag", codexcat.WithTag(v, codexcat.Tag(provider.CodexListed())))
+	}
 }
 
 // codexInput readies Codex's input for whoever serves it: a summary magpie

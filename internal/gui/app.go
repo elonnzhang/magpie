@@ -16,6 +16,7 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/events"
 
+	"github.com/yetone/magpie/internal/agent"
 	"github.com/yetone/magpie/internal/catalog"
 	"github.com/yetone/magpie/internal/gateway"
 	"github.com/yetone/magpie/internal/provider"
@@ -290,6 +291,9 @@ func startBackend() (gw *gateway.Server) {
 			}
 			cancel()
 		}
+		// lists an older magpie wrote into agents' files, without what
+		// it has learnt since (context windows, providers added)
+		agent.SyncCatalog()
 	}()
 	return gw
 }

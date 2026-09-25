@@ -16,6 +16,8 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+
+	"github.com/yetone/magpie/internal/catalog"
 )
 
 // Protocol is a wire API magpie can speak to an upstream.
@@ -147,7 +149,12 @@ func store(f file) error {
 		return err
 	}
 	pruneIcons(f)
-	return os.Chmod(p, 0o600)
+	if err := os.Chmod(p, 0o600); err != nil {
+		return err
+	}
+	// what agents were handed of the catalog may be out of date now
+	catalog.Touched()
+	return nil
 }
 
 // All lists the configured providers in the order they were added, then
