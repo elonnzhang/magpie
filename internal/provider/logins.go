@@ -122,20 +122,54 @@ func upsertLogin(ls []savedLogin, l savedLogin) []savedLogin {
 }
 
 // sameLogin says whether two saved logins are one account. A Claude
-// account is its email within an organization: one email can be a personal
-// Pro or Max and a seat on a Team, two subscriptions side by side.
+// account is its email within an organization, a ChatGPT one its email
+// within a workspace: one email can be a personal Plus or Max and a seat on
+// a Team, two subscriptions side by side.
 func sameLogin(a, b savedLogin) bool {
 	if a.Agent != b.Agent {
 		return false
 	}
-	if a.Agent == "claude" {
-		ea, oa := claudeWho(a.Profile)
-		eb, ob := claudeWho(b.Profile)
-		if ea != "" && eb != "" && oa != "" && ob != "" {
-			return strings.EqualFold(ea, eb) && oa == ob
-		}
+	var ea, oa, eb, ob string
+	switch a.Agent {
+	case "claude":
+		ea, oa = claudeWho(a.Profile)
+		eb, ob = claudeWho(b.Profile)
+	case "codex":
+		ea, oa = codexWho(a.Auth)
+		eb, ob = codexWho(b.Auth)
+	}
+	if ea != "" && eb != "" && oa != "" && ob != "" {
+		return strings.EqualFold(ea, eb) && oa == ob
 	}
 	return strings.EqualFold(a.User, b.User)
+}
+
+// codexWho reads the email and workspace of a Codex auth.json.
+func codexWho(auth json.RawMessage) (email, workspace string) {
+	var a codexAuth
+	if json.Unmarshal(auth, &a) != nil {
+		return "", ""
+	}
+	id := jwtClaims(a.Tokens.IDToken)
+	workspace = a.Tokens.AccountID
+	if workspace == "" {
+		workspace = claimString(id, "https://api.openai.com/auth", "chatgpt_account_id")
+	}
+	return claimString(id, "email"), workspace
+}
+
+// codexUser names a ChatGPT account from its ID token's claims: its email,
+// and for a seat in a workspace the plan too, so it reads apart from a
+// personal plan of the same email.
+func codexUser(id map[string]any) string {
+	email := claimString(id, "email")
+	switch plan := claimString(id, "https://api.openai.com/auth", "chatgpt_plan_type"); plan {
+	case "team", "business", "enterprise", "edu":
+		if email != "" {
+			return email + " · " + strings.ToUpper(plan[:1]) + plan[1:]
+		}
+	}
+	return email
 }
 
 // claudeWho reads the email and organization of Claude Code's oauthAccount.
@@ -206,7 +240,7 @@ func liveLogin(agent string) (savedLogin, bool) {
 			return savedLogin{}, false
 		}
 		id := jwtClaims(a.Tokens.IDToken)
-		user := claimString(id, "email")
+		user := codexUser(id)
 		if user == "" {
 			user = a.Tokens.AccountID
 		}

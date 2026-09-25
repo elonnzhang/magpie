@@ -654,7 +654,7 @@ func codexAccount(home string) (Provider, bool) {
 	}
 	id := jwtClaims(a.Tokens.IDToken)
 	acct := &Account{Agent: "codex", Stream: true,
-		User: claimString(id, "email"), Plan: claimString(id, "https://api.openai.com/auth", "chatgpt_plan_type")}
+		User: codexUser(id), Plan: claimString(id, "https://api.openai.com/auth", "chatgpt_plan_type")}
 	if acct.User == "" {
 		acct.User = "ChatGPT"
 	}

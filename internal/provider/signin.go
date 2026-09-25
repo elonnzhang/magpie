@@ -492,7 +492,7 @@ func codexExchange(ctx context.Context, code, verifier, redirect string) (savedL
 		return savedLogin{}, errors.New("ChatGPT sent back no token")
 	}
 	id := jwtClaims(tok.IDToken)
-	user := claimString(id, "email")
+	user := codexUser(id)
 	if user == "" {
 		return savedLogin{}, errors.New("ChatGPT didn't say which account signed in")
 	}
