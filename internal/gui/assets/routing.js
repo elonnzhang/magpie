@@ -1049,7 +1049,8 @@
   function words() {
     for (const s of stats.children) s.lastChild.textContent = t(s.dataset.label);
     hubText();
-    if (loaded) { if (cur) { sync(true); renderAll(); } else empty(); }
+    // the caption said before, said again in these words: it was set as text
+    if (loaded) { if (cur) { sync(true); renderAll(); capQ = []; say(affWhy(cur, true) || firstWhy(cur)); } else empty(); }
     renderGroups();
   }
   new MutationObserver(words).observe(document.documentElement, { attributes: true, attributeFilter: ["lang"] });

@@ -537,6 +537,7 @@ const I18N = {
     "{who} answered {status} · {fail}, and nobody else is left to ask — a failure that may pass, so it is tried again in {d}, before any of the reply reaches {agent}.": "{who} 回了 {status} · {fail}，而且没有别人可问了——这种失败可能一会儿就过去，所以 {d} 后再试它一次，回复的任何部分都还没交给 {agent}。",
     "fallback": "备用",
     "gateway": "网关",
+    "one key": "一个 Key",
     "your agent": "你的 Agent",
     "Back to live": "回到实时",
     "How the last request was routed": "最近一个请求是怎么路由的",
