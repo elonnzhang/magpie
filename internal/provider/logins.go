@@ -50,6 +50,9 @@ type savedLogin struct {
 	// Grok or Copilot account ahead of the agent's own (side_logins.go).
 	Home  string `json:"home,omitempty"`
 	First bool   `json:"first,omitempty"`
+	// Project is the Google Cloud project a Gemini CLI or Antigravity
+	// account's requests go to, when the user named one (google.go).
+	Project string `json:"project,omitempty"`
 }
 
 var (
@@ -318,8 +321,12 @@ func Logins(agent string) []Login {
 		return grokLoginList()
 	case "copilot":
 		return copilotLoginList()
+	case "gemini", "antigravity":
+		return googleLoginList(agent)
 	case "":
 		side = append(grokLoginList(), copilotLoginList()...)
+		side = append(side, googleLoginList("gemini")...)
+		side = append(side, googleLoginList("antigravity")...)
 	}
 	rememberLogins(false)
 	loginsMu.Lock()
@@ -332,7 +339,7 @@ func Logins(agent string) []Login {
 	}
 	var out []Login
 	for _, l := range readLogins() {
-		if (agent != "" && l.Agent != agent) || l.Agent == "grok" || l.Agent == "copilot" {
+		if (agent != "" && l.Agent != agent) || sideAgent(l.Agent) {
 			continue
 		}
 		using := strings.EqualFold(active[l.Agent], l.User)
@@ -351,6 +358,8 @@ func SwitchLogin(agent, user string) error {
 		return switchGrokLogin(user)
 	case "copilot":
 		return switchCopilotLogin(user)
+	case "gemini", "antigravity":
+		return switchGoogleLogin(agent, user)
 	}
 	loginsMu.Lock()
 	defer loginsMu.Unlock()
@@ -452,6 +461,8 @@ func ForgetLogin(agent, user string) error {
 		return forgetGrokLogin(user)
 	case "copilot":
 		return forgetCopilotLogin(user)
+	case "gemini", "antigravity":
+		return forgetGoogleLogin(agent, user)
 	}
 	loginsMu.Lock()
 	defer loginsMu.Unlock()

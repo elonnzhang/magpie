@@ -176,8 +176,16 @@ to be installed and signed in.
 Cursor, Grok and Devin subscriptions likewise run through their own CLIs —
 none of them has an endpoint a borrowed key can be sent to — with Devin
 driven over ACP (`devin acp`) in a home of magpie's own that keeps only the
-caller's MCP tools and shares just the sign-in. A Gemini CLI Google login is
-planned.
+caller's MCP tools and shares just the sign-in.
+Google sign-ins — Gemini CLI's and Antigravity's — talk to Google's Code
+Assist API directly: magpie reads Gemini CLI's own login from `~/.gemini` or
+signs one in itself, and refreshes the token in memory. Google no longer
+serves Gemini CLI's sign-in to individual accounts, only to Gemini Code
+Assist Standard and Enterprise, which need a Google Cloud project named
+(`magpie accounts project gemini <email> <project-id>`, or
+`GOOGLE_CLOUD_PROJECT` in `~/.gemini/.env`). Google may suspend an
+Antigravity account it sees used outside Antigravity, so magpie asks before
+adding one; use an account you can afford to lose.
 
 ### Connecting anything else
 

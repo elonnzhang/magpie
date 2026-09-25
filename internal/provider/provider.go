@@ -309,7 +309,7 @@ func freeName(name string) string {
 }
 
 // accountIDs are the ids of the subscriptions magpie can list (account.go).
-var accountIDs = []string{"claude", "codex", "copilot", "cursor", "devin", "grok"}
+var accountIDs = []string{"antigravity", "claude", "codex", "copilot", "cursor", "devin", "gemini", "grok"}
 
 func stored(id string) bool {
 	for _, p := range load().Providers {
@@ -462,12 +462,20 @@ func (p Provider) Base(proto Protocol) string {
 		return p.Responses
 	case Anthropic:
 		return p.Anthropic
+	case CodeAssist:
+		if p.Account != nil {
+			return p.Account.codeAssist
+		}
 	}
 	return ""
 }
 
 // Speaks lists the protocols the vendor serves natively, preferred first.
 func (p Provider) Speaks() []Protocol {
+	// a Google sign-in speaks Code Assist, and only that
+	if p.Account != nil && p.Account.codeAssist != "" {
+		return []Protocol{CodeAssist}
+	}
 	var out []Protocol
 	for _, pr := range Protocols {
 		if p.Base(pr) != "" {
@@ -479,7 +487,7 @@ func (p Provider) Speaks() []Protocol {
 
 // Host is the vendor's API host, for display.
 func (p Provider) Host() string {
-	for _, pr := range Protocols {
+	for _, pr := range p.Speaks() {
 		if u := p.Base(pr); u != "" {
 			return HostOf(u)
 		}

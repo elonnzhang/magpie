@@ -17,19 +17,42 @@ import (
 )
 
 // accountsCmd: `magpie accounts [agent] [--json]`, `magpie accounts add <agent>`,
-// `magpie accounts switch|forget <agent> <email>`
+// `magpie accounts switch|forget <agent> <email>`,
+// `magpie accounts project <gemini|antigravity> <email> <project>`
 // — the subscriptions magpie remembers, how much of each one's allowance is
 // used, and switching the agent between them.
 func accountsCmd(args []string) error {
-	const usage = "usage: magpie accounts [claude|codex|grok|copilot] [--json] | magpie accounts add <claude|codex> | magpie accounts switch|forget <claude|codex> <email>"
+	const usage = "usage: magpie accounts [claude|codex|grok|copilot|gemini|antigravity] [--json] | magpie accounts add <claude|codex|gemini|antigravity> | magpie accounts switch|forget <claude|codex|gemini|antigravity> <email> | magpie accounts project <gemini|antigravity> <email> <gcp-project-id>"
 	agentID := func(s string) (string, error) {
 		switch strings.ToLower(s) {
 		case "claude", "cc":
 			return "claude", nil
 		case "codex":
 			return "codex", nil
+		case "gemini", "gemini-cli":
+			return "gemini", nil
+		case "antigravity", "ag":
+			return "antigravity", nil
 		}
-		return "", fmt.Errorf("%q: only Claude Code and Codex accounts can be switched\n%s", s, usage)
+		return "", fmt.Errorf("%q: only Claude Code, Codex, Gemini CLI and Antigravity accounts can be added and switched\n%s", s, usage)
+	}
+	if len(args) > 1 && args[1] == "project" {
+		if len(args) != 5 {
+			return fmt.Errorf("%s", usage)
+		}
+		id, err := agentID(args[2])
+		if err != nil {
+			return err
+		}
+		if err := provider.SetGoogleProject(id, args[3], args[4]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(args[4]) == "" {
+			fmt.Println(green.Render("✓"), args[3], "no longer names a Google Cloud project")
+		} else {
+			fmt.Println(green.Render("✓"), args[3], "now uses Google Cloud project", args[4])
+		}
+		return nil
 	}
 	if len(args) > 1 && args[1] == "add" {
 		if len(args) != 3 {
@@ -59,6 +82,10 @@ func accountsCmd(args []string) error {
 		if err := provider.SwitchLogin(id, args[3]); err != nil {
 			return err
 		}
+		if id == "gemini" || id == "antigravity" {
+			fmt.Println(green.Render("✓"), "magpie now uses", args[3], "for", id)
+			return nil
+		}
 		fmt.Println(green.Render("✓"), id, "is now signed in as", args[3], muted.Render("· sessions already running keep their account until restarted"))
 		return nil
 	}
@@ -85,7 +112,7 @@ func accountsCmd(args []string) error {
 		return nil
 	}
 	if len(ls) == 0 {
-		fmt.Println(muted.Render("no accounts yet ·"), "add one: magpie accounts add <claude|codex>")
+		fmt.Println(muted.Render("no accounts yet ·"), "add one: magpie accounts add <claude|codex|gemini|antigravity>")
 		return nil
 	}
 	width := 0
@@ -213,6 +240,15 @@ func untilShort(d time.Duration) string {
 // addAccount signs in to one more subscription in the browser, the way the
 // window's "Add account" does.
 func addAccount(agentID string) error {
+	if agentID == "antigravity" {
+		fmt.Println(bold.Render("!"), provider.AntigravityRisk)
+		fmt.Print("Sign in anyway? [y/N] ")
+		var yes string
+		fmt.Scanln(&yes)
+		if !strings.EqualFold(strings.TrimSpace(yes), "y") && !strings.EqualFold(strings.TrimSpace(yes), "yes") {
+			return fmt.Errorf("sign-in canceled")
+		}
+	}
 	st, err := provider.StartSignIn(agentID)
 	if err != nil {
 		return err

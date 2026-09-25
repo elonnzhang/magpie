@@ -151,6 +151,13 @@ func StartSignIn(agent string) (SignInState, error) {
 		if err := startCopilotSignIn(s); err != nil {
 			return SignInState{}, err
 		}
+	case "gemini", "antigravity":
+		// Google's sign-in, under the app's own OAuth client
+		app, _ := googleAppOf(agent)
+		if ln, err = net.Listen("tcp", "127.0.0.1:0"); err != nil {
+			return SignInState{}, err
+		}
+		startGoogleSignIn(s, app, ln.Addr().(*net.TCPAddr).Port, challenge)
 	default:
 		return SignInState{}, fmt.Errorf("magpie can't sign in to %s accounts", agent)
 	}
@@ -278,7 +285,7 @@ func (s *signInFlow) finish(out SignInState) bool {
 
 func (s *signInFlow) callback(w http.ResponseWriter, r *http.Request) {
 	switch r.URL.Path {
-	case "/callback", "/auth/callback":
+	case "/callback", "/auth/callback", "/oauth2callback", "/oauth-callback":
 	case "/cancel":
 		s.finish(SignInState{State: "canceled"})
 		w.WriteHeader(http.StatusNoContent)
@@ -308,6 +315,10 @@ func (s *signInFlow) callback(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
+	if app, ok := googleAppOf(s.st.Agent); ok {
+		s.googleDone(ctx, w, app, q.Get("code"))
+		return
+	}
 	l, err := s.exchange(ctx, q.Get("code"))
 	if err == nil && s.st.Agent == "devin" {
 		// devin keeps the one account it is signed in to: the exchange
@@ -326,6 +337,26 @@ func (s *signInFlow) callback(w http.ResponseWriter, r *http.Request) {
 	}
 	s.finish(SignInState{State: "failed", Error: err.Error()})
 	signInPage(w, false, "Sign-in didn't finish", err.Error())
+}
+
+// googleDone finishes a Gemini CLI or Antigravity sign-in: the account is
+// kept beside the others, in use at once.
+func (s *signInFlow) googleDone(ctx context.Context, w http.ResponseWriter, app googleApp, code string) {
+	g, plan, err := googleExchange(ctx, app, code, s.verifier, s.redirect)
+	if err == nil {
+		err = addGoogleLogin(app.agent, g.user, plan, g.auth)
+	}
+	if err != nil {
+		s.finish(SignInState{State: "failed", Error: err.Error()})
+		signInPage(w, false, "Sign-in didn't finish", err.Error())
+		return
+	}
+	using := false
+	if own, ok := geminiOwnLogin(); ok && app.agent == "gemini" && strings.EqualFold(own.user, g.user) {
+		using = true
+	}
+	s.finish(SignInState{State: "done", User: g.user, Plan: plan, Using: using})
+	signInPage(w, true, "You're signed in", fmt.Sprintf("%s is added to magpie. You can close this tab.", g.user))
 }
 
 // exchange trades the code for tokens and makes them into a login.

@@ -35,6 +35,8 @@ func LoginUsage(ctx context.Context, agent string) map[string]SubscriptionQuota 
 		logins = Logins(agent)
 	case "copilot":
 		logins = copilotLoginList()
+	case "gemini", "antigravity":
+		logins = googleLoginList(agent)
 	case "cursor": // one account, the one cursor-agent is signed in to
 		if user, plan, ok := cursorIdentity(); ok {
 			logins = []Login{{Agent: agent, User: user, Plan: plan, Active: true, On: true}}
@@ -79,6 +81,9 @@ func LoginUsage(ctx context.Context, agent string) map[string]SubscriptionQuota 
 func loginQuota(ctx context.Context, l Login) SubscriptionQuota {
 	if l.Agent == "cursor" {
 		return cursorSubscriptionUsage(ctx, l.Plan)
+	}
+	if l.Agent == "gemini" || l.Agent == "antigravity" {
+		return googleLoginQuota(ctx, l)
 	}
 	if l.Agent == "copilot" {
 		for _, c := range copilotLogins(copilotConfigDir()) {

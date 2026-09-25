@@ -50,6 +50,10 @@ type Account struct {
 	// logins_on.go): the access token to run the agent's binary with.
 	token func(ctx context.Context) (string, error)
 
+	// codeAssist is where a Gemini CLI or Antigravity account's requests
+	// go (google.go).
+	codeAssist string
+
 	sign   func(ctx context.Context, req *http.Request, body []byte) error
 	body   func(body []byte) []byte // request tweaks the backend insists on
 	models func() []catalog.Model
@@ -580,6 +584,11 @@ func Accounts() []Provider {
 	}
 	if p, ok := devinAccount(); ok {
 		out = append(out, p)
+	}
+	for _, agent := range []string{"gemini", "antigravity"} {
+		if p, ok := googleAccountOf(agent); ok {
+			out = append(out, p)
+		}
 	}
 	return out
 }

@@ -174,6 +174,8 @@ func providerInfo(p provider.Provider, agents []*agent.Agent) providerJSON {
 			out.Account.Name, out.Account.Icon = "Cursor CLI", "cursor"
 		} else if a.Agent == "grok" {
 			out.Account.Name, out.Account.Icon = "Grok CLI", "xai"
+		} else if a.Agent == "antigravity" {
+			out.Account.Name, out.Account.Icon = "Antigravity", "antigravity-color"
 		}
 		out.Account.Logins = provider.Logins(a.Agent)
 	}

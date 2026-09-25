@@ -179,3 +179,13 @@ func addSideLogin(l savedLogin, dup func(savedLogin)) error {
 	l.On = true
 	return writeLogins(append(ls, l))
 }
+
+// sideAgent says an agent's accounts are kept this way, not in the
+// agent's own store as Claude Code's and Codex's are.
+func sideAgent(agent string) bool {
+	switch agent {
+	case "grok", "copilot", "gemini", "antigravity":
+		return true
+	}
+	return false
+}

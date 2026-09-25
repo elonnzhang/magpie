@@ -217,7 +217,7 @@ func (s *Server) countTokens(w http.ResponseWriter, r *http.Request) {
 	p, model, ok := provider.Resolve(modelOf(body))
 	// Claude Subscription generations run through the Claude Code binary. Its
 	// OAuth token must not take a direct HTTP side path just for token counting.
-	if ok && p.Account != nil && (p.Account.Agent == "claude" || p.Account.Agent == "cursor" || p.Account.Agent == "grok" || p.Account.Agent == "devin") {
+	if ok && p.Account != nil && (p.Account.Agent == "claude" || p.Account.Agent == "cursor" || p.Account.Agent == "grok" || p.Account.Agent == "devin" || p.Account.Agent == "gemini" || p.Account.Agent == "antigravity") {
 		req, err := parseAnthropic(body)
 		if err != nil {
 			writeError(w, provider.Anthropic, 400, err.Error())
@@ -733,6 +733,9 @@ func (s *Server) forwardTranslated(ctx context.Context, p provider.Provider, to 
 	}
 	for {
 		body := build(to, req, model, p.Host(), p.RejectsTemperature(model))
+		if to == provider.CodeAssist && p.Account != nil {
+			body = buildCodeAssist(req, model, p.Account.Agent)
+		}
 		res, err := s.forward(ctx, p, to, pathOf(to), p.Prepare(body), in)
 		if err != nil || res.StatusCode < 400 {
 			return res, to, err
@@ -854,6 +857,8 @@ func pathOf(proto provider.Protocol) string {
 		return "/chat/completions"
 	case provider.Responses:
 		return "/responses"
+	case provider.CodeAssist:
+		return "/v1internal:streamGenerateContent?alt=sse"
 	}
 	return "/v1/messages"
 }
@@ -887,6 +892,9 @@ func decoder(proto provider.Protocol) func(data string, emit func(Event)) error 
 		return d.decode
 	case provider.Responses:
 		d := &responsesDecoder{}
+		return d.decode
+	case provider.CodeAssist:
+		d := &codeAssistDecoder{}
 		return d.decode
 	}
 	return decodeAnthropic

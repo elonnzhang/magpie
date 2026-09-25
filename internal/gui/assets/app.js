@@ -1171,6 +1171,7 @@ function accountPlan(a) {
   if (a.agent === "claude") return "Claude" + (a.plan ? " " + a.plan[0].toUpperCase() + a.plan.slice(1) : "");
   if (a.agent === "cursor") return "Cursor" + (a.plan ? " " + a.plan[0].toUpperCase() + a.plan.slice(1) : "");
   if (a.agent === "grok") return "Grok";
+  if (a.agent === "gemini" || a.agent === "antigravity") return a.plan || "Google";
   return t("signed in");
 }
 
@@ -2709,13 +2710,22 @@ const SUBS = [
   { agent: "copilot", name: "Copilot", icon: "githubcopilot", plans: "Pro · Pro+ · Business", own: true },
   // devin's credentials.toml keeps one account too
   { agent: "devin", name: "Devin", icon: "devin", plans: "Pro · Enterprise", single: true },
+  // Google's sign-ins; Gemini CLI's own account is read too
+  { agent: "gemini", name: "Gemini CLI", icon: "geminicli-color", plans: "Code Assist Standard · Enterprise", own: true },
+  { agent: "antigravity", name: "Antigravity", icon: "antigravity-color", plans: "Google AI Pro · Ultra · free", risk: true },
 ];
 const subOf = (agent) => SUBS.find((x) => x.agent === agent);
 let signing = null; // the sign-in under way: { id, agent, url, state, error }
 let justAdded = ""; // the account that just came in, to greet it
 
-async function startSignIn(agent) {
+async function startSignIn(agent, risky) {
   if (signing?.state === "waiting") api("signin/" + signing.id + "/cancel", {}).catch(() => {});
+  // an account Google may suspend is added only once that is said
+  if (subOf(agent)?.risk && !risky) {
+    signing = { agent, state: "risk" };
+    renderProviders();
+    return;
+  }
   signing = { agent, state: "starting" };
   renderProviders();
   try {
@@ -2763,12 +2773,24 @@ function cancelSignIn() {
 function renderSigning(sub) {
   const box = el("div", "signing" + (signing.state === "failed" ? " failed" : ""));
   const tt = el("span", "tt");
+  if (signing.state === "risk") {
+    box.append(el("span", "mark", "!"));
+    tt.append(el("span", "n", t("{name} accounts can be suspended", { name: sub.name })),
+      el("span", "s", t("Google may suspend an Antigravity account it sees used outside Antigravity. Use one you can afford to lose.")));
+    box.append(tt);
+    const go = el("button", "text primary", t("Sign in anyway"));
+    go.onclick = () => startSignIn(sub.agent, true);
+    const close = el("button", "text", t("Cancel"));
+    close.onclick = cancelSignIn;
+    box.append(close, go);
+    return box;
+  }
   if (signing.state === "failed") {
     box.append(el("span", "mark", "!"));
     tt.append(el("span", "n", t("Sign-in didn't finish")), el("span", "s", signing.error || ""));
     box.append(tt);
     const again = el("button", "text primary", t("Try again"));
-    again.onclick = () => startSignIn(sub.agent);
+    again.onclick = () => startSignIn(sub.agent, true);
     const close = el("button", "text", t("Cancel"));
     close.onclick = cancelSignIn;
     box.append(close, again);
@@ -2865,6 +2887,14 @@ function loginUsageOf(agent) {
   return u.data;
 }
 
+// quotaError says why an allowance can't be read: a Google account with
+// no Cloud project named can't be used at all until one is, so that is
+// said outright; anything else is in the tooltip.
+function quotaError(err) {
+  if (/magpie accounts project/.test(err)) return t("Needs a Google Cloud project — hover for how");
+  return t("Usage unavailable");
+}
+
 // accountQuota: an account's allowance as a line of small meters under its
 // name, the reset time on the ones nearly used up.
 function accountQuota(data, user) {
@@ -2875,7 +2905,7 @@ function accountQuota(data, user) {
   }
   const q = data[user];
   if (!q || q.error || !q.windows?.length) {
-    line.append(el("span", "aq-none", q?.error ? t("Usage unavailable") : t("No usage reported")));
+    line.append(el("span", "aq-none", q?.error ? quotaError(q.error) : t("No usage reported")));
     if (q?.error) line.title = q.error;
     return line;
   }
@@ -3277,7 +3307,7 @@ function quotaWindows(sub) {
     return b;
   }
   if (sub.error) {
-    const e = el("div", "subscription-error", t("Usage unavailable"));
+    const e = el("div", "subscription-error", quotaError(sub.error));
     e.title = sub.error;
     return e;
   }

@@ -148,6 +148,14 @@ func fetchSubscriptionUsage() []SubscriptionQuota {
 			}
 		}
 	}
+	for _, agent := range []string{"gemini", "antigravity"} {
+		if hidden[agent] {
+			continue
+		}
+		for _, l := range googleLogins(agent) {
+			fetches = append(fetches, func() SubscriptionQuota { return l.acct.quota(ctx, l.Plan) })
+		}
+	}
 	out := make([]SubscriptionQuota, len(fetches))
 	var wg sync.WaitGroup
 	for i, f := range fetches {

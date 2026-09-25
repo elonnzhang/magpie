@@ -29,6 +29,8 @@ func SetLoginOn(agent, user string, on bool) error {
 		return setGrokLoginOn(user, on)
 	case "copilot":
 		return setCopilotLoginOn(user, on)
+	case "gemini", "antigravity":
+		return setGoogleLoginOn(agent, user, on)
 	}
 	loginsMu.Lock()
 	defer loginsMu.Unlock()
@@ -56,6 +58,9 @@ func (p Provider) AlsoOn() []Provider {
 	}
 	if p.Account != nil && p.Account.Agent == "copilot" {
 		return copilotAlsoOn()
+	}
+	if p.Account != nil && (p.Account.Agent == "gemini" || p.Account.Agent == "antigravity") {
+		return googleAlsoOn(p.Account.Agent)
 	}
 	if p.Account == nil || p.Account.token != nil || (p.Account.Agent != "claude" && p.Account.Agent != "codex") {
 		return nil
