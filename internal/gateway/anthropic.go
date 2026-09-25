@@ -3,6 +3,8 @@ package gateway
 import (
 	"encoding/json"
 	"fmt"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -153,6 +155,23 @@ func thinkingOffUnlessAsked(body []byte) []byte {
 }
 
 // buildAnthropic renders a request for an Anthropic-style upstream.
+// claudeVersion finds the family's version in a Claude model id however a
+// relay spells it: claude-opus-4-6, claude-opus-5, anthropic.claude-sonnet-4.6-v1.
+var claudeVersion = regexp.MustCompile(`claude-(?:opus|sonnet|haiku)-(\d+)(?:[-.](\d{1,2}))?(?:[^0-9]|$)`)
+
+// adaptiveOnly is a Claude model from 4.6 on, which thinks adaptively:
+// claude-opus-5-5 refuses thinking.type=enabled with a budget ("requires
+// adaptive thinking"), so how hard it thinks goes in output_config.effort.
+func adaptiveOnly(model string) bool {
+	m := claudeVersion.FindStringSubmatch(strings.ToLower(model))
+	if m == nil {
+		return false
+	}
+	major, _ := strconv.Atoi(m[1])
+	minor, _ := strconv.Atoi(m[2])
+	return major > 4 || major == 4 && minor >= 6
+}
+
 func buildAnthropic(r *Request, model string) []byte {
 	type msg struct {
 		Role    string   `json:"role"`
@@ -217,7 +236,15 @@ func buildAnthropic(r *Request, model string) []byte {
 	if maxTokens <= 0 {
 		maxTokens = 16384
 	}
-	if r.Thinking || r.Effort != "" {
+	if (r.Thinking || r.Effort != "") && adaptiveOnly(model) {
+		out["thinking"] = map[string]any{"type": "adaptive"}
+		if e := r.Effort; e != "" {
+			if e == "xhigh" {
+				e = "max"
+			}
+			out["output_config"] = map[string]any{"effort": e}
+		}
+	} else if r.Thinking || r.Effort != "" {
 		budget := budgetOf(r.Effort)
 		if maxTokens < budget+4096 {
 			maxTokens = budget + 4096
