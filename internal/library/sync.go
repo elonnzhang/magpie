@@ -196,6 +196,12 @@ func Read(problems []Problem) (*View, error) {
 		return m
 	}
 	for _, s := range l.MCP {
+		// one on no agent yet has none, not null, for the page to look in
+		if s.Agents == nil {
+			c := *s
+			c.Agents = []string{}
+			s = &c
+		}
 		sv := ServerView{Server: s, Icon: serverIcon(l, s), Problems: of("mcp:" + s.Name)}
 		for _, t := range targets {
 			if t.MCP != nil && slices.Contains(s.Agents, t.Agent.ID) {
@@ -210,7 +216,7 @@ func Read(problems []Problem) (*View, error) {
 		v.Servers = append(v.Servers, sv)
 	}
 	for _, s := range l.Skills {
-		sv := SkillView{Name: s.Name, Agents: s.Agents, Icon: skillIcon(s), Problems: of("skill:" + s.Name)}
+		sv := SkillView{Name: s.Name, Agents: append([]string{}, s.Agents...), Icon: skillIcon(s), Problems: of("skill:" + s.Name)}
 		if s.Source != nil {
 			sv.Source, sv.Kind = s.Source.String(), s.Source.Kind
 		}

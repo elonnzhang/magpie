@@ -500,3 +500,18 @@ func TestGitHubSource(t *testing.T) {
 		}
 	}
 }
+
+// A server or skill on no agent is listed with none, not null: the page
+// looks in the list, and a null blanked the whole Library.
+func TestReadNoAgents(t *testing.T) {
+	sandbox(t)
+	ok(t)(SaveServer("", Server{Name: "lone", Transport: "stdio", Command: "lone-mcp"}))
+	v, err := Read(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := json.Marshal(v.Servers)
+	if !strings.Contains(string(b), `"agents":[]`) {
+		t.Errorf("servers: %s", b)
+	}
+}

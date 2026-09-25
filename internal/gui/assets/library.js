@@ -82,6 +82,7 @@
   // Agent chips for a server or a skill: each agent that could have it, lit
   // when it does. A chip whose agent couldn't be given it says why.
   function agentChips(all, on, onChange, opts = {}) {
+    on ||= [];
     const box = el("div", "lib-agents");
     for (const a of all) {
       const has = on.includes(a.id);
