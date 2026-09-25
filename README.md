@@ -174,7 +174,7 @@ Code process; Pi, OpenCode and every other agent use this path automatically.
 The generated harness stays out of Anthropic's system-prompt classifier while
 its instructions remain part of the user context. This requires Claude Code
 to be installed and signed in.
-Cursor, Grok Build and Devin subscriptions likewise run through their own CLIs —
+Cursor, Grok (SuperGrok, through Grok Build) and Devin subscriptions likewise run through their own CLIs —
 none of them has an endpoint a borrowed key can be sent to — with Devin
 driven over ACP (`devin acp`) in a home of magpie's own that keeps only the
 caller's MCP tools and shares just the sign-in.

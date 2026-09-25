@@ -172,8 +172,6 @@ func providerInfo(p provider.Provider, agents []*agent.Agent) providerJSON {
 		} else if a.Agent == "cursor" {
 			// cursor-agent runs behind the gateway, not as an agent magpie configures
 			out.Account.Name, out.Account.Icon = "Cursor CLI", "cursor"
-		} else if a.Agent == "grok" {
-			out.Account.Name, out.Account.Icon = "Grok Build", "xai"
 		} else if a.Agent == "antigravity" {
 			out.Account.Name, out.Account.Icon = "Antigravity", "antigravity-color"
 		}

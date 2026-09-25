@@ -111,7 +111,7 @@ func grokAccount() (Provider, bool) {
 		}
 		return ms, catalog.SaveLive("grok", "", ms)
 	}
-	return Provider{ID: "grok", Name: "Grok Build", Icon: "xai", Website: "https://x.ai/cli", Account: acct}, true
+	return Provider{ID: "grok", Name: "Grok (SuperGrok)", Icon: "xai", Website: "https://x.ai/cli", Account: acct}, true
 }
 
 var grokModelL = regexp.MustCompile(`^[*-]\s+([A-Za-z0-9][\w.:-]*)`)
