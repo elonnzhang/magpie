@@ -18,6 +18,7 @@ import (
 	"github.com/yetone/magpie/internal/agent"
 	"github.com/yetone/magpie/internal/catalog"
 	"github.com/yetone/magpie/internal/profile"
+	"github.com/yetone/magpie/internal/settings"
 )
 
 // ---- styling ---------------------------------------------------------------
@@ -73,6 +74,7 @@ type picker struct {
 
 type model struct {
 	agents  []*agent.Agent
+	hidden  int // agents from here on are hidden in the app: listed last, dimmed
 	values  []map[string]string
 	row     int
 	col     int
@@ -103,7 +105,9 @@ func Run() error {
 }
 
 func newModel() model {
-	m := model{agents: agent.Detected()}
+	// in the order the app lists them, those hidden there last
+	shown, hidden := settings.Arrange(settings.Load(), agent.Detected(), func(a *agent.Agent) string { return a.ID })
+	m := model{agents: append(shown, hidden...), hidden: len(shown)}
 	m.reload()
 	return m
 }
@@ -515,6 +519,9 @@ func (m model) viewList() string {
 		sel := i == m.row
 		marker := "  "
 		name := sName.Render(padRight(a.Name, nameW))
+		if i >= m.hidden {
+			name = sFaint.Render(padRight(a.Name, nameW))
+		}
 		if sel {
 			marker = sCursor.Render("▸ ")
 			name = sNameOn.Render(padRight(a.Name, nameW))

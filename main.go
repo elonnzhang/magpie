@@ -123,9 +123,11 @@ func run(args []string) error {
 		fmt.Println("magpie", version)
 		return nil
 	case "ls", "list":
-		return list(agent.Detected(), true)
+		// in the order the app lists them; those hidden there come last, dimmed
+		shown, hidden := settings.Arrange(settings.Load(), agent.Detected(), func(a *agent.Agent) string { return a.ID })
+		return list(append(shown, hidden...), true, len(shown))
 	case "agents":
-		return list(agent.All(), false)
+		return list(agent.All(), false, -1)
 	case "sync":
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
@@ -173,7 +175,7 @@ func run(args []string) error {
 	}
 	switch len(args) {
 	case 1:
-		return list([]*agent.Agent{a}, true)
+		return list([]*agent.Agent{a}, true, -1)
 	case 2:
 		if args[1] == "default" {
 			return set(a, a.Fields[0].Key, "")
@@ -240,14 +242,16 @@ func fieldForValue(a *agent.Agent, v string) *agent.Field {
 	return nil
 }
 
-func list(agents []*agent.Agent, detectedOnly bool) error {
+// list prints the agents; those from dimFrom on (when not -1) are the ones
+// hidden in the app, and are dimmed.
+func list(agents []*agent.Agent, detectedOnly bool, dimFrom int) error {
 	if len(agents) == 0 {
 		return fmt.Errorf("no supported agents found on this machine")
 	}
 	type row struct{ name, vals, path string }
 	var rows []row
 	nameW, valW := 0, 0
-	for _, a := range agents {
+	for i, a := range agents {
 		r := row{name: a.Name, path: tilde(a.Path)}
 		if !detectedOnly && !a.Detected() {
 			r.name = faint.Render(a.Name)
@@ -255,6 +259,11 @@ func list(agents []*agent.Agent, detectedOnly bool) error {
 			r.path = ""
 		} else {
 			vals := a.Values()
+			dim := dimFrom >= 0 && i >= dimFrom
+			label, value := muted, lipgloss.NewStyle()
+			if dim {
+				label, value = faint, faint
+			}
 			var parts []string
 			for _, f := range a.Fields {
 				v := vals[f.Key]
@@ -263,15 +272,20 @@ func list(agents []*agent.Agent, detectedOnly bool) error {
 				}
 				if v == "" {
 					v = faint.Render("—")
+				} else {
+					v = value.Render(v)
 				}
 				if f.Label == "model" {
 					parts = append(parts, v)
 				} else {
-					parts = append(parts, muted.Render(f.Label)+" "+v)
+					parts = append(parts, label.Render(f.Label)+" "+v)
 				}
 			}
 			r.name = bold.Render(a.Name)
-			r.vals = strings.Join(parts, muted.Render("  ·  "))
+			if dim {
+				r.name = faint.Render(a.Name) + " " + faint.Render("hidden")
+			}
+			r.vals = strings.Join(parts, label.Render("  ·  "))
 		}
 		nameW = max(nameW, lipgloss.Width(r.name))
 		valW = max(valW, lipgloss.Width(r.vals))

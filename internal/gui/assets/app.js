@@ -154,14 +154,12 @@ function renderAgents() {
     e.append(el("b", "", t("No agents found")), el("span", "", t("Install Claude Code, Codex, Gemini CLI, OpenCode… and magpie will list them here.")));
     list.append(e);
   }
-  // An agent no one has set anything on is noise in a picker: fold it away,
-  // unless that is all of them (a fresh magpie has nothing to show otherwise).
-  const used = state.agents.filter((a) => a.fields.some((f) => f.value));
-  const folded = used.length ? state.agents.filter((a) => !used.includes(a)) : [];
-  const agentRow = (a) => {
+  const { shown: used, folded } = arrangeAgents();
+  const agentRow = (a, inFold) => {
     const row = el("div", "row agent");
     row.dataset.id = a.id;
     row.title = a.path;
+    row.oncontextmenu = (ev) => { ev.preventDefault(); openAgentMenu(row.querySelector(".ag-handle"), a, inFold); };
     const who = el("div", "who");
     who.append(el("div", "name", a.name));
     // the model picker takes the wide column, everything else the narrow one,
@@ -195,14 +193,14 @@ function renderAgents() {
       b.onclick = (ev) => openPicker(a, f, b, ev);
       fields.append(b);
     }
-    row.append(icon(a.icon), who, fields);
+    row.append(agentHandle(a, row, inFold), who, fields);
     return row;
   };
   // the extras column is there for every row once any agent has one, so the
   // pickers keep lining up down the list
   list.classList.toggle("extras", state.agents.some((a) => a.fields.some(extra) || tierMenu(a)));
   if (!folded.length) {
-    for (const a of state.agents) list.append(agentRow(a));
+    for (const a of used) list.append(agentRow(a));
   } else {
     // the ones in use stay put; the rest unroll beneath them like a scroll
     for (const a of used) list.append(agentRow(a));
@@ -211,7 +209,7 @@ function renderAgents() {
     inner.inert = !showAllAgents;
     fold.style.setProperty("--n", folded.length);
     folded.forEach((a, i) => {
-      const row = agentRow(a);
+      const row = agentRow(a, true);
       row.style.setProperty("--i", i);
       inner.append(row);
     });
@@ -222,7 +220,9 @@ function renderAgents() {
     chev.append(svg(CHEV, 10, 1.8));
     more.append(label, chev);
     const labelFor = () => {
-      label.textContent = showAllAgents ? t("Show less") : t("Show {n} more", { n: folded.length });
+      // only the ones put away by hand: "N hidden"; else nothing set on them
+      const byHand = folded.every((a) => (state.settings.agentsHidden || []).includes(a.id));
+      label.textContent = showAllAgents ? t("Show less") : t(byHand ? "{n} hidden" : "Show {n} more", { n: folded.length });
       more.setAttribute("aria-expanded", String(showAllAgents));
     };
     labelFor();
@@ -269,7 +269,223 @@ function renderAgents() {
     c.onclick = () => profileAction("use", p.name);
     chips.append(c);
   }
-  fit();
+  fit(0, agentsGlide);
+  agentsGlide = null;
+}
+
+// ---------- the agents' order, and the ones put away ----------
+// Kept in magpie's own settings (agentOrder, agentsHidden, agentsShown),
+// never in an agent's files. An agent the order doesn't name — one
+// installed since — follows the ordered ones, in magpie's own order.
+
+let agentsGlide = null; // how the panel's edge moves after the next render
+
+const agentUsed = (a) => a.fields.some((f) => f.value);
+
+// arrangeAgents: the rows in view, in order, and the folded rest. Folded is
+// what was hidden by hand, and what nothing is set on — noise in a picker —
+// unless it was shown by hand or nothing is set on any (a fresh magpie has
+// nothing to show otherwise).
+function arrangeAgents() {
+  const s = state.settings || {};
+  const order = s.agentOrder || [], hidden = new Set(s.agentsHidden || []), pinned = new Set(s.agentsShown || []);
+  const rank = (a) => { const i = order.indexOf(a.id); return i < 0 ? order.length : i; };
+  const all = state.agents.map((a, i) => [a, i]).sort(([x, i], [y, j]) => rank(x) - rank(y) || i - j).map(([a]) => a);
+  const anyUsed = all.some((a) => !hidden.has(a.id) && agentUsed(a));
+  const inView = (a) => !hidden.has(a.id) && (!anyUsed || agentUsed(a) || pinned.has(a.id));
+  return { all, shown: all.filter(inView), folded: all.filter((a) => !inView(a)) };
+}
+
+async function saveArrangement(order, hidden, shown) {
+  const prev = state.settings;
+  state.settings = { ...prev, agentOrder: order, agentsHidden: hidden, agentsShown: shown };
+  renderAgents();
+  try {
+    const s = await api("agents/arrange", { order, hidden, shown });
+    state.settings = { ...state.settings, agentOrder: s.agentOrder || [], agentsHidden: s.agentsHidden || [], agentsShown: s.agentsShown || [] };
+  } catch (e) {
+    state.settings = prev;
+    renderAgents();
+    status(e.message, "err");
+  }
+}
+
+// moveAgent puts the agent at index `to` among the rows in view; the folded
+// ones keep their places after them.
+function moveAgent(id, to) {
+  const { shown, folded } = arrangeAgents();
+  const ids = shown.map((a) => a.id);
+  const from = ids.indexOf(id);
+  if (from < 0 || to < 0 || to >= ids.length || to === from) return;
+  ids.splice(to, 0, ...ids.splice(from, 1));
+  const s = state.settings || {};
+  saveArrangement([...ids, ...folded.map((a) => a.id)], s.agentsHidden || [], s.agentsShown || []);
+}
+
+function setAgentHidden(a, hide) {
+  const s = state.settings || {};
+  const { all } = arrangeAgents();
+  let hidden = (s.agentsHidden || []).filter((x) => x !== a.id);
+  let shown = (s.agentsShown || []).filter((x) => x !== a.id);
+  if (hide) hidden.push(a.id);
+  // one with nothing set on it would fold away again: keep it in view
+  else if (!agentUsed(a)) shown.push(a.id);
+  // the rows that change go on the panel's edge, as the fold does
+  agentsGlide = hide ? ROLLUP : UNROLL;
+  saveArrangement(all.map((x) => x.id), hidden, shown);
+  status(t(hide ? "{agent} hidden" : "{agent} shown", { agent: a.name }), "ok", 1800);
+}
+
+const ALT = /^Mac/.test(navigator.platform) ? "⌥" : "Alt+";
+const GRIP = "M6 4h.01M10 4h.01M6 8h.01M10 8h.01M6 12h.01M10 12h.01";
+
+// agentHandle is the row's logo, which is also its handle: drag it to move
+// the row, click it (or right-click the row) for Move up, Move down and
+// Hide; Alt+↑/↓ moves it from the keyboard.
+function agentHandle(a, row, inFold) {
+  const b = el("button", "ag-handle");
+  b.type = "button";
+  b.setAttribute("aria-label", t("Arrange {agent}", { agent: a.name }));
+  b.setAttribute("aria-haspopup", "menu");
+  b.title = inFold ? t("Show {agent}", { agent: a.name }) : t("Drag to reorder · click for more");
+  const grip = el("span", "grip");
+  grip.append(svg(GRIP, 14, 2.4));
+  b.append(icon(a.icon), grip);
+  b.onkeydown = (e) => {
+    if (inFold || !e.altKey || (e.key !== "ArrowUp" && e.key !== "ArrowDown")) return;
+    e.preventDefault();
+    const { shown } = arrangeAgents();
+    const i = shown.findIndex((x) => x.id === a.id);
+    moveAgent(a.id, i + (e.key === "ArrowUp" ? -1 : 1));
+    // the rows were drawn anew: keep the keyboard on this one
+    $(`#agents .row.agent[data-id="${CSS.escape(a.id)}"] .ag-handle`)?.focus();
+  };
+  b.onclick = (e) => { if (!b.dataset.dragged) openAgentMenu(b, a, inFold); delete b.dataset.dragged; };
+  if (!inFold) b.onpointerdown = (e) => dragAgent(e, b, row);
+  return b;
+}
+
+// dragAgent moves a row in view up and down the list with the pointer; the
+// others make room as it passes, and letting go keeps the new order.
+function dragAgent(e, handle, row) {
+  if (e.button !== 0) return;
+  const list = $("#agents");
+  const rows = [...list.children].filter((r) => r.classList.contains("agent"));
+  if (rows.length < 2) return;
+  const y0 = e.clientY, from = rows.indexOf(row);
+  const tops = rows.map((r) => r.offsetTop), h = row.offsetHeight;
+  let dragging = false, to = from;
+  const move = (ev) => {
+    const dy = ev.clientY - y0;
+    if (!dragging) {
+      if (Math.abs(dy) < 4) return;
+      dragging = true;
+      handle.dataset.dragged = "1";
+      closeAgentMenu();
+      list.classList.add("sorting");
+      row.classList.add("dragging");
+    }
+    // the row follows the pointer, kept within the list
+    const min = tops[0] - tops[from], max = tops[rows.length - 1] + rows[rows.length - 1].offsetHeight - h - tops[from];
+    const d = Math.max(min, Math.min(max, dy));
+    row.style.transform = `translateY(${d}px)`;
+    const mid = tops[from] + d + h / 2;
+    // past the middle of a row below (or above), the dragged one takes its place
+    if (d > 0) to = rows.slice(from + 1).filter((r, k) => mid >= tops[from + 1 + k] + r.offsetHeight / 2).length + from;
+    else to = from - rows.slice(0, from).filter((r, k) => mid <= tops[k] + r.offsetHeight / 2).length;
+    rows.forEach((r, i) => {
+      if (i === from) return;
+      const shift = i > from && i <= to ? -h : i < from && i >= to ? h : 0;
+      r.style.transform = shift ? `translateY(${shift}px)` : "";
+    });
+  };
+  const up = () => {
+    handle.removeEventListener("pointermove", move);
+    handle.removeEventListener("pointerup", up);
+    handle.removeEventListener("pointercancel", up);
+    if (!dragging) return;
+    // the row lands where it was let go, then the list is drawn in the new order
+    row.classList.remove("dragging");
+    row.classList.add("landing");
+    row.style.transform = `translateY(${tops[to] - tops[from] + (to > from ? rows[to].offsetHeight - h : 0)}px)`;
+    setTimeout(() => {
+      list.classList.remove("sorting");
+      moveAgent(row.dataset.id, to);
+      if (to === from) renderAgents();
+      setTimeout(() => delete handle.dataset.dragged, 0);
+    }, 160);
+  };
+  handle.setPointerCapture(e.pointerId);
+  handle.addEventListener("pointermove", move);
+  handle.addEventListener("pointerup", up);
+  handle.addEventListener("pointercancel", up);
+}
+
+let agentMenu = null;
+function closeAgentMenu() {
+  if (!agentMenu) return;
+  agentMenu.anchor.classList.remove("open");
+  agentMenu.box.remove();
+  document.removeEventListener("mousedown", agentMenu.outside, true);
+  document.removeEventListener("keydown", agentMenu.keys, true);
+  document.removeEventListener("scroll", closeAgentMenu, true);
+  removeEventListener("resize", closeAgentMenu);
+  agentMenu = null;
+}
+function openAgentMenu(anchor, a, inFold) {
+  if (!anchor) return;
+  const again = agentMenu?.anchor === anchor;
+  closeAgentMenu();
+  if (again) return;
+  const { shown } = arrangeAgents();
+  const i = shown.findIndex((x) => x.id === a.id);
+  const acts = inFold
+    ? [{ name: "Show", icon: "M1.75 8S4.25 3.5 8 3.5 14.25 8 14.25 8 11.75 12.5 8 12.5 1.75 8 1.75 8ZM8 9.75a1.75 1.75 0 1 0 0-3.5 1.75 1.75 0 0 0 0 3.5Z", run: () => setAgentHidden(a, false) }]
+    : [
+        { name: "Move up", icon: "M8 12.5v-9M4 7.25l4-3.75 4 3.75", key: ALT + "↑", off: i <= 0, run: () => moveAgent(a.id, i - 1) },
+        { name: "Move down", icon: "M8 3.5v9M4 8.75l4 3.75 4-3.75", key: ALT + "↓", off: i < 0 || i >= shown.length - 1, run: () => moveAgent(a.id, i + 1) },
+        { name: "Hide", icon: "M6.6 3.7A6.9 6.9 0 0 1 8 3.5c3.75 0 6.25 4.5 6.25 4.5a11 11 0 0 1-1.5 2M4.4 4.4C2.7 5.55 1.75 8 1.75 8S4.25 12.5 8 12.5c1.2 0 2.25-.45 3.1-1.05M6.75 6.75a1.75 1.75 0 0 0 2.5 2.5M2 2l12 12", sep: true, run: () => setAgentHidden(a, true) },
+      ];
+  const box = el("div", "pop row-menu");
+  box.setAttribute("role", "menu");
+  const items = [];
+  for (const o of acts) {
+    if (o.sep) box.append(el("div", "rm-sep"));
+    const b = el("button", "rm-item");
+    b.type = "button";
+    b.setAttribute("role", "menuitem");
+    b.disabled = !!o.off;
+    b.append(svg(o.icon, 13, 1.5), el("span", "rm-name", t(o.name)));
+    if (o.key) b.append(el("span", "rm-key", o.key));
+    b.onclick = (e) => { e.stopPropagation(); closeAgentMenu(); o.run(); };
+    b.onmouseenter = () => b.focus({ preventScroll: true });
+    box.append(b);
+    if (!o.off) items.push(b);
+  }
+  document.body.append(box);
+  const r = anchor.getBoundingClientRect(), w = box.offsetWidth, hh = box.offsetHeight, pad = 8;
+  let y = r.bottom + 5;
+  if (y + hh > innerHeight - pad && r.top - 5 - hh >= pad) { y = r.top - 5 - hh; box.classList.add("up"); }
+  box.style.left = Math.max(pad, Math.min(r.left - 4, innerWidth - w - pad)) + "px";
+  box.style.top = Math.max(pad, y) + "px";
+  anchor.classList.add("open");
+  const outside = (e) => { if (!box.contains(e.target) && !anchor.contains(e.target)) closeAgentMenu(); };
+  const keys = (e) => {
+    const k = items.indexOf(document.activeElement);
+    if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); closeAgentMenu(); anchor.focus(); }
+    else if (e.key === "Tab") closeAgentMenu();
+    else if ((e.key === "ArrowDown" || e.key === "ArrowUp") && items.length) {
+      e.preventDefault(); e.stopPropagation();
+      const n = items.length, at = k < 0 ? (e.key === "ArrowDown" ? n - 1 : 0) : k;
+      items[(at + (e.key === "ArrowDown" ? 1 : n - 1)) % n].focus();
+    }
+  };
+  document.addEventListener("mousedown", outside, true);
+  document.addEventListener("keydown", keys, true);
+  document.addEventListener("scroll", closeAgentMenu, true);
+  addEventListener("resize", closeAgentMenu);
+  agentMenu = { box, anchor, outside, keys };
+  items[0]?.focus({ preventScroll: true });
 }
 
 // Claude Code's opus/sonnet/haiku/fable can each have a model of their own

@@ -219,7 +219,26 @@ func Handler(w Windows, gw *gateway.Server) http.Handler {
 			fail(rw, err)
 			return
 		}
+		// the Settings page sends its own choices; how the agents are
+		// arranged is the Agents page's, and stays as it is
+		cur := settings.Load()
+		in.AgentOrder, in.AgentsHidden, in.AgentsShown = cur.AgentOrder, cur.AgentsHidden, cur.AgentsShown
 		if err := settings.Save(in); err != nil {
+			fail(rw, err)
+			return
+		}
+		writeJSON(rw, settingsState())
+	})
+	// the Agents page's order and what it folds away, in magpie's settings
+	mux.HandleFunc("POST /api/agents/arrange", func(rw http.ResponseWriter, r *http.Request) {
+		var in struct{ Order, Hidden, Shown []string }
+		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+			fail(rw, err)
+			return
+		}
+		s := settings.Load()
+		s.AgentOrder, s.AgentsHidden, s.AgentsShown = in.Order, in.Hidden, in.Shown
+		if err := settings.Save(s); err != nil {
 			fail(rw, err)
 			return
 		}

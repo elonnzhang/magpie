@@ -1,6 +1,7 @@
 // Package settings keeps the few preferences the desktop app has: which
-// palette to paint with and which language to speak. Everything else magpie
-// knows is derived from the agents' own files.
+// palette to paint with, which language to speak, how the agents are
+// arranged. Everything else magpie knows is derived from the agents' own
+// files.
 //
 // The file is ~/.config/magpie/settings.json; a missing file means "follow
 // the system" for both.
@@ -25,6 +26,48 @@ type Settings struct {
 	// environment and then the system, "direct" uses none, anything else
 	// is the proxy (http://, https:// or socks5://; host:port means http).
 	Proxy string `json:"proxy,omitempty"`
+	// How the agents are listed, by agent id. AgentOrder comes first, as
+	// ordered; an agent it doesn't name (one installed since) follows in
+	// magpie's own order. A hidden agent is folded away at the bottom of the
+	// list; a shown one stays in view even while nothing is set on it, which
+	// otherwise folds it away too. The agents' own files never hear of it.
+	AgentOrder   []string `json:"agentOrder,omitempty"`
+	AgentsHidden []string `json:"agentsHidden,omitempty"`
+	AgentsShown  []string `json:"agentsShown,omitempty"`
+}
+
+// Arrange puts items in the order the user gave the agents, those named
+// first and the rest after in the order they came, and splits off the
+// hidden ones, which keep that order too. id names an item's agent.
+func Arrange[T any](s Settings, items []T, id func(T) string) (shown, hidden []T) {
+	rank := map[string]int{}
+	for i, x := range s.AgentOrder {
+		if _, dup := rank[x]; !dup {
+			rank[x] = i
+		}
+	}
+	sorted := slices.Clone(items)
+	slices.SortStableFunc(sorted, func(a, b T) int {
+		ra, oka := rank[id(a)]
+		rb, okb := rank[id(b)]
+		switch {
+		case oka && okb:
+			return ra - rb
+		case oka:
+			return -1
+		case okb:
+			return 1
+		}
+		return 0
+	})
+	for _, x := range sorted {
+		if slices.Contains(s.AgentsHidden, id(x)) {
+			hidden = append(hidden, x)
+		} else {
+			shown = append(shown, x)
+		}
+	}
+	return shown, hidden
 }
 
 // Themes and Langs are the accepted values, in the order the UI offers them.
@@ -78,6 +121,7 @@ func Save(s Settings) error {
 			return fmt.Errorf("proxy must look like http://127.0.0.1:7890 or socks5://127.0.0.1:1080, not %q", s.Proxy)
 		}
 	}
+	s.AgentOrder, s.AgentsHidden, s.AgentsShown = ids(s.AgentOrder), ids(s.AgentsHidden), ids(s.AgentsShown)
 	if err := os.MkdirAll(Dir(), 0o755); err != nil {
 		return err
 	}
@@ -99,4 +143,15 @@ func (s Settings) normal() Settings {
 		s.Tray = "panel"
 	}
 	return s
+}
+
+// ids trims, drops empties and repeats, and keeps the first of each.
+func ids(in []string) []string {
+	var out []string
+	for _, x := range in {
+		if x = strings.TrimSpace(x); x != "" && !slices.Contains(out, x) {
+			out = append(out, x)
+		}
+	}
+	return out
 }

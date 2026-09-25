@@ -3,6 +3,7 @@ package settings
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -63,5 +64,27 @@ func TestMigrate(t *testing.T) {
 	Migrate()
 	if b, _ := os.ReadFile(filepath.Join(cfg, "magpie", "providers.json")); string(b) != "new" {
 		t.Fatal("existing folder overwritten")
+	}
+}
+
+func TestArrange(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	s := Settings{AgentOrder: []string{"codex", "gone", "claude", "codex"}, AgentsHidden: []string{"crush"}}
+	if err := Save(s); err != nil {
+		t.Fatal(err)
+	}
+	s = Load()
+	if strings.Join(s.AgentOrder, ",") != "codex,gone,claude" {
+		t.Fatalf("order kept as %v", s.AgentOrder)
+	}
+	// an agent the order doesn't name follows, in the order it came
+	shown, hidden := Arrange(s, []string{"claude", "gemini", "crush", "codex", "pi"}, func(x string) string { return x })
+	if strings.Join(shown, ",") != "codex,claude,gemini,pi" || strings.Join(hidden, ",") != "crush" {
+		t.Fatalf("arranged %v, hidden %v", shown, hidden)
+	}
+	// the rest of the settings leave it as it is
+	s.Theme = "dark"
+	if Save(s) != nil || len(Load().AgentsHidden) != 1 {
+		t.Fatal("arrangement lost")
 	}
 }

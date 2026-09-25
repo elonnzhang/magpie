@@ -246,6 +246,37 @@ body.window .row .ic { width: 22px; height: 22px; }
 .agent-fold .row { opacity: 0; transform: translateY(-10px) scale(.985); transform-origin: 50% 0; transition: opacity .22s ease, transform .32s cubic-bezier(.4, 0, .2, 1); transition-delay: calc((var(--n) - 1 - var(--i)) * 22ms); }
 .agent-fold.open .row { opacity: 1; transform: none; transition: opacity .42s ease, transform .56s cubic-bezier(.22, 1, .36, 1); transition-delay: calc(70ms + var(--i) * 48ms); }
 
+/* the logo is the row's handle: hovered, it turns into a grip to drag the row
+   by, and a click opens the row's menu (Move up, Move down, Hide). It takes
+   no more room than the logo did. */
+.ag-handle { display: inline-grid; place-items: center; flex: none; width: 24px; height: 24px; margin: -3px; padding: 0; border: 0; border-radius: 6px; background: none; color: inherit; cursor: grab; touch-action: none; transition: background-color .15s; }
+body.window .ag-handle { width: 28px; height: 28px; }
+.ag-handle > .ic, .ag-handle > .grip { grid-area: 1 / 1; transition: opacity .15s, transform .2s cubic-bezier(.22, 1, .36, 1); }
+.ag-handle > .grip { display: grid; place-items: center; color: var(--muted); opacity: 0; transform: scale(.8); }
+.ag-handle:hover, .ag-handle.open, .ag-handle:focus-visible { background: var(--pill); }
+.ag-handle:focus-visible { outline: 1.5px solid var(--fg-2); outline-offset: 0; }
+.agent-fold .ag-handle { cursor: default; }
+#agents > .row .ag-handle:is(:hover, .open, :focus-visible) > .ic, #agents > .row.dragging .ag-handle > .ic { opacity: 0; transform: scale(.8); }
+#agents > .row .ag-handle:is(:hover, .open, :focus-visible) > .grip, #agents > .row.dragging .ag-handle > .grip { opacity: 1; transform: none; }
+/* a hidden one reads as put away */
+.agent-fold .row .ag-handle > .ic, .agent-fold .row .name { opacity: .55; }
+/* while a row is dragged the others slide out of its way */
+#agents.sorting { user-select: none; -webkit-user-select: none; }
+#agents.sorting > .row { transition: transform .22s cubic-bezier(.22, 1, .36, 1); }
+#agents.sorting .ag-handle { cursor: grabbing; }
+#agents > .row.dragging, #agents > .row.landing { position: relative; z-index: 2; background: var(--card); box-shadow: 0 6px 18px rgba(20, 22, 30, .12), 0 0 0 1px var(--line); border-radius: 8px; }
+#agents > .row.dragging { transition: none; }
+#agents > .row.landing { transition: transform .16s cubic-bezier(.22, 1, .36, 1), box-shadow .16s; }
+
+.pop.row-menu { width: auto; min-width: 176px; max-height: none; padding: 4px; border: 1px solid var(--line); display: grid; gap: 1px; }
+.row-menu .rm-item { display: flex; align-items: center; gap: 8px; width: 100%; height: 28px; padding: 0 8px; border: 0; border-radius: 7px; background: none; color: var(--fg); font: inherit; font-size: 12.5px; text-align: left; cursor: default; outline: none; }
+.row-menu .rm-item svg { flex: none; color: var(--muted); }
+.row-menu .rm-item:not(:disabled):is(:hover, :focus) { background: var(--pill); }
+.row-menu .rm-item:disabled, .row-menu .rm-item:disabled svg { color: var(--faint); }
+.row-menu .rm-name { flex: 1; }
+.row-menu .rm-key { margin-left: 14px; font-size: 11px; color: var(--faint); }
+.row-menu .rm-sep { height: 1px; margin: 3px 6px; background: var(--line-2); }
+
 /* an agent row: logo, name, then one pop-up button per setting */
 /* two columns: the model, then the smaller setting; single controls sit at the end.
    Fixed widths keep every chevron on the same vertical line down the list. */
