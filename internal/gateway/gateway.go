@@ -14,6 +14,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"regexp"
 	"slices"
 	"sort"
 	"strings"
@@ -1112,6 +1113,15 @@ func writeError(w http.ResponseWriter, proto provider.Protocol, status int, msg 
 	case status == 529:
 		typ = "overloaded_error"
 	}
+	var code any
+	if tooLong(status, msg) {
+		// said the way the client's own API says it, so the agent
+		// compacts the conversation and tries again rather than stopping
+		status, typ, code = 400, "invalid_request_error", "context_length_exceeded"
+		if proto == provider.Anthropic && !strings.Contains(strings.ToLower(msg), "prompt is too long") {
+			msg = "prompt is too long: " + msg
+		}
+	}
 	var v any
 	switch proto {
 	case provider.Anthropic:
@@ -1124,8 +1134,28 @@ func writeError(w http.ResponseWriter, proto provider.Protocol, status int, msg 
 		}
 		v = map[string]any{"error": map[string]any{"code": status, "message": msg, "status": st}}
 	default:
-		v = map[string]any{"error": map[string]any{"message": msg, "type": typ, "code": nil, "param": nil}}
+		v = map[string]any{"error": map[string]any{"message": msg, "type": typ, "code": code, "param": nil}}
 	}
 	writeJSON(w, status, v)
 	return status
+}
+
+// tooLongRe matches how vendors say a request is more than the model's
+// context holds: OpenAI's context_length_exceeded, Anthropic's "prompt is
+// too long", Volcengine's "Input exceeds the context limit", "maximum
+// context length", "context window"…
+var tooLongRe = regexp.MustCompile(`(?i)context_length_exceeded|prompt is too long|input is too long|(exceeds?|exceeded|over|beyond)( the)?( model'?s?)?( maximum)? context|context (length|limit|window) (exceeded|is exceeded)|maximum context length|too many (input |prompt )?tokens|上下文(长度)?(超|过长)|超(过|出)(了)?(模型)?(的)?(最大)?上下文`)
+
+// tooLong is whether a vendor's error says the conversation no longer
+// fits. One about max_tokens is left alone: the reply's allowance, not
+// the conversation, is what is too big there, and compacting won't help.
+func tooLong(status int, msg string) bool {
+	if status < 400 || status >= 500 {
+		return false
+	}
+	m := strings.ToLower(msg)
+	if strings.Contains(m, "max_tokens") || strings.Contains(m, "max_output_tokens") || strings.Contains(m, "max_completion_tokens") {
+		return false
+	}
+	return tooLongRe.MatchString(msg)
 }
