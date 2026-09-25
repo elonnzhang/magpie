@@ -11,6 +11,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"maps"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -196,7 +197,9 @@ func settle(items []AppImport, have []Provider, used map[string]bool) []AppImpor
 			if h.ID == p.ID {
 				it.Status, it.Existing = "taken", h.Name
 			}
-			if it.KeyOf == "" && h.Key != "" && sameProvider(Provider{Key: p.Key, Chat: h.Chat, Responses: h.Responses, Anthropic: h.Anthropic}, *p) {
+			if it.KeyOf == "" && h.Key != "" && sameProvider(Provider{
+				Key: p.Key, Chat: h.Chat, Responses: h.Responses, Anthropic: h.Anthropic, Headers: h.Headers,
+			}, *p) {
 				it.KeyOf = h.ID
 			}
 		}
@@ -216,9 +219,12 @@ func settle(items []AppImport, have []Provider, used map[string]bool) []AppImpor
 	return items
 }
 
-// sameProvider: the same key at the same host is the same account; a is
+// sameProvider: the same key, host, and headers are the same account; a is
 // the provider magpie has, which may hold the key among its others.
 func sameProvider(a, b Provider) bool {
+	if !maps.Equal(cleanHeaders(a.Headers), cleanHeaders(b.Headers)) {
+		return false
+	}
 	has := a.Key == b.Key
 	for _, k := range a.Keys {
 		has = has || k.Key == b.Key

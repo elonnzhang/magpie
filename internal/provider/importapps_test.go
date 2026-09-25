@@ -158,7 +158,7 @@ wire_api = "responses"
 experimental_bearer_token = "sk-explicit"
 
 [model_providers.deepseek.http_headers]
-X-Org = "abc"
+X-Org = " abc "
 
 [model_providers."my.relay"]
 base_url = "https://other.example.com/v1"
@@ -166,6 +166,15 @@ experimental_bearer_token = "sk-other"
 
 [model_providers."my.relay".http_headers]
 X-Org = "xyz"
+
+[model_providers.openrouter]
+name = "OpenRouter"
+base_url = "https://openrouter.ai/api/v1"
+wire_api = "chat"
+experimental_bearer_token = "sk-openrouter"
+
+[model_providers.openrouter.http_headers]
+X-Org = "preset"
 
 [model_providers.unkeyed]
 base_url = "https://unkeyed.example.com/v1"
@@ -195,8 +204,14 @@ model_catalog_json = "magpie-models.json"
 		t.Fatal(err)
 	}
 	items := itemsOf(t, "codex")
-	if len(items) != 4 || items["my.relay"].Ref != "my.relay" || items["my.relay"].Skip != "" {
+	if len(items) != 5 || items["my.relay"].Ref != "my.relay" || items["my.relay"].Skip != "" {
 		t.Fatalf("provider tables: %+v", items)
+	}
+	if got := items["my.relay"].Provider.Headers["X-Org"]; got != "xyz" {
+		t.Fatalf("quoted provider's header = %q, want %q", got, "xyz")
+	}
+	if p := items["openrouter"].Provider; p.Preset != "openrouter" || len(p.Headers) != 0 {
+		t.Fatalf("preset import should keep its request shape: %+v", p)
 	}
 	if items["magpie"].Skip == "" || items["unkeyed"].Skip == "" {
 		t.Fatalf("gateway or env-key provider offered: %+v %+v", items["magpie"], items["unkeyed"])
@@ -208,14 +223,40 @@ model_catalog_json = "magpie-models.json"
 	if _, err := Find("deepseek"); err == nil {
 		t.Fatal("Codex config became a provider before import")
 	}
-	if added, err := ImportFromApps([]AppPick{{Source: "codex", Ref: "deepseek"}}); err != nil || len(added) != 1 {
+	if added, err := ImportFromApps([]AppPick{{Source: "codex", Ref: "deepseek"}, {Source: "codex", Ref: "openrouter"}}); err != nil || len(added) != 2 {
 		t.Fatalf("import: %v %v", added, err)
+	}
+	if it := itemsOf(t, "codex")["deepseek"]; it.Status != "same" {
+		t.Fatalf("reimport after header normalization: %+v", it)
 	}
 	if err := os.Remove(config); err != nil {
 		t.Fatal(err)
 	}
-	if p, err := Find("deepseek"); err != nil || p.Key != "sk-explicit" || strings.Join(p.Models, ",") != "deepseek-chat,deepseek-reasoner,gpt-6-sol" {
+	p, err := Find("deepseek")
+	if err != nil || p.Key != "sk-explicit" || strings.Join(p.Models, ",") != "deepseek-chat,deepseek-reasoner,gpt-6-sol" {
 		t.Fatalf("imported provider did not persist: %+v %v", p, err)
+	}
+	if p.Headers["X-Org"] != "abc" {
+		t.Fatalf("Codex http_headers lost during import: got %q, want %q", p.Headers["X-Org"], "abc")
+	}
+	if p, err := Find("openrouter"); err != nil || p.Preset != "openrouter" || len(p.Headers) != 0 {
+		t.Fatalf("preset import changed its request shape: %+v %v", p, err)
+	}
+}
+
+func TestImportHeadersDistinguishExistingProvider(t *testing.T) {
+	existing := Provider{ID: "relay", Key: "sk-shared", Responses: "https://relay.example.com/v1"}
+	incoming := existing
+	incoming.Headers = map[string]string{"X-Org": "abc"}
+	items := settle([]AppImport{{Provider: incoming}}, []Provider{existing}, map[string]bool{})
+	if items[0].Status != "taken" || items[0].KeyOf != "" {
+		t.Fatalf("provider with new headers should be importable separately: %+v", items[0])
+	}
+	existing.Headers = incoming.Headers
+	incoming.Key = "sk-other"
+	items = settle([]AppImport{{Provider: incoming}}, []Provider{existing}, map[string]bool{})
+	if items[0].KeyOf != "relay" {
+		t.Fatalf("provider with matching headers should accept another key: %+v", items[0])
 	}
 }
 

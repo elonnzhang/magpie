@@ -112,10 +112,11 @@ The app's Import from other apps dialog can copy providers from Claude Code's
 `settings.json` (`CLAUDE_CONFIG_DIR` when set) and Codex's `config.toml`
 (`CODEX_HOME` when set) into magpie. Codex imports custom
 `[model_providers.*]` entries with an inline `experimental_bearer_token`,
-including models selected by `[profiles.*]` or `model_catalog_json`. Review
-the entries before importing; subsequent changes to agent settings are not
-automatically copied to magpie. Entries that point back to magpie or only name
-an `env_key` are skipped.
+including fixed headers for custom providers in
+`[model_providers.*.http_headers]` and models from
+`[profiles.*]` or `model_catalog_json`. Review the entries before importing;
+subsequent changes to agent settings are not automatically copied to magpie.
+Entries that point back to magpie or only name an `env_key` are skipped.
 
 ### Signed-in agents as providers
 
