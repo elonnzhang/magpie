@@ -77,8 +77,9 @@ and there is a terminal version (`magpie tui`) and a plain CLI.
 | Command Code | `~/.commandcode/settings.json` (+ `providers.json`) | model |
 | omp (oh-my-pi) | `~/.omp/agent/config.yml` (+ `models.yml`) | model |
 | Devin        | `~/.config/devin/config.json` (`%APPDATA%\devin\config.json` on Windows) | model |
+| Hermes Agent | `~/.hermes/config.yaml` (`$HERMES_HOME`) | model |
 
-Provider-scoped agents (OpenCode, Pi, Goose, Crush, omp) take `provider/model`.
+Provider-scoped agents (OpenCode, Pi, Goose, Crush, omp, Hermes Agent) take `provider/model`.
 Only agents that are installed or configured are shown.
 
 ## Providers and the gateway

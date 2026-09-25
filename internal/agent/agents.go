@@ -62,6 +62,7 @@ func All() []*Agent {
 		commandCode(home),
 		omp(home),
 		devin(home, cfg),
+		hermes(home),
 	}
 }
 
