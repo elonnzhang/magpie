@@ -782,9 +782,17 @@ function placePop(anchor, w, h) {
   let x = Math.min(r.left, innerWidth - w - pad);
   let y = r.bottom + 5;
   pop.classList.remove("up");
-  if (y + h > innerHeight - pad && r.top - 5 - h >= pad) { y = r.top - 5 - h; pop.classList.add("up"); }
-  else if (y + h > innerHeight - pad) y = Math.max(pad, innerHeight - pad - h);
   pop.style.left = Math.max(pad, x) + "px";
+  // h is the most it can be: opened upward, its bottom edge is held to the
+  // button, so a short list sits on the button rather than h above it
+  if (y + h > innerHeight - pad && r.top - 5 - h >= pad) {
+    pop.classList.add("up");
+    pop.style.top = "auto";
+    pop.style.bottom = innerHeight - r.top + 5 + "px";
+    return;
+  }
+  if (y + h > innerHeight - pad) y = Math.max(pad, innerHeight - pad - h);
+  pop.style.bottom = "auto";
   pop.style.top = y + "px";
 }
 
