@@ -41,6 +41,10 @@ func TestGrok(t *testing.T) {
 		m["api_backend"] != "chat_completions" || edit.GetTOMLTable(path, `model."magpie/deepseek/flash"`) == nil {
 		t.Fatalf("tables:\n%s", raw)
 	}
+	// a campaign of xAI's would set the default over it
+	if edit.GetTOMLTable(path, "features")["campaigns"] != "false" {
+		t.Fatalf("campaigns:\n%s", raw)
+	}
 	if f.Get() != "magpie/deepseek/pro" || !strings.Contains(raw, "# mine") || !strings.Contains(raw, "[model.my-own]") ||
 		edit.GetTOMLTable(path, "ui")["theme"] != "dark" {
 		t.Fatalf("config:\n%s", raw)
@@ -89,7 +93,7 @@ func TestGrok(t *testing.T) {
 		t.Fatal(err)
 	}
 	raw = read()
-	if f.Get() != "" || strings.Contains(raw, "magpie") || e.Get() != "high" {
+	if f.Get() != "" || strings.Contains(raw, "magpie") || strings.Contains(raw, "campaigns") || e.Get() != "high" {
 		t.Fatalf("reset:\n%s", raw)
 	}
 }

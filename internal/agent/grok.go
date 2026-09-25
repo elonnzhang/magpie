@@ -7,6 +7,13 @@ package agent
 // at the gateway with magpie's own key — a model with no key of its own
 // would be sent the user's xAI sign-in — so the catalog joins Grok's own
 // models in its /model picker.
+//
+// A signed-in Grok also takes remote "campaign" patches from xAI, applied
+// above config.toml, and a launch campaign sets models.default (September
+// 2026's grok-4.7-launch did): a default picked in magpie was ignored and
+// every new session started on the campaign's model. So a default picked
+// here turns campaigns off ([features] campaigns = false), and clearing it
+// gives them back.
 
 import (
 	"os"
@@ -69,6 +76,13 @@ func grok(home string) *Agent {
 	}
 	writeMagpie := func() error { return edit.SetTOMLTables(path, []string{grokModelTable}, grokModelTables()) }
 	dropMagpie := func() error { return edit.SetTOMLTables(path, []string{grokModelTable}, nil) }
+	// the default model is the user's, not a campaign's
+	ownDefault := func() error {
+		if edit.GetTOMLTable(path, "features")["campaigns"] == "false" {
+			return nil
+		}
+		return edit.SetTOMLKey(path, "features", "campaigns", false)
+	}
 	// the efforts of a model through magpie, as its catalog entry has them
 	efforts := func(model string) []string {
 		ref, ok := strings.CutPrefix(model, magpieID+"/")
@@ -84,6 +98,11 @@ func grok(home string) *Agent {
 		Sync: func() error {
 			if !wired() {
 				return nil
+			}
+			if get("default") != "" {
+				if err := ownDefault(); err != nil {
+					return err
+				}
 			}
 			return writeMagpie()
 		},
@@ -102,6 +121,9 @@ func grok(home string) *Agent {
 						if err := edit.DelTOMLKey(path, "models", "default"); err != nil {
 							return err
 						}
+						if err := edit.DelTOMLKey(path, "features", "campaigns"); err != nil {
+							return err
+						}
 						return dropMagpie()
 					}
 					if ref, ok := strings.CutPrefix(v, magpieID+"/"); ok && isMagpie(ref) {
@@ -117,6 +139,9 @@ func grok(home string) *Agent {
 								return err
 							}
 						}
+					}
+					if err := ownDefault(); err != nil {
+						return err
 					}
 					return edit.SetTOMLKey(path, "models", "default", v)
 				},
