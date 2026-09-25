@@ -133,12 +133,34 @@ func TestAccountsAreProviders(t *testing.T) {
 	if x := Excluded(); len(x) != 1 || x[0].Provider != "codex" || x[0].Agent != "codex" {
 		t.Fatalf("excluded: %+v", x)
 	}
+	// saving its picks again (anything that saves it) keeps it removed
 	if err := Save(Provider{ID: "codex", Models: []string{"gpt-5.5"}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := find(All(), "codex"); ok || len(Excluded()) != 1 {
+		t.Fatal("a save brought a removed codex back")
+	}
+	if err := ShowAccount("codex"); err != nil {
 		t.Fatal(err)
 	}
 	if codex, ok = find(All(), "codex"); !ok || len(codex.Models) != 1 || codex.Account == nil || len(Excluded()) != 0 {
 		t.Fatalf("after add back: %+v", codex)
 	}
+	// only through routing groups holds for an account too
+	codex.Unlisted = true
+	if err := Save(codex); err != nil {
+		t.Fatal(err)
+	}
+	if codex, _ = find(All(), "codex"); !codex.Unlisted {
+		t.Fatal("unlisted lost on an account")
+	}
+	for _, e := range Catalog() {
+		if e.Provider.ID == "codex" {
+			t.Fatalf("unlisted account in the catalog: %s", e.ID)
+		}
+	}
+	codex.Unlisted = false
+	Save(codex)
 
 	// signed out: gone, and a stale picks entry is not a provider
 	Save(Provider{ID: "copilot", Models: []string{"gpt-5.5"}})

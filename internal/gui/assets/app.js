@@ -1260,7 +1260,7 @@ function renderExcluded() {
     r.lastChild.append(el("b", "", t("{agent} is signed in, but stays out of this list. ", { agent: x.agentName })), t(x.why));
     if (x.provider) {
       const back = el("button", "link", t("Add it back"));
-      back.onclick = () => providerAction("save", { id: x.provider }, t("{name} added back", { name: x.agentName }));
+      back.onclick = () => providerAction("show", { id: x.provider }, t("{name} added back", { name: x.agentName }));
       r.lastChild.append(" ", back);
     }
     box.append(r);

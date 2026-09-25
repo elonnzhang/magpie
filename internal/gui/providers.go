@@ -342,6 +342,12 @@ func providerRoutes(mux *http.ServeMux, w Windows, gw *gateway.Server) {
 		}
 		in := req.Provider
 		switch r.PathValue("action") {
+		case "show":
+			// a signed-in account the user removed, back with its picks
+			if err := provider.ShowAccount(in.ID); err != nil {
+				fail(rw, err)
+				return
+			}
 		case "save":
 			// a preset needs nothing but the key; a saved provider keeps
 			// its key when the form left it blank

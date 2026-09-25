@@ -189,7 +189,8 @@ func All() []Provider {
 		if _, taken := find(out, a.ID); taken || picks[a.ID].Hidden {
 			continue
 		}
-		a.Models, a.Fallback, a.Routing, a.Affinity = picks[a.ID].Models, picks[a.ID].Fallback, picks[a.ID].Routing, picks[a.ID].Affinity
+		pk := picks[a.ID]
+		a.Models, a.Unlisted, a.Fallback, a.Routing, a.Affinity = pk.Models, pk.Unlisted, pk.Fallback, pk.Routing, pk.Affinity
 		out = append(out, a)
 	}
 	return out
@@ -256,8 +257,9 @@ func Save(p Provider) error {
 	}
 	if a, ok := find(Accounts(), p.ID); ok {
 		// an account keeps only the user's model picks; the rest is the
-		// agent's own sign-in. Saving it again brings a removed one back.
-		p = Provider{ID: a.ID, Models: p.Models, Unlisted: p.Unlisted, Fallback: p.Fallback, Routing: p.Routing, Affinity: p.Affinity}
+		// agent's own sign-in. One the user removed stays removed: only
+		// ShowAccount brings it back.
+		p = Provider{ID: a.ID, Models: p.Models, Unlisted: p.Unlisted, Fallback: p.Fallback, Routing: p.Routing, Affinity: p.Affinity, Hidden: hiddenAccount(a.ID)}
 	} else {
 		if slices.Contains(accountIDs, p.ID) && !stored(p.ID) {
 			// taken, it would hide that subscription once signed in
@@ -328,6 +330,15 @@ func stored(id string) bool {
 	for _, p := range load().Providers {
 		if p.ID == id {
 			return true
+		}
+	}
+	return false
+}
+
+func hiddenAccount(id string) bool {
+	for _, p := range load().Providers {
+		if p.ID == id {
+			return p.Hidden
 		}
 	}
 	return false

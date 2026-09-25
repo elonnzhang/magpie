@@ -26,6 +26,7 @@ const providerUsage = `usage:
   magpie provider add <preset> <key>      add a preset vendor   e.g. magpie provider add deepseek sk-…
                                           again, it adds another (deepseek-2); k=v pairs too: id, name, header.X-Foo
   magpie provider add <name> k=v…         add a custom vendor   k: url, anthropic, responses, key, models, catalog, icon, header.X-Foo, balance, balance.path, models.url
+  magpie provider set <id> k=v…           change a provider's settings, with the same k=v pairs as add
   magpie provider key <id> <key>          change the API key
   magpie provider icon <id> <file|name>   give a custom provider a picture (PNG, JPEG, SVG…) or a built-in icon
   magpie provider fallback <id> <provider/model>…   where requests go when it's out of quota or down (none clears)
@@ -38,6 +39,7 @@ const providerUsage = `usage:
        magpie provider add "Own Claude" anthropic=https://gw.example.com key=sk-… catalog=anthropic
        magpie provider add "My Relay" url=https://relay.example.com/v1 key=sk-… header.X-Org-Id=acme
        magpie provider add anthropic sk-… id=anthropic-ws2 name="Anthropic WS2" header.anthropic-workspace-id=wrkspc_…
+       magpie provider set my-relay models.url=https://relay.example.com/api/models catalog=
        magpie provider add "My Relay" url=https://relay.example.com/v1 key=sk-… balance=https://relay.example.com/api/usage/token balance.path='$data.total_available / 500000'`
 
 // providers: `magpie providers`
@@ -191,6 +193,28 @@ func providerCmd(args []string) error {
 	switch verb {
 	case "add":
 		return addProvider(rest)
+	case "set":
+		// the same k=v pairs as add, on a provider already here
+		if len(rest) < 2 {
+			return fmt.Errorf("magpie provider set <id> k=v…\n\n%s", providerUsage)
+		}
+		p, err := provider.Find(rest[0])
+		if err != nil {
+			return err
+		}
+		for _, kv := range rest[1:] {
+			if k, _, _ := strings.Cut(kv, "="); strings.EqualFold(k, "id") {
+				return fmt.Errorf("a provider's id can't change; groups and agents name it by it")
+			}
+		}
+		if err := applyPairs(p, rest[1:]); err != nil {
+			return err
+		}
+		if err := provider.Save(*p); err != nil {
+			return err
+		}
+		fmt.Println(green.Render("✓"), "saved", p.Name, muted.Render("("+p.ID+")"))
+		return nil
 	case "key":
 		if len(rest) != 2 {
 			return fmt.Errorf("magpie provider key <id> <key>")
@@ -361,6 +385,13 @@ func providerCmd(args []string) error {
 func addProvider(rest []string) error {
 	if len(rest) == 0 {
 		return fmt.Errorf("magpie provider add <preset> <key>   or   magpie provider add <name> k=v…\n\n%s", providerUsage)
+	}
+	if len(rest) == 1 && slices.ContainsFunc(provider.Excluded(), func(x provider.Exclusion) bool { return x.Provider == strings.ToLower(rest[0]) }) {
+		// a signed-in account the user removed comes back with its picks
+		if err := provider.ShowAccount(strings.ToLower(rest[0])); err != nil {
+			return err
+		}
+		return announce(strings.ToLower(rest[0]))
 	}
 	var p provider.Provider
 	if pr, err := provider.FromPreset(strings.ToLower(rest[0])); err == nil {
