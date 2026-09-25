@@ -539,6 +539,7 @@ const I18N = {
     "{v} is downloaded": "{v} 已下载",
     "Restart to update": "重启以更新",
     "Update": "更新",
+    "Update failed": "更新失败",
     "Restart to update to {v}": "重启以更新到 {v}",
     "Restarting…": "正在重启…",
     "{v} is out": "{v} 已发布",

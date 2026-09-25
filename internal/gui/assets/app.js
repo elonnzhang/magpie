@@ -735,7 +735,8 @@ async function renderUpdateBadge() {
     return;
   }
   if (b.classList.contains("busy")) return;
-  label.textContent = t("Update");
+  // a swap that failed says so where it was clicked, not only in the tooltip
+  label.textContent = u.state === "ready" && u.error ? t("Update failed") : t("Update");
   b.title = u.state === "ready" ? t("Restart to update to {v}", { v: u.latest })
     : u.state === "error" ? t("Couldn't download {v}", { v: u.latest }) + " · " + t("Click to try again")
     : u.stuck ? updateStuck(u) + " " + t("Click to open the download page.")

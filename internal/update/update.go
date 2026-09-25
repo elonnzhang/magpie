@@ -351,10 +351,13 @@ func StageBinary(ctx context.Context, rel *Release) (string, error) {
 func InstallBinary(staged, exe string) error {
 	if runtime.GOOS == "windows" {
 		// A running .exe cannot be overwritten, but it can be moved aside.
-		os.Remove(exe + ".old")
-		if err := os.Rename(exe, exe+".old"); err != nil {
-			os.Remove(staged)
-			return err
+		// What the last update moved aside may still be running too (a
+		// `magpie serve` started before it), and can't be removed or
+		// replaced then: this one goes beside it, under a name of its own.
+		// The download is kept, for another try.
+		RemoveOld(exe)
+		if err := os.Rename(exe, oldName(exe)); err != nil {
+			return fmt.Errorf("couldn't move %s aside to put the new version in: %w", filepath.Base(exe), err)
 		}
 	}
 	if err := os.Rename(staged, exe); err != nil {
@@ -364,6 +367,28 @@ func InstallBinary(staged, exe string) error {
 		return err
 	}
 	return nil
+}
+
+// oldName is where a running exe is moved aside to: exe.old, or when
+// that is still there (in use), exe.old-2, exe.old-3…
+func oldName(exe string) string {
+	name := exe + ".old"
+	for n := 2; ; n++ {
+		if _, err := os.Lstat(name); os.IsNotExist(err) {
+			return name
+		}
+		name = fmt.Sprintf("%s.old-%d", exe, n)
+	}
+}
+
+// RemoveOld removes what earlier updates moved aside of exe, those no
+// longer running.
+func RemoveOld(exe string) {
+	os.Remove(exe + ".old")
+	olds, _ := filepath.Glob(exe + ".old-*")
+	for _, o := range olds {
+		os.Remove(o)
+	}
 }
 
 // InstallBinaryAsAdmin is InstallBinary with the administrator's password.

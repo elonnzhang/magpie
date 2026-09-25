@@ -5,7 +5,6 @@ import (
 	"errors"
 	"log"
 	"net/http"
-	"os"
 	"path/filepath"
 	"runtime"
 	"sync"
@@ -61,7 +60,7 @@ func (u *updater) start() {
 	} else if runtime.GOOS != "darwin" {
 		if exe, err := update.Executable(); err == nil && (update.Writable(filepath.Dir(exe)) || update.CanElevate()) {
 			u.exe = exe
-			os.Remove(exe + ".old") // what the last update on Windows moved aside
+			update.RemoveOld(exe) // what the last updates on Windows moved aside
 		}
 	}
 	go func() {
