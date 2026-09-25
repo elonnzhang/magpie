@@ -313,11 +313,13 @@ const isHidden = (a) => (state.settings?.agentsHidden || []).includes(a.id);
 // nothing to show otherwise).
 function arrangeAgents() {
   const s = state.settings || {};
-  const order = s.agentOrder || [], hidden = new Set(s.agentsHidden || []), pinned = new Set(s.agentsShown || []);
+  const order = s.agentOrder || [], hidden = new Set(s.agentsHidden || []);
   const rank = (a) => { const i = order.indexOf(a.id); return i < 0 ? order.length : i; };
   const all = state.agents.map((a, i) => [a, i]).sort(([x, i], [y, j]) => rank(x) - rank(y) || i - j).map(([a]) => a);
   const anyUsed = all.some((a) => !hidden.has(a.id) && agentUsed(a));
-  const inView = (a) => !hidden.has(a.id) && (!anyUsed || agentUsed(a) || pinned.has(a.id));
+  // what is set on it alone decides where one not hidden goes: pinned in view
+  // by hand, one cleared stayed up among the set ones with nothing to say why
+  const inView = (a) => !hidden.has(a.id) && (!anyUsed || agentUsed(a));
   return { all, shown: all.filter(inView), folded: all.filter((a) => !inView(a)) };
 }
 
@@ -344,26 +346,24 @@ function moveAgent(id, to) {
   if (from < 0 || to < 0 || to >= ids.length || to === from) return;
   ids.splice(to, 0, ...ids.splice(from, 1));
   const s = state.settings || {};
-  saveArrangement([...ids, ...folded.map((a) => a.id)], s.agentsHidden || [], s.agentsShown || []);
+  saveArrangement([...ids, ...folded.map((a) => a.id)], s.agentsHidden || [], []);
 }
 
 function setAgentHidden(a, hide) {
   const s = state.settings || {};
   const { all } = arrangeAgents();
   let hidden = (s.agentsHidden || []).filter((x) => x !== a.id);
-  let shown = (s.agentsShown || []).filter((x) => x !== a.id);
   if (hide) hidden.push(a.id);
-  // one with nothing set on it would fold away again: keep it in view
-  else if (!agentUsed(a)) shown.push(a.id);
   // the rows that change go on the panel's edge, as the fold does
   agentsGlide = hide ? ROLLUP : UNROLL;
-  saveArrangement(all.map((x) => x.id), hidden, shown);
+  saveArrangement(all.map((x) => x.id), hidden, []);
   // hidden, it says where it went, since the row goes out of sight
   status(t(hide ? "{agent} hidden · find it under Hidden at the bottom" : "{agent} shown", { agent: a.name }), "ok", hide ? 4000 : 1800);
 }
 
 const ALT = /^Mac/.test(navigator.platform) ? "⌥" : "Alt+";
 const GRIP = "M6 4h.01M10 4h.01M6 8h.01M10 8h.01M6 12h.01M10 12h.01";
+const EYE_OFF = "M6.6 3.7A6.9 6.9 0 0 1 8 3.5c3.75 0 6.25 4.5 6.25 4.5a11 11 0 0 1-1.5 2M4.4 4.4C2.7 5.55 1.75 8 1.75 8S4.25 12.5 8 12.5c1.2 0 2.25-.45 3.1-1.05M6.75 6.75a1.75 1.75 0 0 0 2.5 2.5M2 2l12 12";
 const EYE = "M1.75 8S4.25 3.5 8 3.5 14.25 8 14.25 8 11.75 12.5 8 12.5 1.75 8 1.75 8ZM8 9.75a1.75 1.75 0 1 0 0-3.5 1.75 1.75 0 0 0 0 3.5Z";
 
 // agentHandle is the row's logo, which is also its handle: drag it to move
@@ -374,7 +374,7 @@ function agentHandle(a, row, inFold) {
   b.type = "button";
   b.setAttribute("aria-label", t("Arrange {agent}", { agent: a.name }));
   b.setAttribute("aria-haspopup", "menu");
-  b.title = inFold ? t("Show {agent}", { agent: a.name }) : t("Drag to reorder · click to move or hide");
+  b.title = inFold ? t(isHidden(a) ? "Show {agent}" : "Hide {agent}", { agent: a.name }) : t("Drag to reorder · click to move or hide");
   const grip = el("span", "grip");
   grip.append(svg(GRIP, 14, 2.4));
   b.append(icon(a.icon), grip);
@@ -466,12 +466,14 @@ function openAgentMenu(anchor, a, inFold) {
   if (again) return;
   const { shown } = arrangeAgents();
   const i = shown.findIndex((x) => x.id === a.id);
-  const acts = inFold
+  const acts = inFold && isHidden(a)
     ? [{ name: "Show", icon: EYE, run: () => setAgentHidden(a, false) }]
+    : inFold
+    ? [{ name: "Hide", icon: EYE_OFF, run: () => setAgentHidden(a, true) }]
     : [
         { name: "Move up", icon: "M8 12.5v-9M4 7.25l4-3.75 4 3.75", key: ALT + "↑", off: i <= 0, run: () => moveAgent(a.id, i - 1) },
         { name: "Move down", icon: "M8 3.5v9M4 8.75l4 3.75 4-3.75", key: ALT + "↓", off: i < 0 || i >= shown.length - 1, run: () => moveAgent(a.id, i + 1) },
-        { name: "Hide", icon: "M6.6 3.7A6.9 6.9 0 0 1 8 3.5c3.75 0 6.25 4.5 6.25 4.5a11 11 0 0 1-1.5 2M4.4 4.4C2.7 5.55 1.75 8 1.75 8S4.25 12.5 8 12.5c1.2 0 2.25-.45 3.1-1.05M6.75 6.75a1.75 1.75 0 0 0 2.5 2.5M2 2l12 12", sep: true, run: () => setAgentHidden(a, true) },
+        { name: "Hide", icon: EYE_OFF, sep: true, run: () => setAgentHidden(a, true) },
       ];
   const box = el("div", "pop row-menu");
   box.setAttribute("role", "menu");

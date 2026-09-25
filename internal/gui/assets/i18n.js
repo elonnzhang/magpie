@@ -33,6 +33,7 @@ const I18N = {
     "Arrange {agent}": "调整 {agent}",
     "Drag to reorder · click for more": "拖动以调整顺序 · 点击查看更多",
     "Show {agent}": "显示 {agent}",
+    "Hide {agent}": "隐藏 {agent}",
     "Move up": "上移",
     "Move down": "下移",
     "{agent} hidden": "已隐藏 {agent}",
