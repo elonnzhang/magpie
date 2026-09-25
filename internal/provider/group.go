@@ -279,6 +279,19 @@ func DeleteGroup(id string) error {
 	return store(f)
 }
 
+// RemovedGroups are the found groups the user removed, whether or not
+// magpie finds them now: each is a record in providers.json ({"id", "hidden":
+// true}) that keeps it removed when two providers serve its model again.
+func RemovedGroups() []string {
+	var out []string
+	for _, g := range load().Groups {
+		if g.Hidden {
+			out = append(out, g.ID)
+		}
+	}
+	return out
+}
+
 // ShowGroup brings back a group magpie found that the user had removed.
 func ShowGroup(id string) error {
 	f := load()

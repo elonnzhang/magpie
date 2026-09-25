@@ -25,6 +25,10 @@ const groupUsage = `usage:
   magpie group rm <id>                    remove a group (one magpie found is hidden instead)
   magpie group restore <id>               bring back a group magpie found that you removed
 
+  magpie finds a group for each model two or more providers serve (auto-<model>, never stored);
+  removing one stores {"id":…,"hidden":true} in providers.json, which is what keeps it removed:
+  take that record out of the file and the group is back
+
   models   provider/model ids as magpie models lists them; a bare model id works when one provider serves it
   routing  smart   (default) of the subscriptions with quota to spare, the one renewing soonest first
            order   the first model until it can't answer, then the next
@@ -383,6 +387,10 @@ func groupCmd(args []string) error {
 		if err != nil {
 			return err
 		}
+		if len(g.Members) == 0 {
+			fmt.Println(green.Render("✓"), bold.Render(g.ID), "is no longer removed", muted.Render("· it shows once two providers serve its model"))
+			return nil
+		}
 		fmt.Println(green.Render("✓"), bold.Render(g.Name), "is back")
 		return showGroup(g)
 	}
@@ -448,13 +456,28 @@ func setGroup(ref string, pairs []string) (provider.Group, error) {
 	return findGroup(g.ID)
 }
 
+// removedOnly is a removed found group magpie doesn't find now (its model
+// is down to one provider): only its record is left, to keep it removed.
+func removedOnly(ref string) (string, bool) {
+	ref = strings.TrimPrefix(strings.TrimPrefix(strings.TrimSpace(ref), "magpie/"), provider.GroupPrefix)
+	for _, id := range provider.RemovedGroups() {
+		if strings.EqualFold(id, ref) {
+			return id, true
+		}
+	}
+	return "", false
+}
+
 func removeGroup(ref string) (provider.Group, error) {
 	g, err := findGroup(ref)
 	if err != nil {
+		if id, ok := removedOnly(ref); ok {
+			return g, fmt.Errorf("%s is removed already (and no two providers serve its model now); magpie group restore %s brings it back", id, id)
+		}
 		return g, err
 	}
 	if g.Hidden {
-		return g, fmt.Errorf("%s is removed already", g.ID)
+		return g, fmt.Errorf("%s is removed already; magpie group restore %s brings it back", g.ID, g.ID)
 	}
 	return g, provider.DeleteGroup(g.ID)
 }
@@ -462,6 +485,10 @@ func removeGroup(ref string) (provider.Group, error) {
 func restoreGroup(ref string) (provider.Group, error) {
 	g, err := findGroup(ref)
 	if err != nil {
+		if id, ok := removedOnly(ref); ok {
+			// its record goes; the group comes back once two providers serve its model
+			return provider.Group{ID: id, Name: id}, provider.ShowGroup(id)
+		}
 		return g, err
 	}
 	if !g.Hidden {
@@ -566,13 +593,19 @@ func groups() error {
 	for _, r := range rows {
 		fmt.Printf("  %s  %s  %s  %s%s\n", pad(r.name, w[0]), pad(r.id, w[1]), pad(r.how, w[2]), r.members, r.uses)
 	}
-	if len(hidden) > 0 {
-		var ids []string
-		for _, g := range hidden {
-			ids = append(ids, g.ID)
+	var ids []string
+	for _, g := range hidden {
+		ids = append(ids, g.ID)
+	}
+	for _, id := range provider.RemovedGroups() {
+		if !slices.Contains(ids, id) {
+			ids = append(ids, id) // its model is down to one provider now
 		}
+	}
+	if len(ids) > 0 {
 		fmt.Println()
 		fmt.Println(" ", muted.Render("removed: "+strings.Join(ids, ", ")+" · magpie group restore <id> brings one back"))
+		fmt.Println(" ", muted.Render("  (each is a {\"hidden\": true} record in providers.json that keeps it removed; deleting the record brings it back)"))
 	}
 	return nil
 }
