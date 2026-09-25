@@ -344,6 +344,7 @@ const I18N = {
     "{p}: {n} models": "{p}：{n} 个模型",
     "vendor list · {when}": "供应商列表 · {when}",
     "from models.dev · Refresh asks the vendor": "来自 models.dev · 刷新可向供应商获取",
+    "magpie's list · Refresh asks the vendor": "magpie 内置列表 · 刷新可向供应商获取",
 
     // gateway
     "running": "运行中",
@@ -420,6 +421,8 @@ const I18N = {
     "Total": "合计",
     "Usage unavailable": "暂时无法获取用量",
     "Needs a Google Cloud project — hover for how": "需要指定 Google Cloud 项目，悬停查看方法",
+    "Google no longer serves personal accounts to Gemini CLI — hover for more": "Google 已停止向个人账号提供 Gemini CLI，悬停查看详情",
+    "Google has suspended this account — hover for details": "此账号已被 Google 停用，悬停查看详情",
     "Antigravity hasn't set this account up — hover for why": "Antigravity 还没为这个账号开通，悬停查看原因",
     "Resets {when}": "重置于 {when}",
     "Allowance": "用量额度",

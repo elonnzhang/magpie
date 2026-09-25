@@ -2635,7 +2635,8 @@ function renderModels(p) {
   };
   foot.append(add, refresh);
   if (p.fetched) foot.append(el("span", "hint", t("vendor list · {when}", { when: p.fetched })));
-  else if (p.models.length) foot.append(el("span", "hint", t("from models.dev · Refresh asks the vendor")));
+  // a signed-in account's list, until the vendor gives one, is magpie's own
+  else if (p.models.length) foot.append(el("span", "hint", t(p.account ? "magpie's list · Refresh asks the vendor" : "from models.dev · Refresh asks the vendor")));
   box.append(foot);
   draw();
   return box;
@@ -2781,6 +2782,7 @@ async function followSignIn(id) {
     if (st.state === "done") {
       signing = null;
       justAdded = st.user;
+      delete loginUsage[st.agent]; // what was fetched before has nothing on the new account
       providers = await api("providers");
       const p = providers.providers.find((x) => x.account?.agent === st.agent);
       if (p) { editing = p.id; draft = null; adding = false; presetQuery = ""; }
@@ -2934,8 +2936,10 @@ function loginUsageOf(agent) {
 // no Cloud project named can't be used at all until one is, so that is
 // said outright; anything else is in the tooltip.
 function quotaError(err) {
+  if (/no longer supported for Gemini Code Assist for individuals/.test(err)) return t("Google no longer serves personal accounts to Gemini CLI — hover for more");
   if (/magpie accounts project/.test(err)) return t("Needs a Google Cloud project — hover for how");
   if (/^Antigravity (hasn't set|won't serve)/.test(err)) return t("Antigravity hasn't set this account up — hover for why");
+  if (/violation of Terms of Service/i.test(err)) return t("Google has suspended this account — hover for details");
   return t("Usage unavailable");
 }
 
