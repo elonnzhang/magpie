@@ -44,7 +44,13 @@ type providerJSON struct {
 	BalanceURL  string `json:"balanceURL,omitempty"`
 	BalancePath string `json:"balancePath,omitempty"`
 	ModelsURL   string `json:"modelsURL,omitempty"`
-	Key         struct {
+	// an account-wide balance token (provider.BalanceToken): whether the
+	// vendor takes one, and whether one is saved; never the token itself
+	BalanceToken struct {
+		Takes bool `json:"takes"`
+		Set   bool `json:"set"`
+	} `json:"balanceToken"`
+	Key struct {
 		Set      bool   `json:"set"`
 		Masked   string `json:"masked"`
 		Optional bool   `json:"optional"`
@@ -158,6 +164,7 @@ func providerInfo(p provider.Provider, agents []*agent.Agent) providerJSON {
 		out.Sponsored = pr.Sponsored
 		out.Key.Optional = pr.NoKey
 	}
+	out.BalanceToken.Takes, out.BalanceToken.Set = provider.TakesBalanceToken(p), p.BalanceToken != ""
 	out.Key.Set = p.Key != ""
 	out.Key.Masked = provider.Mask(p.Key)
 	out.KeyList = p.KeyList()
@@ -325,6 +332,9 @@ func providerRoutes(mux *http.ServeMux, w Windows, gw *gateway.Server) {
 			// New is set by the editor's Add: the provider is one more, never
 			// one replacing the provider that has its id or name
 			New bool `json:"new"`
+			// ClearBalanceToken drops the saved balance token, which a
+			// blank one in the form otherwise keeps
+			ClearBalanceToken bool `json:"clearBalanceToken"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			fail(rw, err)
@@ -336,7 +346,7 @@ func providerRoutes(mux *http.ServeMux, w Windows, gw *gateway.Server) {
 			// a preset needs nothing but the key; a saved provider keeps
 			// its key when the form left it blank
 			if pr, err := provider.FromPreset(in.Preset); err == nil && in.Chat == "" && in.Responses == "" && in.Anthropic == "" {
-				pr.Key, pr.Models, pr.Fallback, pr.Headers = in.Key, in.Models, in.Fallback, in.Headers
+				pr.Key, pr.Models, pr.Fallback, pr.Headers, pr.BalanceToken = in.Key, in.Models, in.Fallback, in.Headers, in.BalanceToken
 				if in.Name != "" {
 					pr.Name = in.Name
 				}
@@ -360,6 +370,9 @@ func providerRoutes(mux *http.ServeMux, w Windows, gw *gateway.Server) {
 				if in.Key == "" && old != nil {
 					in.Key = old.Key
 				}
+				if in.BalanceToken == "" && old != nil && !req.ClearBalanceToken {
+					in.BalanceToken = old.BalanceToken
+				}
 				if old != nil {
 					// the other keys are kept apart, in the Accounts list
 					in.Keys = old.Keys
@@ -376,6 +389,7 @@ func providerRoutes(mux *http.ServeMux, w Windows, gw *gateway.Server) {
 					return
 				}
 			}
+			provider.ForgetBalances()
 			// a new key means a new vendor list is worth a try; keep it short
 			if p, err := provider.Find(in.ID); err == nil && p.Ready() && (old == nil || old.Key != p.Key) {
 				ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)

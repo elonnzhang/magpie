@@ -2172,6 +2172,24 @@ function renderEditor(p, presetID) {
     ed.append(...field(t("Headers"), headerEditor(pr?.headerHints || []), t("Optional headers sent with every request to {p}, applied after auth.", { p: pr?.name || p?.name })));
   }
 
+  // a vendor that tells the whole account's balance only to a token of its
+  // own (AiHubMix's system access token), where a key knows just its own
+  if (p?.balanceToken?.takes) {
+    const tok = input(draft.balanceToken || "", p.balanceToken.set && !draft.clearBalanceToken ? t("saved · paste a new one to replace it") : t("optional · the account's system access token"), "password");
+    tok.oninput = () => { draft.balanceToken = tok.value.trim(); };
+    tok.onkeydown = (e) => { e.stopPropagation(); if (e.key === "Escape") cancelEdit(); };
+    const pair = el("div", "pair");
+    pair.append(tok);
+    if (p.balanceToken.set && !draft.clearBalanceToken) {
+      const side = el("div", "side");
+      const drop = el("button", "text", t("Remove"));
+      drop.onclick = () => { draft.clearBalanceToken = true; draft.balanceToken = ""; tok.value = ""; tok.placeholder = t("optional · the account's system access token"); drop.remove(); };
+      side.append(drop);
+      pair.append(side);
+    }
+    ed.append(...field(t("Account balance"), pair, t("A key tells only what is left on itself. For the whole account's balance on the Usage page, generate a System Access Token in {p}'s settings and paste it here; it is used for nothing else.", { p: pr?.name || p.name })));
+  }
+
   // a relay that offers several regional endpoints, or a vendor whose plans
   // are served at their own: one selector, and the provider's base URLs follow it
   let refreshEndpoints = () => {};
@@ -2261,6 +2279,8 @@ function renderEditor(p, presetID) {
     const body = { id: draft.id, name: draft.name, preset: draft.preset, key: draft.key || "", chat: draft.chat, responses: draft.responses, anthropic: draft.anthropic, catalog: draft.catalog, models: p ? draft.chosen : draft.extra, headers: headersOf(draft.headers), new: isNew };
     if (custom) { body.icon = draft.icon || "generic"; body.balanceURL = (draft.balanceURL || "").trim(); body.balancePath = (draft.balancePath || "").trim(); body.modelsURL = (draft.modelsURL || "").trim(); }
     if (p) { body.fallback = draft.fallback; body.unlisted = draft.unlisted; }
+    if (draft.balanceToken) body.balanceToken = draft.balanceToken;
+    else if (draft.clearBalanceToken) body.clearBalanceToken = true;
     if (isNew && custom && !body.name) { name.focus(); return editorError(t("Give it a name"), "warn"); }
     if (isNew && custom && !body.chat && !body.anthropic) { url.focus(); return editorError(t("A base URL is needed"), "warn"); }
     editorError("");
@@ -2975,6 +2995,8 @@ function quotaError(err) {
   if (/magpie accounts project/.test(err)) return t("Needs a Google Cloud project — hover for how");
   if (/^Antigravity (hasn't set|won't serve)/.test(err)) return t("Antigravity hasn't set this account up — hover for why");
   if (/violation of Terms of Service/i.test(err)) return t("Google has suspended this account — hover for details");
+  if (/access token is invalid or expired|didn't take the access token/.test(err)) return t("AiHubMix didn't take the access token — paste a new one in the provider's settings");
+  if (/this key has no limit/.test(err)) return t("This key has no limit — add the account's access token in the provider's settings to see its balance");
   return t("Usage unavailable");
 }
 

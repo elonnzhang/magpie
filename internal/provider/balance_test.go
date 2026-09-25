@@ -133,3 +133,23 @@ func TestReadAiHubMix(t *testing.T) {
 		t.Fatal("an unlimited key read as a balance")
 	}
 }
+
+func TestAiHubMixAccountBalance(t *testing.T) {
+	if got, err := readAiHubMixAccount([]byte(`{"success":true,"data":{"username":"x","quota":2500000}}`)); err != nil || got != "$5.00" {
+		t.Fatalf("got %q, %v", got, err)
+	}
+	if _, err := readAiHubMixAccount([]byte(`{"success":false,"message":"no such token"}`)); err == nil || err.Error() != "no such token" {
+		t.Fatalf("a refused token: %v", err)
+	}
+	p := Provider{Chat: "https://aihubmix.com/v1", Key: "sk-1"}
+	if !TakesBalanceToken(p) || TakesBalanceToken(Provider{Chat: "https://api.deepseek.com"}) {
+		t.Fatal("TakesBalanceToken")
+	}
+	if src, _ := balanceSourceOf(p); src.token != "" || !strings.HasSuffix(src.url, "/dashboard/billing/remain") {
+		t.Fatalf("without a token: %+v", src)
+	}
+	p.BalanceToken = "tok"
+	if src, _ := balanceSourceOf(p); src.token != "tok" || !strings.HasSuffix(src.url, "/api/user/self") {
+		t.Fatalf("with a token: %+v", src)
+	}
+}

@@ -1,7 +1,8 @@
 package provider
 
 // What is left on an API key, as the vendor's own balance endpoint tells
-// it: DeepSeek, Kimi, OpenRouter, SiliconFlow and AiHubMix are known by their hosts;
+// it: DeepSeek, Kimi, OpenRouter, SiliconFlow and AiHubMix are known by their hosts
+// (AiHubMix tells the whole account's to its access token, BalanceToken);
 // any other provider can name an endpoint and where the amount sits in its
 // reply (BalanceURL, BalancePath), the way a relay's own usage query does.
 
@@ -23,6 +24,9 @@ import (
 type balanceSource struct {
 	url  string
 	read func(body []byte) (string, error)
+	// token, when set, is sent as the whole Authorization header in place
+	// of the key's: the balance is the account's, not a key's
+	token string
 }
 
 // balanceSourceOf is the provider's own endpoint when it named one, else
@@ -30,28 +34,42 @@ type balanceSource struct {
 func balanceSourceOf(p Provider) (balanceSource, bool) {
 	if p.BalanceURL != "" {
 		path := p.BalancePath
-		return balanceSource{p.BalanceURL, func(b []byte) (string, error) { return readBalancePath(b, path) }}, true
+		return balanceSource{p.BalanceURL, func(b []byte) (string, error) { return readBalancePath(b, path) }, ""}, true
 	}
 	hosts := []string{hostOf(p.Chat), hostOf(p.Responses), hostOf(p.Anthropic)}
 	for _, h := range hosts {
 		switch h {
 		case "api.deepseek.com":
-			return balanceSource{"https://api.deepseek.com/user/balance", readDeepSeek}, true
+			return balanceSource{"https://api.deepseek.com/user/balance", readDeepSeek, ""}, true
 		case "api.moonshot.cn":
-			return balanceSource{"https://api.moonshot.cn/v1/users/me/balance", readMoonshot("¥")}, true
+			return balanceSource{"https://api.moonshot.cn/v1/users/me/balance", readMoonshot("¥"), ""}, true
 		case "api.moonshot.ai":
-			return balanceSource{"https://api.moonshot.ai/v1/users/me/balance", readMoonshot("$")}, true
+			return balanceSource{"https://api.moonshot.ai/v1/users/me/balance", readMoonshot("$"), ""}, true
 		case "openrouter.ai":
-			return balanceSource{"https://openrouter.ai/api/v1/credits", readOpenRouter}, true
+			return balanceSource{"https://openrouter.ai/api/v1/credits", readOpenRouter, ""}, true
 		case "api.siliconflow.cn":
-			return balanceSource{"https://api.siliconflow.cn/v1/user/info", readSiliconFlow("¥")}, true
+			return balanceSource{"https://api.siliconflow.cn/v1/user/info", readSiliconFlow("¥"), ""}, true
 		case "api.siliconflow.com":
-			return balanceSource{"https://api.siliconflow.com/v1/user/info", readSiliconFlow("$")}, true
+			return balanceSource{"https://api.siliconflow.com/v1/user/info", readSiliconFlow("$"), ""}, true
 		case "aihubmix.com":
-			return balanceSource{"https://aihubmix.com/dashboard/billing/remain", readAiHubMix}, true
+			if p.BalanceToken != "" {
+				return balanceSource{"https://aihubmix.com/api/user/self", readAiHubMixAccount, p.BalanceToken}, true
+			}
+			return balanceSource{"https://aihubmix.com/dashboard/billing/remain", readAiHubMix, ""}, true
 		}
 	}
 	return balanceSource{}, false
+}
+
+// TakesBalanceToken says the provider's vendor tells the account's balance
+// to a token of its own (BalanceToken), which the editor then asks for.
+func TakesBalanceToken(p Provider) bool {
+	for _, h := range []string{hostOf(p.Chat), hostOf(p.Responses), hostOf(p.Anthropic)} {
+		if h == "aihubmix.com" {
+			return true
+		}
+	}
+	return false
 }
 
 // money is an amount with its currency's sign in front: "¥12.34".
@@ -182,9 +200,35 @@ func readAiHubMix(b []byte) (string, error) {
 		return "", errors.New("no balance in the reply")
 	}
 	if v < 0 {
-		return "", errors.New("this key has no limit, and AiHubMix tells a key only what is left on it; give the key a limit in AiHubMix's console to see it here")
+		return "", errors.New("this key has no limit, and AiHubMix tells a key only what is left on it: give magpie the account's access token (AiHubMix → Settings → Generate System Access Token) in this provider's settings to see the account's balance, or give the key a limit in AiHubMix's console")
 	}
 	return money("$", v), nil
+}
+
+// readAiHubMixAccount: {"success":true,"data":{"quota":2500000,…}}, the
+// account's balance in AiHubMix's units, $1 to 500000 of them.
+func readAiHubMixAccount(b []byte) (string, error) {
+	var r struct {
+		Success bool   `json:"success"`
+		Message string `json:"message"`
+		Data    struct {
+			Quota any `json:"quota"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(b, &r); err != nil {
+		return "", err
+	}
+	if !r.Success {
+		if r.Message == "" {
+			r.Message = "AiHubMix didn't take the access token"
+		}
+		return "", errors.New(r.Message)
+	}
+	v, ok := number(r.Data.Quota)
+	if !ok {
+		return "", errors.New("no balance in the reply")
+	}
+	return money("$", v/500000), nil
 }
 
 // readBalancePath picks the amount out of a reply by a dotted path, array
@@ -253,11 +297,15 @@ func Balance(ctx context.Context, p Provider) (amount string, ok bool, err error
 	if err != nil {
 		return "", true, err
 	}
-	for k, v := range AuthHeaders(p, Chat) {
-		req.Header.Set(k, v)
-	}
-	for k, v := range p.Headers {
-		req.Header.Set(k, v)
+	if src.token != "" {
+		req.Header.Set("Authorization", src.token)
+	} else {
+		for k, v := range AuthHeaders(p, Chat) {
+			req.Header.Set(k, v)
+		}
+		for k, v := range p.Headers {
+			req.Header.Set(k, v)
+		}
 	}
 	req.Header.Set("Accept", "application/json")
 	res, err := http.DefaultClient.Do(req)
@@ -287,10 +335,19 @@ var keyBalanceCache struct {
 	data []SubscriptionQuota
 }
 
+// ForgetBalances has the next KeyBalances ask again, after a provider's
+// key or balance token changed.
+func ForgetBalances() {
+	keyBalanceCache.Lock()
+	keyBalanceCache.data = nil
+	keyBalanceCache.Unlock()
+}
+
 // KeyBalances is the balance of every provider magpie can ask one of, the
-// key in use and each other key it has on, as cards beside the
-// subscriptions' allowances. What was asked less than a minute ago is not
-// asked again.
+// key in use and each other key it has on — or its account's, once, when
+// it has a token for that — as cards beside the subscriptions' allowances.
+// What was asked less than a minute ago is not asked again, unless the
+// providers were saved since (ForgetBalances).
 func KeyBalances(ctx context.Context) []SubscriptionQuota {
 	c := &keyBalanceCache
 	c.Lock()
@@ -308,10 +365,16 @@ func KeyBalances(ctx context.Context) []SubscriptionQuota {
 		if p.Hidden || p.Account != nil || p.Key == "" {
 			continue
 		}
-		if _, ok := balanceSourceOf(p); !ok {
+		src, ok := balanceSourceOf(p)
+		if !ok {
 			continue
 		}
 		others := 0
+		if src.token != "" {
+			// the account's balance is the same whichever key asks
+			jobs = append(jobs, job{p, ""})
+			continue
+		}
 		for _, k := range p.Keys {
 			if !k.Off && k.Key != "" && k.Key != p.Key {
 				others++
