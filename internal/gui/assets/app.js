@@ -193,12 +193,14 @@ function renderAgents() {
       b.onclick = (ev) => openPicker(a, f, b, ev);
       fields.append(b);
     }
-    // a folded one says why it is there and gives its way back in words,
-    // rather than a greyed row whose way back is its menu
-    if (inFold) {
+    // one hidden by hand gives its way back in words, rather than being a
+    // greyed row whose way back is its menu. One nothing is set on isn't
+    // hidden: setting something on it brings it up the list.
+    if (inFold && isHidden(a)) {
+      row.classList.add("put-away");
       const back = el("button", "ag-show");
       back.type = "button";
-      back.title = t(isHidden(a) ? "Hidden by you · show it in the list again" : "Nothing is set on it · show it in the list");
+      back.title = t("Hidden by you · show it in the list again");
       back.append(svg(EYE, 12, 1.5), el("span", "", t("Show")));
       back.onclick = (e) => { e.stopPropagation(); setAgentHidden(a, false); };
       who.append(back);

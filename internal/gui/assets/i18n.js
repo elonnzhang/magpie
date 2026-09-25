@@ -28,7 +28,6 @@ const I18N = {
     "Hidden": "已隐藏",
     "Not set up": "未设置",
     "Hidden by you · show it in the list again": "你隐藏了它 · 点击放回列表",
-    "Nothing is set on it · show it in the list": "它还没有任何设置 · 点击放回列表",
     "{agent} hidden · find it under Hidden at the bottom": "已隐藏 {agent} · 可在列表底部「已隐藏」里找回",
     "Drag to reorder · click to move or hide": "拖动以调整顺序 · 点击可移动或隐藏",
     "Arrange {agent}": "调整 {agent}",
