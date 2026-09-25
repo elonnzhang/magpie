@@ -11,6 +11,12 @@ if (/^Mac/.test(navigator.platform)) document.body.classList.add("mac");
 // Outside the app — a browser on the gateway's page — there is no runtime.
 if (mode === "window") import("/wails/runtime.js").catch(() => {});
 if (params.get("theme")) document.documentElement.dataset.theme = params.get("theme");
+// the saved language and theme from boot.js, so the first paint is in them
+if (window.bootPrefs) {
+  const b = window.bootPrefs;
+  if (!params.get("theme") && b.theme && b.theme !== "system") document.documentElement.dataset.theme = b.theme;
+  setLocale(b.lang);
+}
 
 let state = { agents: [], profiles: [], catalog: "", settings: {} };
 let prefs = null; // the settings page: theme, lang, version, dir, gateway
