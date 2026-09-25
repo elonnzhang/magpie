@@ -185,9 +185,16 @@ input.bad { border-color: var(--warn); }
 .badges .on-dark { background: #0b0b0c; border-color: #26262a; }
 .badges img { height: 40px; width: auto; display: block; }
 
+/* getting started */
+.icon-btn.lang { width: auto; min-width: 34px; padding: 0 9px; font-size: 13px; font-weight: 560; text-decoration: none; }
+.callout { border: 1px solid var(--line); background: var(--card); border-radius: 10px; padding: 14px 18px 14px 36px; margin: 0 0 20px; font-size: 14.5px; color: var(--ink2); position: relative; }
+.callout::before { content: ""; position: absolute; left: 17px; top: 23px; width: 7px; height: 7px; border-radius: 50%; background: var(--ink); }
+.callout b { color: var(--ink); }
+.ui { font-weight: 600; color: var(--ink); }
+
 footer { border-top: 1px solid var(--line); padding: 28px 0 40px; font-size: 13.5px; color: var(--ink3); }
 footer .wrap { display: flex; flex-wrap: wrap; gap: 12px 24px; align-items: center; }
-footer .links { margin-left: auto; display: flex; gap: 20px; }
+footer .links { margin-left: auto; display: flex; flex-wrap: wrap; gap: 8px 20px; }
 footer a { text-decoration: none; }
 footer a:hover { color: var(--ink); }
 
@@ -207,4 +214,11 @@ footer a:hover { color: var(--ink); }
   .out .row > span { grid-column: 1 / -1; padding-top: 2px; }
   article h2 { margin-top: 56px; }
   th, td { padding: 10px 12px; }
+  nav .wrap { gap: 10px; }
+}
+/* a phone's width holds the brand, the language, the theme and Download */
+@media (max-width: 420px) {
+  .brand { margin-right: auto; }
+  nav .links + .icon-btn { margin-left: 0; }
+  nav a.icon-btn[href*="discord"], nav a.icon-btn[href*="github.com"] { display: none; }
 }

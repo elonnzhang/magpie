@@ -8,6 +8,7 @@
 //   /download/windows      the Windows app (x64);  /download/windows-arm64
 //   /download/linux        the Linux app (x86-64); /download/linux-arm64
 //   /download/<file>       any file of the newest release, by name
+//   /docs, /docs/zh        the getting-started guide: /docs/start, /docs/zh/start
 //
 // Everything else is the static site in public/.
 
@@ -25,6 +26,9 @@ const SHORT = {
   "linux-amd64": "magpie-linux-amd64",
   "linux-arm64": "magpie-linux-arm64",
 };
+
+// The bare docs paths open the getting-started guide.
+const DOCS = { "/docs": "/docs/start", "/docs/zh": "/docs/zh/start" };
 
 export default {
   async fetch(req, env, ctx) {
@@ -45,6 +49,8 @@ export default {
       if (!asset) return new Response("not found\n", { status: 404 });
       return Response.redirect(asset.url, 302);
     }
+    const guide = DOCS[url.pathname.replace(/\/+$/, "")];
+    if (guide) return Response.redirect(new URL(guide, url).toString(), 302);
     return beacon(await env.ASSETS.fetch(req));
   },
 };
