@@ -656,6 +656,7 @@ const I18N = {
     "Give it to {agent}": "给 {agent} 启用",
     "{agent} reads it through {other} — click to give it its own": "{agent} 通过 {other} 读取它 — 点击给它单独一份",
     "{agent}: {error}": "{agent}：{error}",
+    "{agent} reads MCP servers through the {ext} extension": "{agent} 通过 {ext} 扩展读取 MCP 服务器",
     "(and {n} more)": "（另有 {n} 项）",
     "Written to {agent}": "已写入 {agent}",
     "Written to {n} agents": "已写入 {n} 个 Agent",

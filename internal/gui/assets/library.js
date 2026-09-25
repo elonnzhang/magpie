@@ -9,6 +9,8 @@
 
   let lib = null;        // the page, as /api/library gives it
   let tab = "instructions";
+  let shown = "";        // the tab the page last drew, which fades in only when it changes
+  let fits = [];         // textareas to fit before the page is painted
   try { tab = localStorage.getItem("magpie.libTab") || tab; } catch {}
   let shared = null;     // the shared instructions as typed, while not saved
   const extras = {};     // agent → its own additions as typed, while not saved
@@ -36,7 +38,10 @@
   const tilde = (p) => (lib?.home && p?.startsWith(lib.home) ? "~" + p.slice(lib.home.length) : p || "");
   const agentOf = (id) => lib.agents.find((a) => a.id === id);
   const nameOf = (id) => agentOf(id)?.name || id;
-  const mcpAgents = () => lib.agents.filter((a) => a.mcp);
+  // An agent with no MCP of its own (Pi) reads its servers through an
+  // extension, which each of its chips says.
+  const mcpAgents = () => lib.agents.filter((a) => a.mcp)
+    .map((a) => a.mcpVia ? { ...a, aside: t("{agent} reads MCP servers through the {ext} extension", { agent: a.name, ext: a.mcpVia }) } : a);
   const skillAgents = () => lib.agents.filter((a) => a.skills);
 
   function glyph(d, cls = "lib-glyph") {
@@ -96,7 +101,7 @@
       if (via) { c.classList.add("via"); tip = t("{agent} reads it through {other} — click to give it its own", { agent: a.name, other: via }); }
       if (problem) { c.classList.add("warn"); tip = a.name + ": " + problem; }
       if (blocked) { c.classList.add("blocked"); c.disabled = true; tip = blocked; }
-      c.title = tip;
+      c.title = a.aside && !problem && !blocked ? tip + "\n" + a.aside : tip;
       c.setAttribute("aria-pressed", has ? "true" : "false");
       c.onclick = (e) => {
         e.stopPropagation();
@@ -149,6 +154,7 @@
 
   function renderLoading() {
     page.replaceChildren();
+    shown = "";
     const l = el("div", "list lib-skel");
     for (let i = 0; i < 4; i++) l.append(el("div", "row skeleton"));
     page.append(l);
@@ -162,6 +168,7 @@
     const focus = document.activeElement?.dataset?.lib; // keep the caret where the reader is typing
     const caret = focus ? [document.activeElement.selectionStart, document.activeElement.selectionEnd] : null;
     page.replaceChildren();
+    fits = [];
     const head = el("div", "lib-head");
     const counts = {
       instructions: lib.instructions.agents.filter((a) => a.on).length,
@@ -185,7 +192,10 @@
       page.append(empty(t("No agents to write to"), t("Install Claude Code, Codex, Gemini CLI, OpenCode… and the library can give them the same instructions, MCP servers and skills.")));
       return;
     }
-    const body = el("div", "lib-body");
+    // what changed in a tab is drawn in place: only another tab (or the
+    // first one after the skeleton) fades in
+    const body = el("div", "lib-body" + (shown !== tab ? " enter" : ""));
+    shown = tab;
     if (tab === "instructions") renderInstructions(body);
     else if (tab === "mcp") renderServers(body);
     else renderSkills(body);
@@ -197,6 +207,7 @@
     b.onclick = () => reveal(lib.backups);
     foot.append(b);
     page.append(foot);
+    for (const f of fits.splice(0)) f();
     page.scrollTop = top;
     if (focus) {
       const e = page.querySelector(`[data-lib="${CSS.escape(focus)}"]`);
@@ -218,7 +229,10 @@
   function autosize(ta, min) {
     const fit = () => { ta.style.height = "auto"; ta.style.height = Math.max(min, ta.scrollHeight + 2) + "px"; };
     ta.addEventListener("input", fit);
-    requestAnimationFrame(fit);
+    // fitted once it's on the page, before it's painted, so what's under it
+    // doesn't move a frame later
+    fits.push(fit);
+    requestAnimationFrame(fit); // and one drawn outside render()
   }
 
   function iv() { return lib.instructions; }

@@ -20,6 +20,9 @@ type Target struct {
 	// SkillsAlso are agents whose skills this one reads as well, as
 	// OpenCode reads Claude Code's.
 	SkillsAlso []string
+	// MCPVia is the extension the agent reads its MCP servers through, for
+	// one that has none of its own.
+	MCPVia string
 	// Note is what the page says of the agent's instructions file.
 	Note string
 }
@@ -84,6 +87,10 @@ func targetOf(a *agent.Agent) *Target {
 			d = filepath.Join(h, ".pi", "agent")
 		}
 		t.Instructions = filepath.Join(d, "AGENTS.md")
+		// Pi has no MCP of its own: its extensions for it (pi-mcp-adapter,
+		// pi-mcp-extension) both read the agent folder's mcp.json
+		t.MCP = &mcpFile{Path: filepath.Join(d, "mcp.json"), Format: fmtPi}
+		t.MCPVia = "pi-mcp-adapter"
 		t.Skills = filepath.Join(d, "skills")
 	case "omp":
 		d := filepath.Join(h, ".omp", "agent")

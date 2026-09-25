@@ -125,6 +125,7 @@ type AgentView struct {
 	SkillsAlso   []string `json:"skillsAlso,omitempty"`
 	Note         string   `json:"note,omitempty"`
 	NoSSE        bool     `json:"noSSE,omitempty"`
+	MCPVia       string   `json:"mcpVia,omitempty"`
 }
 
 // ServerView is a library server, and what each agent it's on made of it.
@@ -176,7 +177,7 @@ func Read(problems []Problem) (*View, error) {
 	targets := Targets()
 	for _, t := range targets {
 		av := AgentView{ID: t.Agent.ID, Name: t.Agent.Name, Icon: t.Agent.Icon, Instructions: t.Instructions, Skills: t.Skills,
-			SkillsAlso: t.SkillsAlso, Note: t.Note}
+			SkillsAlso: t.SkillsAlso, Note: t.Note, MCPVia: t.MCPVia}
 		if t.MCP != nil {
 			av.MCP = t.MCP.Path
 			av.NoSSE = t.MCP.supports(&Server{Transport: "sse"}) != nil

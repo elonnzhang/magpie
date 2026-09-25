@@ -86,6 +86,7 @@ const (
 	fmtCopilot
 	fmtCrush
 	fmtGoose
+	fmtPi
 )
 
 // mcpFile is the file an agent keeps its user-wide MCP servers in.
@@ -245,6 +246,23 @@ func (f *mcpFile) encode(s *Server) ordered {
 			optional("envs", s.Env)
 		}
 		add("timeout", 300)
+	case fmtPi:
+		// pi-mcp-extension reads the transport from "transport",
+		// pi-mcp-adapter from "httpTransport"; each ignores the other's
+		if s.Remote() {
+			t := "streamable-http"
+			if s.Transport == "sse" {
+				t = "sse"
+			}
+			add("transport", t)
+			add("httpTransport", t)
+			add("url", s.URL)
+			optional("headers", s.Headers)
+		} else {
+			add("command", s.Command)
+			add("args", list(s.Args))
+			optional("env", s.Env)
+		}
 	case fmtCodex:
 		if s.Remote() {
 			add("url", s.URL)
@@ -326,6 +344,16 @@ func (f *mcpFile) decode(name string, m map[string]any) (*Server, bool) {
 		} else {
 			local(str(m, "command"), m["args"], m["env"])
 		}
+	case fmtPi:
+		if u := str(m, "url"); u != "" {
+			t := "http"
+			if str(m, "transport") == "sse" || str(m, "httpTransport") == "sse" {
+				t = "sse"
+			}
+			remote(t, u, m["headers"])
+		} else {
+			local(str(m, "command"), m["args"], m["env"])
+		}
 	default: // Claude Code, Cursor, Copilot, Crush
 		t := str(m, "type")
 		if u := str(m, "url"); u != "" {
@@ -398,6 +426,7 @@ var owned = map[mcpFormat][]string{
 	fmtCopilot:  {"type", "url", "headers", "command", "args", "env"},
 	fmtGoose:    {"enabled", "name", "type", "uri", "headers", "cmd", "args", "envs"},
 	fmtCodex:    {"url", "http_headers", "command", "args", "env"},
+	fmtPi:       {"transport", "httpTransport", "url", "headers", "command", "args", "env"},
 }
 
 // merged is the entry magpie writes, with what the user added to the old

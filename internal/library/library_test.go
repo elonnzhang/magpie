@@ -515,3 +515,35 @@ func TestReadNoAgents(t *testing.T) {
 		t.Errorf("servers: %s", b)
 	}
 }
+
+// Pi's mcp.json is written so both its MCP extensions read the transport,
+// and a server written there as the extensions' READMEs have it is read.
+func TestPiMCP(t *testing.T) {
+	h := sandbox(t)
+	p := filepath.Join(h, ".pi/agent/mcp.json")
+	write(t, p, `{"mcpServers": {"supabase": {"transport": "streamable-http", "url": "https://mcp.supabase.com/mcp", "lifecycle": "eager"}}}`)
+	tg := targetByID("pi")
+	if tg == nil || tg.MCP == nil || tg.MCP.Path != p {
+		t.Fatalf("pi target: %+v", tg)
+	}
+	got, err := tg.MCP.read()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s := got["supabase"]; s == nil || s.Transport != "http" || s.URL != "https://mcp.supabase.com/mcp" {
+		t.Fatalf("supabase read as %+v", s)
+	}
+	ok(t)(SaveServer("", Server{Name: "ev", Transport: "sse", URL: "https://example.com/sse", Agents: []string{"pi"}}))
+	ok(t)(SaveServer("", Server{Name: "supabase", Transport: "http", URL: "https://mcp.supabase.com/mcp", Agents: []string{"pi"}}))
+	var doc struct{ MCPServers map[string]map[string]any }
+	if err := json.Unmarshal([]byte(read(t, p)), &doc); err != nil {
+		t.Fatal(err)
+	}
+	ev := doc.MCPServers["ev"]
+	if ev["transport"] != "sse" || ev["httpTransport"] != "sse" || ev["url"] != "https://example.com/sse" {
+		t.Errorf("ev written as %v", ev)
+	}
+	if sb := doc.MCPServers["supabase"]; sb["lifecycle"] != "eager" || sb["transport"] != "streamable-http" {
+		t.Errorf("supabase written as %v", sb)
+	}
+}
