@@ -57,6 +57,7 @@ const usage = `magpie — one place to pick every agent's model
   magpie accounts [agent] [--json]  every subscription magpie knows, with each one's allowance used and when it resets
   magpie accounts add <agent>     sign in to one more Claude, ChatGPT or Google (Gemini CLI, Antigravity) subscription
   magpie accounts switch <agent> <email>   sign the agent in to another of them
+  magpie accounts refresh         renew the saved Claude and ChatGPT sign-ins now (the gateway does it daily)
   magpie accounts project <gemini|antigravity> <email> <project>   the Google Cloud project a Google account's requests go to
 
   magpie serve                    run the gateway alone (the app runs it too)

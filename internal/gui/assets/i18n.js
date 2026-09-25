@@ -425,6 +425,7 @@ const I18N = {
     "Auto + Composer": "Auto + Composer",
     "Total": "合计",
     "Usage unavailable": "暂时无法获取用量",
+    "Signed out — add this account again to use it": "登录已失效，请重新添加此账号",
     "Needs a Google Cloud project — hover for how": "需要指定 Google Cloud 项目，悬停查看方法",
     "Google no longer serves personal accounts to Gemini CLI — hover for more": "Google 已停止向个人账号提供 Gemini CLI，悬停查看详情",
     "Google has suspended this account — hover for details": "此账号已被 Google 停用，悬停查看详情",

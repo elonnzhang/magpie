@@ -522,10 +522,26 @@ func claudeToken(ctx context.Context) (string, error) {
 	return c.OAuth.AccessToken, nil
 }
 
+// refreshRefused is a refresh the vendor answered and turned down: the
+// sign-in is gone, where a refresh that got no answer may yet go through.
+type refreshRefused string
+
+func (e refreshRefused) Error() string { return string(e) }
+
+// refreshFailed is a refresh that didn't go through: refused when the vendor
+// turned the token down (400 invalid_grant, 401), a hiccup otherwise — a 403
+// is as likely a proxy or bot check in the way as the vendor's answer.
+func refreshFailed(status int, agent, msg string) error {
+	if status == http.StatusBadRequest || status == http.StatusUnauthorized {
+		return refreshRefused(msg)
+	}
+	return fmt.Errorf("%s token refresh failed (HTTP %d)", agent, status)
+}
+
 // claudeRefresh trades a sign-in's refresh token for a new pair.
 func claudeRefresh(ctx context.Context, c *claudeCredentials) error {
 	if c.OAuth.RefreshToken == "" {
-		return errors.New("Claude Code OAuth token expired; run claude auth login")
+		return refreshRefused("Claude Code OAuth token expired; run claude auth login")
 	}
 	body, _ := json.Marshal(map[string]string{"grant_type": "refresh_token", "refresh_token": c.OAuth.RefreshToken,
 		"client_id": claudeClientID})
@@ -546,7 +562,7 @@ func claudeRefresh(ctx context.Context, c *claudeCredentials) error {
 		ExpiresIn    int64  `json:"expires_in"`
 	}
 	if res.StatusCode != http.StatusOK || json.Unmarshal(b, &fresh) != nil || fresh.AccessToken == "" {
-		return errors.New("Claude Code is signed out (token refresh failed); run claude auth login")
+		return refreshFailed(res.StatusCode, "Claude Code", "Claude Code is signed out (token refresh failed); run claude auth login")
 	}
 	c.OAuth.AccessToken = fresh.AccessToken
 	if fresh.RefreshToken != "" {
@@ -742,7 +758,7 @@ func codexRefresh(ctx context.Context, raw map[string]any) (string, error) {
 		RefreshToken string `json:"refresh_token"`
 	}
 	if res.StatusCode != 200 || json.Unmarshal(b, &fresh) != nil || fresh.AccessToken == "" {
-		return "", errors.New("Codex is signed out (token refresh failed); run codex login")
+		return "", refreshFailed(res.StatusCode, "Codex", "Codex is signed out (token refresh failed); run codex login")
 	}
 	toks["access_token"] = fresh.AccessToken
 	if fresh.IDToken != "" {

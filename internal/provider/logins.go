@@ -29,6 +29,9 @@ type Login struct {
 	Seen   time.Time `json:"seen"`
 	Active bool      `json:"active"` // the agent is signed in to this one now
 	On     bool      `json:"on"`     // in use: the active one, or next in line
+	// Lapsed says the vendor refused to refresh a saved account's sign-in:
+	// it has to be signed in again before it can be used.
+	Lapsed string `json:"lapsed,omitempty"`
 }
 
 type savedLogin struct {
@@ -53,6 +56,10 @@ type savedLogin struct {
 	// Project is the Google Cloud project a Gemini CLI or Antigravity
 	// account's requests go to, when the user named one (google.go).
 	Project string `json:"project,omitempty"`
+	// Renewed is when magpie last refreshed a saved account's sign-in, and
+	// Lapsed why the vendor last refused to (logins_on.go, keepalive.go).
+	Renewed time.Time `json:"renewed,omitzero"`
+	Lapsed  string    `json:"lapsed,omitempty"`
 }
 
 var (
@@ -343,8 +350,11 @@ func Logins(agent string) []Login {
 			continue
 		}
 		using := strings.EqualFold(active[l.Agent], l.User)
-		out = append(out, Login{Agent: l.Agent, User: l.User, Plan: l.Plan, Seen: l.Seen,
-			Active: using, On: using || l.On})
+		lg := Login{Agent: l.Agent, User: l.User, Plan: l.Plan, Seen: l.Seen, Active: using, On: using || l.On}
+		if !using {
+			lg.Lapsed = l.Lapsed
+		}
+		out = append(out, lg)
 	}
 	return append(out, side...)
 }
@@ -361,6 +371,10 @@ func SwitchLogin(agent, user string) error {
 	case "gemini", "antigravity":
 		return switchGoogleLogin(agent, user)
 	}
+	// not while a saved account is being refreshed: the agent would be
+	// given the refresh token that refresh is spending
+	savedTokenMu.Lock()
+	defer savedTokenMu.Unlock()
 	loginsMu.Lock()
 	defer loginsMu.Unlock()
 	ls := readLogins()

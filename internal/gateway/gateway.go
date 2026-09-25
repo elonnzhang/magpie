@@ -137,6 +137,9 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 		return err
 	}
 	srv := &http.Server{Handler: s.Handler(), ReadHeaderTimeout: 30 * time.Second, IdleTimeout: 5 * time.Minute}
+	// the magpie serving the gateway, and only it, keeps the saved accounts
+	// signed in, so two never refresh one sign-in at once
+	go provider.KeepLoginsAlive(ctx)
 	go func() {
 		<-ctx.Done()
 		c, cancel := context.WithTimeout(context.Background(), 2*time.Second)

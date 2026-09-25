@@ -2907,7 +2907,7 @@ function renderAccounts(a) {
       use.onclick = () => { use.classList.add("busy"); accountAction("login/switch", { agent: a.agent, user: l.user }, sub?.own ? t("The gateway now uses {user} first", { user: l.user }) : t("{agent} is now signed in as {user}", { agent: a.agentName, user: l.user })); };
       row.append(forget, use);
     }
-    row.append(accountQuota(quota, l.user));
+    row.append(accountQuota(l.lapsed ? { [l.user]: { error: l.lapsed } } : quota, l.user));
     list.append(row);
   }
   if (signing?.agent === a.agent) list.append(renderSigning(sub));
@@ -2942,6 +2942,7 @@ function loginUsageOf(agent) {
 // no Cloud project named can't be used at all until one is, so that is
 // said outright; anything else is in the tooltip.
 function quotaError(err) {
+  if (/sign-in has expired/.test(err)) return t("Signed out — add this account again to use it");
   if (/no longer supported for Gemini Code Assist for individuals/.test(err)) return t("Google no longer serves personal accounts to Gemini CLI — hover for more");
   if (/magpie accounts project/.test(err)) return t("Needs a Google Cloud project — hover for how");
   if (/^Antigravity (hasn't set|won't serve)/.test(err)) return t("Antigravity hasn't set this account up — hover for why");
