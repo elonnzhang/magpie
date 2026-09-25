@@ -1,0 +1,72 @@
+package library
+
+import (
+	"os"
+	"path/filepath"
+	"slices"
+	"strings"
+	"time"
+
+	"github.com/yetone/magpie/internal/settings"
+)
+
+// keepBackups is how many changes' backups are kept.
+const keepBackups = 30
+
+// BackupDir is where a file is copied before magpie first changes it in a
+// change: one folder a change, named by when, a folder an agent in it.
+func BackupDir() string { return filepath.Join(settings.Dir(), "backups") }
+
+// backups copies each file once, the first time a change is about to
+// write it.
+type backups struct {
+	dir  string
+	done map[string]bool
+}
+
+func newBackups() *backups {
+	return &backups{done: map[string]bool{}}
+}
+
+// keep copies path aside, as the agent had it, before it is written; a
+// file that isn't there has nothing to keep.
+func (b *backups) keep(agent, path string) error {
+	if b.done[path] {
+		return nil
+	}
+	b.done[path] = true
+	data, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if b.dir == "" {
+		b.dir = filepath.Join(BackupDir(), time.Now().Format("2006-01-02_15-04-05.000"))
+	}
+	dst := filepath.Join(b.dir, agent, filepath.Base(path))
+	if err := os.MkdirAll(filepath.Dir(dst), 0o700); err != nil {
+		return err
+	}
+	return os.WriteFile(dst, data, 0o600)
+}
+
+// prune leaves the newest keepBackups.
+func pruneBackups() {
+	es, err := os.ReadDir(BackupDir())
+	if err != nil {
+		return
+	}
+	var names []string
+	for _, e := range es {
+		if e.IsDir() && !strings.HasPrefix(e.Name(), ".") {
+			names = append(names, e.Name())
+		}
+	}
+	slices.Sort(names)
+	for len(names) > keepBackups {
+		os.RemoveAll(filepath.Join(BackupDir(), names[0]))
+		names = names[1:]
+	}
+}

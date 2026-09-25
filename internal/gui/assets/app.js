@@ -171,9 +171,11 @@ function renderAgents() {
     const shownFields = a.fields.filter((f) => !TIERS.includes(f.label));
     const tiers = tierMenu(a);
     if (tiers) shownFields.push(tiers);
-    const sorted = shownFields.sort((x, y) => wide(y) - wide(x));
+    const sorted = shownFields.sort((x, y) => wide(y) - wide(x) || extra(x) - extra(y));
+    const plain = sorted.filter((f) => !extra(f)).length;
     for (const f of sorted) {
-      const b = el("button", "field " + (sorted.length === 1 ? "solo" : wide(f) ? "main" : "side"));
+      if (extra(f)) { fields.append(extraField(a, f)); continue; }
+      const b = el("button", "field " + (plain === 1 ? "solo" : wide(f) ? "main" : "side"));
       const opt = optionFor(f, f.value);
       b.title = t("{label}: {value}", { label: t(f.label), value: f.value || t("agent default") }) + (opt?.note ? ` · ${opt.note}` : "");
       const effort = f.key === "effort" || f.label === "effort" || f.label === "thinking";
@@ -196,6 +198,9 @@ function renderAgents() {
     row.append(icon(a.icon), who, fields);
     return row;
   };
+  // the extras column is there for every row once any agent has one, so the
+  // pickers keep lining up down the list
+  list.classList.toggle("extras", state.agents.some((a) => a.fields.some(extra) || tierMenu(a)));
   if (!folded.length) {
     for (const a of state.agents) list.append(agentRow(a));
   } else {
@@ -272,6 +277,28 @@ const TIERS = ["opus", "sonnet", "haiku", "fable"];
 // fields that fall back to the agent's model when unset
 const FOLLOWS_MODEL = [...TIERS, "subagents"];
 
+// A field that follows the model unless set — Codex's subagents, Claude
+// Code's tiers — is a small square after the pickers rather than a third
+// picker, which a row has no room for: it wrapped onto a line of its own.
+const extra = (f) => f.key === "tiers" || FOLLOWS_MODEL.includes(f.label);
+const EXTRA_GLYPH = {
+  subagents: "M4.5 2.75v10.5M4.5 9.25c0-2.2 1.6-3.75 3.9-3.75h3.35M9.9 3.6l1.9 1.9-1.9 1.9",
+  tiers: "M8 2.6 2.75 5.4 8 8.2l5.25-2.8zM2.75 8.1 8 10.9l5.25-2.8M2.75 10.8 8 13.6l5.25-2.8",
+};
+function extraField(a, f) {
+  const set = !!(f.value || f.custom);
+  const b = el("button", "field extra" + (set ? " set" : ""));
+  b.append(svg(EXTRA_GLYPH[f.label] || EXTRA_GLYPH.tiers, 13, 1.5));
+  const opt = optionFor(f, f.value);
+  b.title = f.menu
+    ? t("{label}: {value}", { label: t(f.label), value: f.summary }) + "\n" + f.options.map((o) => `${o.label}: ${o.note}`).join("\n")
+    : t("{label}: {value}", { label: t(f.label), value: opt?.label || f.value || t("same as model") });
+  b.setAttribute("aria-label", b.title);
+  b.dataset.key = f.key;
+  b.onclick = (ev) => openPicker(a, f, b, ev);
+  return b;
+}
+
 function tierMenu(a) {
   const tiers = a.fields.filter((f) => TIERS.includes(f.label));
   if (!tiers.length || !tiers.some((f) => f.options.length)) return null;
@@ -346,7 +373,8 @@ async function load() {
   try {
     state = await api("state");
     load.done = true;
-    applyPrefs(state.settings);
+    // the library may have drawn itself before the saved language was known
+    if (applyPrefs(state.settings) && view === "library") window.loadLibrary?.();
     tintPanel();
     renderAgents();
     // an open provider editor is someone typing: coming back to the window
@@ -485,7 +513,7 @@ function openPicker(agent, field, anchor, ev, only) {
   }
   const q = $("#q");
   q.value = "";
-  q.placeholder = modelPicker ? t("Filter, or type any model id…") : t("Filter {field}…", { field: t(field.label) });
+  q.placeholder = modelPicker && extra(field) ? t("{field} — filter, or type any model id…", { field: t(field.label) }) : modelPicker ? t("Filter, or type any model id…") : t("Filter {field}…", { field: t(field.label) });
   filter();
   q.focus();
 }
@@ -3367,7 +3395,7 @@ function show(v) {
   view = v;
   if (mode === "window") { for (const b of $("#nav").querySelectorAll("button")) b.classList.toggle("on", b.dataset.view === v); slide($("#nav"), "nav"); }
   $("#prefs").classList.toggle("on", v === "settings");
-  for (const id of ["agents", "providers", "gateway", "routing", "usage", "settings"]) $("#view-" + id).hidden = v !== id;
+  for (const id of ["agents", "providers", "gateway", "routing", "usage", "library", "settings"]) $("#view-" + id).hidden = v !== id;
   // back to where the reader was in it, and again once it has what it loads
   const back = () => backToReader($("#view-" + v));
   requestAnimationFrame(back);
@@ -3376,6 +3404,7 @@ function show(v) {
   if (v === "providers" || v === "gateway" || v === "routing") loadProviders().then(back, (e) => status(e.message, "err"));
   if (v === "usage") loadUsage().then(back, (e) => status(e.message, "err"));
   if (v === "settings") loadSettings().then(back, (e) => status(e.message, "err"));
+  if (v === "library") window.loadLibrary?.()?.then(back);
   syncURL();
 }
 
@@ -3449,6 +3478,17 @@ function fitTop() {
 }
 const topFit = new ResizeObserver(fitTop);
 for (const e of [".top", ".brand", ".actions"]) topFit.observe($(e));
+// the nav's tabs change size after its thumb was put under one — the header
+// tightening, the fonts arriving, another language — so it's put there again
+if (mode === "window") new ResizeObserver(() => {
+  const th = $("#nav > .thumb"), on = $("#nav > .on");
+  if (!th || !on) return;
+  th.classList.add("still");
+  th.style.transform = `translateX(${on.offsetLeft}px)`;
+  th.style.width = on.offsetWidth + "px";
+  thumbs.set("nav", { x: on.offsetLeft, w: on.offsetWidth, at: 0 });
+  requestAnimationFrame(() => th.classList.remove("still"));
+}).observe($("#nav"));
 document.fonts?.ready.then(fitTop);
 
 document.addEventListener("visibilitychange", () => { if (!document.hidden) { load(); wag(); } });
@@ -3466,6 +3506,6 @@ if (mode === "window" && params.get("import")) {
   }).catch(() => {});
 }
 if (mode === "window" && params.get("view") === "providers" && params.get("edit")) editing = params.get("edit");
-if (mode === "window" && ["providers", "gateway", "routing", "usage", "settings"].includes(params.get("view"))) show(params.get("view"));
+if (mode === "window" && ["providers", "gateway", "routing", "usage", "library", "settings"].includes(params.get("view"))) show(params.get("view"));
 else if (mode === "window") slide($("#nav"), "nav");
 load();

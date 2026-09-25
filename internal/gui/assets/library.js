@@ -1,0 +1,1263 @@
+// Library: one set of instructions, MCP servers and skills, written into
+// every agent that should have them (#29). magpie keeps the library in its
+// own folder and writes each agent's files from it; what the user has in
+// those files besides stays theirs, and every file is kept aside before
+// magpie writes it. Everything shown here comes from /api/library.
+(() => {
+  const page = $("#view-library");
+  if (!page) return;
+
+  let lib = null;        // the page, as /api/library gives it
+  let tab = "instructions";
+  try { tab = localStorage.getItem("magpie.libTab") || tab; } catch {}
+  let shared = null;     // the shared instructions as typed, while not saved
+  const extras = {};     // agent → its own additions as typed, while not saved
+  const open = new Set(); // agents whose instructions row is open
+  let probe = null;      // skills found at a source: { source, candidates, pick:Set, agents:Set }
+  let probing = false;
+  let modal = null;      // what the library has open in the dialog
+
+  const GLYPH = {
+    cmd: "M3 4.5h10v7H3z M5.5 7l1.5 1.2-1.5 1.3 M8.5 9.5h2",
+    web: "M8 2.5a5.5 5.5 0 1 0 0 11 5.5 5.5 0 0 0 0-11z M2.5 8h11 M8 2.5c1.6 1.7 2.3 3.5 2.3 5.5S9.6 11.8 8 13.5 M8 2.5C6.4 4.2 5.7 6 5.7 8s.7 3.8 2.3 5.5",
+    skill: "M4 2.5h6.5L12 4v9.5H4z M6 6h4 M6 8.5h4 M6 11h2.5",
+    doc: "M4 2.5h5.5L12 5v8.5H4z M9.5 2.5V5H12",
+    folder: "M2.5 4.5h4l1.2 1.3h5.8v6.7h-11z",
+    up: "M8 12.5v-9 M4.5 7 8 3.5 11.5 7",
+    down: "M8 3.5v9 M4.5 9 8 12.5 11.5 9",
+    trash: "M3.5 4.5h9 M6.5 4.5V3h3v1.5 M4.5 4.5l.6 8.5h5.8l.6-8.5",
+    search: "M7 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8z M10 10l3 3",
+    out: "M9.5 3.5h3v3 M12.5 3.5 7.5 8.5 M11 9.5v3H3.5V5h3",
+    key: "M10 2.8a3.2 3.2 0 1 0 0 6.4 3.2 3.2 0 0 0 0-6.4z M7.8 8.2 3 13 M4.5 11.5 6 13",
+    person: "M8 3a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5z M3.5 13.5c.6-2.4 2.3-3.6 4.5-3.6s3.9 1.2 4.5 3.6",
+    back: "m9.5 4.5-3 3.5 3 3.5",
+  };
+
+  const tilde = (p) => (lib?.home && p?.startsWith(lib.home) ? "~" + p.slice(lib.home.length) : p || "");
+  const agentOf = (id) => lib.agents.find((a) => a.id === id);
+  const nameOf = (id) => agentOf(id)?.name || id;
+  const mcpAgents = () => lib.agents.filter((a) => a.mcp);
+  const skillAgents = () => lib.agents.filter((a) => a.skills);
+
+  function glyph(d, cls = "lib-glyph") {
+    const g = el("span", cls);
+    g.append(svg(d, 16, 1.3));
+    return g;
+  }
+  // A row's mark: the thing's own icon where the market knows it, else a
+  // glyph for what it is — never a made-up picture.
+  function mark(url, d) {
+    if (!url) return glyph(d);
+    const box = logo(url, "");
+    box.classList.add("lib-logo");
+    box.querySelector("img").onerror = () => box.replaceWith(glyph(d));
+    return box;
+  }
+  function button(text, cls, onclick) {
+    const b = el("button", "text " + (cls || ""), text);
+    b.onclick = (e) => { e.stopPropagation(); onclick(e, b); };
+    return b;
+  }
+  // a path shown on the page: a click shows it in the file manager
+  function pathLink(p) {
+    const b = el("button", "lib-path", tilde(p));
+    b.title = t("Show in {fm}", { fm: fileManager() });
+    b.onclick = (e) => { e.stopPropagation(); reveal(p); };
+    return b;
+  }
+  function fileManager() { return /^Mac/.test(navigator.platform) ? "Finder" : /^Win/.test(navigator.platform) ? "Explorer" : t("the file manager"); }
+  function reveal(p) { api("library/reveal", { path: p }).catch((e) => status(e.message, "err")); }
+
+  // A switch: on or off, nothing between.
+  function toggle(on, label, onChange) {
+    const s = el("button", "lib-switch" + (on ? " on" : ""));
+    s.setAttribute("role", "switch");
+    s.setAttribute("aria-checked", on ? "true" : "false");
+    s.setAttribute("aria-label", label);
+    s.append(el("i"));
+    s.onclick = (e) => { e.stopPropagation(); onChange(!on); };
+    return s;
+  }
+
+  // Agent chips for a server or a skill: each agent that could have it, lit
+  // when it does. A chip whose agent couldn't be given it says why.
+  function agentChips(all, on, onChange, opts = {}) {
+    const box = el("div", "lib-agents");
+    for (const a of all) {
+      const has = on.includes(a.id);
+      const c = el("button", "lib-ag" + (has ? " on" : ""));
+      c.append(icon(a.icon));
+      if (opts.names) c.append(el("span", "n", a.name));
+      const problem = opts.problems?.[a.id];
+      const blocked = opts.blocked?.(a);
+      const via = !has && opts.via?.(a);
+      let tip = has ? t("{agent} has it — click to take it away", { agent: a.name }) : t("Give it to {agent}", { agent: a.name });
+      if (via) { c.classList.add("via"); tip = t("{agent} reads it through {other} — click to give it its own", { agent: a.name, other: via }); }
+      if (problem) { c.classList.add("warn"); tip = a.name + ": " + problem; }
+      if (blocked) { c.classList.add("blocked"); c.disabled = true; tip = blocked; }
+      c.title = tip;
+      c.setAttribute("aria-pressed", has ? "true" : "false");
+      c.onclick = (e) => {
+        e.stopPropagation();
+        const next = has ? on.filter((x) => x !== a.id) : [...on, a.id];
+        onChange(next, c);
+      };
+      box.append(c);
+    }
+    return box;
+  }
+
+  // ---------- loading and changing ----------
+
+  async function load() {
+    if (!lib) renderLoading();
+    try {
+      lib = await api("library");
+      render();
+    } catch (e) {
+      status(e.message, "err");
+    }
+  }
+  window.loadLibrary = load;
+
+  // Every change answers with the page as it is after it, and what it did.
+  async function change(path, body, done) {
+    try {
+      const v = await api("library/" + path, body);
+      lib = v;
+      report(v.result, done);
+      render();
+      return true;
+    } catch (e) {
+      status(e.message, "err", 6000);
+      return false;
+    }
+  }
+  function report(res, done) {
+    if (!res) return;
+    if (res.problems?.length) {
+      const p = res.problems[0];
+      status(t("{agent}: {error}", { agent: nameOf(p.agent), error: p.error }) + (res.problems.length > 1 ? " " + t("(and {n} more)", { n: res.problems.length - 1 }) : ""), "warn", 8000);
+      return;
+    }
+    const n = res.changed?.length || 0;
+    if (done) status(done, "ok");
+    else if (n) status(n === 1 ? t("Written to {agent}", { agent: nameOf(res.changed[0]) }) : t("Written to {n} agents", { n }), "ok");
+    else status(t("Saved — the agents already had it"), "ok");
+  }
+
+  function renderLoading() {
+    page.replaceChildren();
+    const l = el("div", "list lib-skel");
+    for (let i = 0; i < 4; i++) l.append(el("div", "row skeleton"));
+    page.append(l);
+  }
+
+  // ---------- the page ----------
+
+  function render() {
+    if (!lib) return;
+    const top = page.scrollTop;
+    const focus = document.activeElement?.dataset?.lib; // keep the caret where the reader is typing
+    const caret = focus ? [document.activeElement.selectionStart, document.activeElement.selectionEnd] : null;
+    page.replaceChildren();
+    const head = el("div", "lib-head");
+    const counts = {
+      instructions: lib.instructions.agents.filter((a) => a.on).length,
+      mcp: lib.servers.length,
+      skills: lib.skills.length,
+    };
+    const tabs = segs([
+      ["instructions", t("Instructions")],
+      ["mcp", t("MCP servers") + (counts.mcp ? " · " + counts.mcp : "")],
+      ["skills", t("Skills") + (counts.skills ? " · " + counts.skills : "")],
+    ], tab, (id) => { tab = id; try { localStorage.setItem("magpie.libTab", id); } catch {} render(); page.scrollTop = 0; });
+    tabs.classList.add("lib-tabs");
+    head.append(tabs, el("span", "grow"));
+    const more = button("", "lib-more", () => reveal(lib.dir));
+    more.append(glyph(GLYPH.folder, "lib-mini"), el("span", "", t("Library folder")));
+    more.title = tilde(lib.dir);
+    head.append(more);
+    page.append(head);
+    head.classList.toggle("stuck", top > 0);
+    if (!lib.agents.length) {
+      page.append(empty(t("No agents to write to"), t("Install Claude Code, Codex, Gemini CLI, OpenCode… and the library can give them the same instructions, MCP servers and skills.")));
+      return;
+    }
+    const body = el("div", "lib-body");
+    if (tab === "instructions") renderInstructions(body);
+    else if (tab === "mcp") renderServers(body);
+    else renderSkills(body);
+    page.append(body);
+    for (const n of body.querySelectorAll(".row-head .note")) n.title = n.textContent;
+    const foot = el("p", "lib-foot");
+    foot.append(el("span", "", t("magpie keeps a copy of every file before it writes it.") + " "));
+    const b = el("button", "lib-link", t("Backups"));
+    b.onclick = () => reveal(lib.backups);
+    foot.append(b);
+    page.append(foot);
+    page.scrollTop = top;
+    if (focus) {
+      const e = page.querySelector(`[data-lib="${CSS.escape(focus)}"]`);
+      if (e) { e.focus({ preventScroll: true }); if (caret && e.setSelectionRange) e.setSelectionRange(caret[0], caret[1]); }
+    }
+  }
+
+  function empty(title, text, action) {
+    const box = el("div", "lib-empty");
+    box.append(el("b", "", title), el("p", "", text));
+    if (action) box.append(action);
+    return box;
+  }
+
+  function intro(text) { return el("p", "lib-intro", text); }
+
+  // ---------- instructions ----------
+
+  function autosize(ta, min) {
+    const fit = () => { ta.style.height = "auto"; ta.style.height = Math.max(min, ta.scrollHeight + 2) + "px"; };
+    ta.addEventListener("input", fit);
+    requestAnimationFrame(fit);
+  }
+
+  function iv() { return lib.instructions; }
+  function dirty() {
+    if (shared !== null && shared !== lib.instructions.shared) return true;
+    return Object.entries(extras).some(([id, v]) => v !== (lib.instructions.agents.find((a) => a.agent === id)?.extra || ""));
+  }
+
+  async function saveInstructions() {
+    const c = {};
+    if (shared !== null && shared !== lib.instructions.shared) c.shared = shared;
+    const ex = {};
+    for (const [id, v] of Object.entries(extras)) if (v !== (lib.instructions.agents.find((a) => a.agent === id)?.extra || "")) ex[id] = v;
+    if (Object.keys(ex).length) c.extra = ex;
+    if (!Object.keys(c).length) return;
+    if (await change("instructions/save", c)) {
+      shared = null;
+      for (const k of Object.keys(extras)) delete extras[k];
+      render();
+    }
+  }
+  function discard() {
+    shared = null;
+    for (const k of Object.keys(extras)) delete extras[k];
+    render();
+  }
+
+  function renderInstructions(body) {
+    const iv = lib.instructions;
+    body.append(intro(t("Write it once: every agent switched on below reads it before each conversation, in its own instructions file.")));
+    const card = el("div", "list lib-card");
+    const ta = el("textarea", "lib-text");
+    ta.dataset.lib = "shared";
+    ta.spellcheck = false;
+    ta.value = shared ?? iv.shared;
+    ta.placeholder = t("What every agent should know — how you like code written, the stack you work in, the commands that run your tests…");
+    ta.oninput = () => { shared = ta.value; bar.hidden = !dirty(); };
+    ta.onkeydown = (e) => { e.stopPropagation(); if ((e.metaKey || e.ctrlKey) && e.key === "s") { e.preventDefault(); saveInstructions(); } };
+    autosize(ta, 150);
+    const bar = el("div", "lib-savebar");
+    bar.append(el("span", "note", t("Not saved yet")), el("span", "grow"), button(t("Discard"), "", discard), button(t("Save"), "primary", saveInstructions));
+    bar.hidden = !dirty();
+    const ttl = el("div", "lib-cardhead");
+    ttl.append(glyph(GLYPH.doc), el("b", "", t("Shared instructions")), el("span", "grow"), el("span", "note", "Markdown · " + (/^Mac/.test(navigator.platform) ? "⌘S" : "Ctrl+S")));
+    card.append(ttl, ta);
+    body.append(card);
+
+    const rh = el("div", "row-head");
+    rh.append(el("span", "label", t("Agents")), el("span", "grow"), el("span", "note", t("magpie writes its part between two marker lines — the rest of each file stays yours")));
+    body.append(rh);
+    const list = el("div", "list lib-list");
+    for (const a of iv.agents) list.append(...instructionsRow(a));
+    if (!iv.agents.length) list.append(el("div", "lib-none", t("None of your agents reads a user-wide instructions file magpie knows.")));
+    body.append(list);
+    const skip = lib.agents.filter((a) => !a.instructions);
+    if (skip.length) body.append(el("p", "lib-aside", t("{agents} keeps no user-wide instructions file.", { agents: skip.map((a) => a.name).join(", ") })));
+    body.append(bar);
+  }
+
+  function instructionsRow(a) {
+    const isOpen = open.has(a.agent);
+    const row = el("div", "row lib-row click" + (isOpen ? " open" : ""));
+    const who = el("div", "who");
+    const name = el("div", "name", a.name);
+    who.append(name);
+    const sub = el("div", "sub");
+    sub.append(pathLink(a.path));
+    who.append(sub);
+    const tags = el("div", "lib-tags");
+    const extra = extras[a.agent] ?? a.extra;
+    if (a.on && extra) tags.append(tag(t("+ its own"), "", t("{agent} gets something of its own after the shared text", { agent: a.name })));
+    if (a.edited) tags.append(tag(t("edited in the file"), "warn", t("magpie's part of this file was changed there; magpie leaves it until the library's text changes")));
+    if (a.own) tags.append(tag(a.own === 1 ? t("1 line of its own") : t("{n} lines of its own", { n: a.own }), "", t("The file has instructions besides magpie's part — they stay, and the agent reads both")));
+    const chev = el("span", "chev");
+    chev.append(svg(CHEV_R, 11, 1.7));
+    row.append(icon(a.icon), who, tags, toggle(a.on, t("{agent} reads the shared instructions", { agent: a.name }), (on) => {
+      const agents = lib.instructions.agents.filter((x) => (x.agent === a.agent ? on : x.on)).map((x) => x.agent);
+      let done = t("Taken out of {agent}'s file", { agent: a.name });
+      if (on && dirty()) done = t("{agent} is on — save to write the new text into its file", { agent: a.name });
+      else if (on && !iv().shared.trim() && !(a.extra || "").trim()) done = t("{agent} is on — it gets the shared instructions once there are some", { agent: a.name });
+      else if (on) done = t("{agent} reads the shared instructions now", { agent: a.name });
+      change("instructions/save", { agents }, done);
+    }), chev);
+    row.onclick = () => { if (isOpen) open.delete(a.agent); else open.add(a.agent); render(); };
+    if (!isOpen) return [row];
+
+    const det = el("div", "lib-detail");
+    if (a.override) {
+      const w = el("div", "lib-warn");
+      w.append(el("span", "", t("{agent} reads {file} instead of this file while it has anything in it.", { agent: a.name, file: tilde(a.override) }) + " "), pathLink(a.override));
+      det.append(w);
+    }
+    if (a.agent === "opencode") det.append(el("p", "lib-aside", t("OpenCode reads Claude Code's CLAUDE.md when it has no AGENTS.md of its own.")));
+    const lab = el("label", "lib-lab", t("Only for {agent}, after the shared text", { agent: a.name }));
+    const ta = el("textarea", "lib-text small");
+    ta.dataset.lib = "extra:" + a.agent;
+    ta.spellcheck = false;
+    ta.value = extra;
+    ta.placeholder = t("Anything only {agent} should be told", { agent: a.name });
+    ta.oninput = () => { extras[a.agent] = ta.value; renderSaveBars(); };
+    ta.onkeydown = (e) => { e.stopPropagation(); if ((e.metaKey || e.ctrlKey) && e.key === "s") { e.preventDefault(); saveInstructions(); } };
+    autosize(ta, 64);
+    det.append(lab, ta);
+    if (!a.on && extra) det.append(el("p", "lib-aside", t("Switch {agent} on for it to read this.", { agent: a.name })));
+    const acts = el("div", "lib-acts");
+    if (a.own) {
+      const b = button(t("Move its own into the shared text"), "action", () => change("instructions/import", { name: a.agent }, t("Moved into the shared instructions — {agent} reads the same as before", { agent: a.name })));
+      b.title = t("Takes the {n} lines out of the file, adds them to the shared text, and switches {agent} on — so it reads what it read before, and the other agents can too", { n: a.own, agent: a.name });
+      acts.append(b);
+    }
+    if (a.edited) {
+      const b = button(t("Write the library's text again"), "action", () => change("instructions/save", { rewrite: [a.agent] }, t("{agent}'s file has the library's text again", { agent: a.name })));
+      b.title = t("Replaces what was changed in magpie's part of the file; the file is kept aside first");
+      acts.append(b);
+    }
+    if (acts.childElementCount) det.append(acts);
+    det.onclick = (e) => e.stopPropagation();
+    return [row, det];
+  }
+
+  function renderSaveBars() {
+    const bar = page.querySelector(".lib-savebar");
+    if (bar) bar.hidden = !dirty();
+  }
+
+  function tag(text, kind, title) {
+    const s = el("span", "lib-tag " + (kind || ""), text);
+    if (title) s.title = title;
+    return s;
+  }
+
+  // ---------- MCP servers ----------
+
+  function serverLine(s) {
+    if (s.transport === "stdio") return [s.command, ...(s.args || [])].map(quote).join(" ");
+    return s.url;
+  }
+  function quote(a) { return /^[\w@%+=:,./-]+$/.test(a) ? a : "'" + a.replace(/'/g, `'\\''`) + "'"; }
+
+  function sseBlocked(s) { return (a) => (s.transport === "sse" && a.noSSE ? t("{agent} can't reach a server over SSE — only a command or streamable HTTP", { agent: a.name }) : ""); }
+
+  function renderServers(body) {
+    body.append(intro(t("Add a server once and switch it on for the agents that should have it — magpie writes it into each one's config in the shape that agent reads.")));
+    const all = mcpAgents();
+    if (!lib.servers.length) {
+      const add = button(t("＋ Add a server"), "action", () => editServer(null));
+      body.append(empty(t("No servers in the library yet"), lib.foundServers.length ? t("Add one, or bring in those your agents already have, below.") : t("Paste a server's JSON from its README, or fill it in."), add));
+    } else {
+      const list = el("div", "list lib-list");
+      for (const s of lib.servers) list.append(serverRow(s, all));
+      body.append(list);
+      const after = el("div", "after-list");
+      after.append(button(t("＋ Add server"), "", () => editServer(null)));
+      body.append(after);
+    }
+    if (lib.foundServers.length) {
+      const rh = el("div", "row-head");
+      rh.append(el("span", "label", t("In your agents")), el("span", "grow"), el("span", "note", t("not in the library — bring one in to manage it here")));
+      body.append(rh);
+      const list = el("div", "list lib-list");
+      for (const f of lib.foundServers) list.append(foundServerRow(f));
+      body.append(list);
+    }
+    const skip = lib.agents.filter((a) => !a.mcp);
+    if (skip.length) body.append(el("p", "lib-aside", t("{agents} has no MCP servers magpie can write.", { agents: skip.map((a) => a.name).join(", ") })));
+    body.append(discover("mcp"));
+  }
+
+  function serverRow(s, all) {
+    const row = el("div", "row lib-row click");
+    const who = el("div", "who");
+    who.append(el("div", "name mono", s.name));
+    const sub = el("div", "sub mono", serverLine(s));
+    sub.title = serverLine(s);
+    who.append(sub);
+    row.append(mark(s.icon, s.transport === "stdio" ? GLYPH.cmd : GLYPH.web), who,
+      agentChips(all, s.agents, (next) => change("servers/agents", { name: s.name, agents: next }), { problems: s.problems, blocked: sseBlocked(s) }));
+    row.onclick = () => editServer(s);
+    row.title = t("Edit {name}", { name: s.name });
+    return row;
+  }
+
+  function foundServerRow(f) {
+    const s = f.server;
+    const row = el("div", "row lib-row");
+    const who = el("div", "who");
+    const nm = el("div", "name mono", s.name);
+    who.append(nm);
+    const sub = el("div", "sub mono", serverLine(s));
+    sub.title = serverLine(s);
+    who.append(sub);
+    const have = el("div", "lib-have");
+    for (const id of s.agents) { const a = agentOf(id); if (a) { const i = icon(a.icon); i.title = a.name; have.append(i); } }
+    row.append(mark(f.icon, s.transport === "stdio" ? GLYPH.cmd : GLYPH.web), who, have);
+    if (f.others?.length) row.append(tag(t("differs in {agents}", { agents: f.others.map(nameOf).join(", ") }), "warn", t("{agents} has another server by this name; bringing this one in leaves that one as it is", { agents: f.others.map(nameOf).join(", ") })));
+    const b = button(t("Bring in"), "action", () => change("servers/import", { name: s.name }, t("{name} is in the library now", { name: s.name })));
+    b.title = t("Keeps it in the library: {agents} go on having it, and you can give it to the others", { agents: s.agents.map(nameOf).join(", ") });
+    row.append(b);
+    return row;
+  }
+
+  // A command line split the way a shell would, quotes and all.
+  function words(s) {
+    const out = [];
+    let cur = "", q = "", any = false;
+    for (let i = 0; i < s.length; i++) {
+      const c = s[i];
+      if (q) {
+        if (c === q) q = "";
+        else if (c === "\\" && q === '"' && i + 1 < s.length) cur += s[++i];
+        else cur += c;
+      } else if (c === "'" || c === '"') { q = c; any = true; }
+      else if (c === "\\" && i + 1 < s.length) { cur += s[++i]; any = true; }
+      else if (/\s/.test(c)) { if (cur || any) out.push(cur); cur = ""; any = false; }
+      else cur += c;
+    }
+    if (cur || any) out.push(cur);
+    return out;
+  }
+
+  // The servers in JSON the user pasted: a README's {"mcpServers": {...}},
+  // one server's entry, or VS Code's {"servers": {...}}.
+  function serversIn(text) {
+    let v;
+    try { v = JSON.parse(text.trim().replace(/,\s*([}\]])/g, "$1")); } catch {
+      try { v = JSON.parse("{" + text.trim().replace(/,\s*$/, "") + "}"); } catch { return null; }
+    }
+    if (!v || typeof v !== "object") return null;
+    const map = v.mcpServers || v.servers || v.mcp || v.context_servers || null;
+    const one = (name, e) => {
+      if (!e || typeof e !== "object") return null;
+      const url = e.url || e.serverUrl || e.httpUrl || e.uri;
+      const s = { name: (name || "").replace(/[^A-Za-z0-9_-]+/g, "-").replace(/^-+|-+$/g, ""), env: {}, headers: {} };
+      if (url) {
+        s.transport = e.type === "sse" || e.transport === "sse" || /\/sse\/?$/.test(url) ? "sse" : "http";
+        s.url = url;
+        s.headers = { ...(e.headers || e.http_headers || {}) };
+      } else if (e.command) {
+        s.transport = "stdio";
+        const cmd = Array.isArray(e.command) ? e.command : [e.command];
+        s.command = String(cmd[0]);
+        s.args = [...cmd.slice(1), ...(e.args || [])].map(String);
+        s.env = { ...(e.env || e.environment || {}) };
+      } else return null;
+      return s;
+    };
+    if (map && typeof map === "object") {
+      return Object.entries(map).map(([n, e]) => one(n, e)).filter(Boolean);
+    }
+    if (v.command || v.url || v.serverUrl || v.httpUrl) { const s = one(v.name || "", v); return s ? [s] : null; }
+    const entries = Object.entries(v).filter(([, e]) => e && typeof e === "object" && (e.command || e.url || e.serverUrl || e.httpUrl));
+    return entries.length ? entries.map(([n, e]) => one(n, e)).filter(Boolean) : null;
+  }
+
+  // Key–value rows for a server's environment or headers.
+  function pairs(obj, keyHint, valHint, onChange) {
+    const box = el("div", "lib-pairs");
+    const rows = Object.entries(obj || {});
+    const emit = () => onChange(Object.fromEntries(rows.filter(([k]) => k.trim()).map(([k, v]) => [k.trim(), v])));
+    const draw = () => {
+      box.replaceChildren();
+      rows.forEach((r, i) => {
+        const line = el("div", "lib-pair");
+        const k = field2(r[0], keyHint, (v) => { r[0] = v; emit(); });
+        const v = field2(r[1], valHint, (x) => { r[1] = x; emit(); });
+        const x = button("", "lib-x", () => { rows.splice(i, 1); emit(); draw(); });
+        x.append(svg("M4.5 4.5l7 7M11.5 4.5l-7 7", 11, 1.6));
+        x.title = t("Remove");
+        line.append(k, v, x);
+        box.append(line);
+      });
+      box.append(button(t("＋ Add"), "lib-addpair", () => { rows.push(["", ""]); draw(); box.querySelectorAll(".lib-pair input")[rows.length * 2 - 2]?.focus(); }));
+    };
+    draw();
+    return box;
+  }
+  function field2(value, placeholder, onInput) {
+    const i = el("input");
+    i.type = "text";
+    i.value = value || "";
+    i.placeholder = placeholder || "";
+    i.spellcheck = false;
+    i.autocomplete = "off";
+    i.oninput = () => onInput(i.value);
+    i.onkeydown = (e) => { e.stopPropagation(); if (e.key === "Escape") closeLibModal(); else if (e.key === "Enter" && modal?.save) { e.preventDefault(); modal.save(); } };
+    return i;
+  }
+
+  function editServer(s, prefill) {
+    const all = mcpAgents();
+    const d = prefill || (s ? structuredClone(s) : { name: "", transport: "stdio", command: "", args: [], env: {}, url: "", headers: {}, agents: all.map((a) => a.id) });
+    if (!d.env) d.env = {};
+    if (!d.headers) d.headers = {};
+    const ed = el("div", "editor lib-editor");
+    const head = el("div", "ehead");
+    head.append(mark(s?.icon, d.transport === "stdio" ? GLYPH.cmd : GLYPH.web), el("b", "", s ? s.name : t("New MCP server")));
+    if (!s) head.append(el("span", "note", t("or paste its JSON anywhere here")));
+    ed.append(head);
+    const err = el("div", "editor-error");
+
+    const name = field2(d.name, t("e.g. github"), (v) => { d.name = v.trim(); });
+    ed.append(...field(t("Name"), name, t("Letters, digits, - and _ — what the agents call it")));
+    const kindOf = () => segs([["stdio", t("Command")], ["http", "HTTP"], ["sse", "SSE"]], d.transport, (v) => { d.transport = v; draw(); });
+    const kindBox = el("div");
+    kindBox.append(kindOf());
+    ed.append(...field(t("Runs as"), kindBox));
+    const slot = el("div", "lib-slot");
+    ed.append(slot);
+    const agentsBox = el("div");
+    ed.append(...field(t("Agents"), agentsBox));
+    ed.append(err);
+
+    function drawAgents() {
+      agentsBox.replaceChildren(agentChips(all, d.agents, (next) => { d.agents = next; drawAgents(); }, { names: true, blocked: sseBlocked(d) }));
+    }
+    function draw() {
+      slot.replaceChildren();
+      const g = el("div", "lib-grid");
+      if (d.transport === "stdio") {
+        const line = field2([d.command, ...(d.args || [])].filter((x, i) => i > 0 || x).map(quote).join(" "), "npx -y @modelcontextprotocol/server-github", (v) => { const w = words(v); d.command = w[0] || ""; d.args = w.slice(1); });
+        line.classList.add("mono");
+        g.append(...field(t("Command"), line, t("The command and its arguments, as you'd type them")));
+        g.append(...field(t("Environment"), pairs(d.env, "GITHUB_TOKEN", t("value"), (v) => { d.env = v; })));
+      } else {
+        const url = field2(d.url, "https://example.com/mcp", (v) => { d.url = v.trim(); });
+        url.classList.add("mono");
+        g.append(...field("URL", url));
+        g.append(...field(t("Headers"), pairs(d.headers, "Authorization", "Bearer …", (v) => { d.headers = v; })));
+      }
+      slot.append(g);
+      // its own icon while it runs as it did; another way of running is another server
+      head.firstChild.replaceWith(mark(s && d.transport === s.transport ? s.icon : "", d.transport === "stdio" ? GLYPH.cmd : GLYPH.web));
+      drawAgents();
+    }
+    draw();
+
+    const bar = el("div", "bar");
+    if (s) bar.append(button(t("Remove from the library"), "danger", async () => {
+      if (await change("servers/remove", { name: s.name }, t("{name} is out of the library and the agents it was given to", { name: s.name }))) closeLibModal();
+    }));
+    bar.append(el("span", "grow"), button(t("Cancel"), "", closeLibModal));
+    const save = async () => {
+      err.textContent = "";
+      const body = { old: s ? s.name : "", server: { name: d.name, transport: d.transport, agents: d.agents } };
+      if (d.transport === "stdio") Object.assign(body.server, { command: d.command, args: d.args, env: d.env });
+      else Object.assign(body.server, { url: d.url, headers: d.headers });
+      try {
+        lib = await api("library/servers/save", body);
+        report(lib.result, s ? t("{name} saved", { name: d.name }) : "");
+        closeLibModal();
+        render();
+      } catch (e) { err.textContent = e.message; }
+    };
+    const ok = button(s ? t("Save") : t("Add"), "primary", save);
+    bar.append(ok);
+    ed.append(bar);
+
+    // a README's JSON pasted anywhere in the dialog fills it in
+    ed.addEventListener("paste", (e) => {
+      const text = e.clipboardData?.getData("text") || "";
+      if (!/[{]/.test(text)) return;
+      const found = serversIn(text);
+      if (!found?.length) return;
+      e.preventDefault();
+      if (found.length === 1) {
+        const f = found[0];
+        Object.assign(d, { transport: f.transport, command: f.command || "", args: f.args || [], env: f.env || {}, url: f.url || "", headers: f.headers || {} });
+        if (f.name && (!d.name || !s)) d.name = f.name;
+        name.value = d.name;
+        kindBox.replaceChildren(kindOf());
+        draw();
+        status(t("Filled in from what you pasted"), "ok");
+      } else pasteMany(found, d.agents);
+    });
+    modal = { save };
+    openLib(ed);
+    if (!s) requestAnimationFrame(() => name.focus());
+  }
+
+  // Several servers pasted at once: pick those to add.
+  function pasteMany(found, agents) {
+    const all = mcpAgents();
+    const have = new Set(lib.servers.map((s) => s.name));
+    const pick = new Set(found.filter((f) => f.name && !have.has(f.name)).map((f) => f.name));
+    let who = [...agents];
+    const ed = el("div", "editor lib-editor");
+    const head = el("div", "ehead");
+    head.append(glyph(GLYPH.cmd), el("b", "", t("{n} servers in what you pasted", { n: found.length })));
+    ed.append(head);
+    const list = el("div", "lib-picks");
+    for (const f of found) {
+      const r = el("label", "lib-pick" + (have.has(f.name) ? " dim" : ""));
+      const c = el("input");
+      c.type = "checkbox";
+      c.checked = pick.has(f.name);
+      c.disabled = !f.name || have.has(f.name);
+      c.onchange = () => { if (c.checked) pick.add(f.name); else pick.delete(f.name); go.textContent = label(); go.disabled = !pick.size; };
+      const w = el("span", "who");
+      w.append(el("span", "name mono", f.name || t("(no name)")), el("span", "sub mono", serverLine(f)));
+      r.append(c, w);
+      if (have.has(f.name)) r.append(tag(t("in the library"), ""));
+      list.append(r);
+    }
+    ed.append(list);
+    const agentsBox = el("div");
+    const drawAgents = () => agentsBox.replaceChildren(agentChips(all, who, (n) => { who = n; drawAgents(); }, { names: true }));
+    drawAgents();
+    ed.append(...field(t("Agents"), agentsBox));
+    const err = el("div", "editor-error");
+    ed.append(err);
+    const bar = el("div", "bar");
+    const label = () => (pick.size === 1 ? t("Add 1 server") : t("Add {n} servers", { n: pick.size }));
+    const go = button(label(), "primary", async () => {
+      go.disabled = true;
+      let last = null;
+      for (const f of found.filter((x) => pick.has(x.name))) {
+        try {
+          last = await api("library/servers/save", { old: "", server: { ...f, agents: f.transport === "sse" ? who.filter((id) => !agentOf(id)?.noSSE) : who } });
+        } catch (e) { err.textContent = f.name + ": " + e.message; go.disabled = false; if (last) { lib = last; render(); } return; }
+      }
+      lib = last;
+      report(lib.result, t("Added {n} servers", { n: pick.size }));
+      closeLibModal();
+      render();
+    });
+    go.disabled = !pick.size;
+    bar.append(el("span", "grow"), button(t("Cancel"), "", closeLibModal), go);
+    ed.append(bar);
+    modal = { save: () => go.click() };
+    openLib(ed);
+  }
+
+  // ---------- skills ----------
+
+  function renderSkills(body) {
+    body.append(intro(t("A skill is a folder with a SKILL.md an agent loads when it's needed. The library keeps each one once and links it into the agents you pick.")));
+    body.append(installCard());
+    const all = skillAgents();
+    if (lib.skills.length) {
+      const rh = el("div", "row-head");
+      rh.append(el("span", "label", t("In the library")));
+      body.append(rh);
+      const list = el("div", "list lib-list");
+      for (const s of lib.skills) list.append(skillRow(s, all));
+      body.append(list);
+    }
+    if (lib.foundSkills.length) {
+      const rh = el("div", "row-head");
+      rh.append(el("span", "label", t("In your agents")), el("span", "grow"), el("span", "note", t("not in the library — bring one in to give it to the others")));
+      body.append(rh);
+      const list = el("div", "list lib-list");
+      for (const f of lib.foundSkills) list.append(foundSkillRow(f));
+      body.append(list);
+    }
+    const skip = lib.agents.filter((a) => !a.skills);
+    if (skip.length) body.append(el("p", "lib-aside", t("{agents} has no skills folder.", { agents: skip.map((a) => a.name).join(", ") })));
+    body.append(discover("skills"));
+  }
+
+  // Claude Code's skills are OpenCode's and Crush's too: a chip for one of
+  // those says so while it has none of its own.
+  function viaFor(s) {
+    return (a) => {
+      const also = lib.agents.find((x) => x.id === a.id)?.skillsAlso || [];
+      const other = also.find((id) => s.agents.includes(id));
+      return other ? nameOf(other) : "";
+    };
+  }
+
+  function installCard() {
+    const card = el("div", "list lib-card lib-install");
+    const line = el("div", "lib-find");
+    const inp = el("input");
+    inp.type = "text";
+    inp.dataset.lib = "source";
+    inp.placeholder = t("owner/repo, a GitHub link, or a folder on this computer");
+    inp.spellcheck = false;
+    inp.autocomplete = "off";
+    inp.value = probe?.source || "";
+    const go = button(probing ? t("Looking…") : t("Find skills"), "action", () => find());
+    go.disabled = probing;
+    if (probing) go.classList.add("busy");
+    inp.onkeydown = (e) => { e.stopPropagation(); if (e.key === "Enter") find(); else if (e.key === "Escape" && probe) { probe = null; render(); } };
+    const g = glyph(GLYPH.search, "lib-mini");
+    line.append(g, inp, go);
+    card.append(line);
+    async function find() {
+      const src = inp.value.trim();
+      if (!src || probing) return;
+      probing = true;
+      probe = { source: src };
+      render();
+      try {
+        const p = await api("library/skills/probe", { source: src });
+        const fresh = p.candidates.filter((c) => !c.have);
+        probe = { source: src, found: p, pick: new Set((fresh.length <= 3 ? fresh : []).map((c) => c.path)), agents: skillAgents().map((a) => a.id), filter: "" };
+        if (!p.candidates.length) status(t("No SKILL.md found there"), "warn");
+      } catch (e) {
+        probe = { source: src, error: e.message };
+      }
+      probing = false;
+      render();
+    }
+    if (probe?.error) card.append(el("div", "lib-err", probe.error));
+    if (probe?.found) card.append(probeResult(probe));
+    return card;
+  }
+
+  function probeResult(p) {
+    const box = el("div", "lib-probe");
+    const c = p.found.candidates;
+    if (!c.length) { box.append(el("div", "lib-none", t("No skills there — a skill is a folder with a SKILL.md in it."))); return box; }
+    const head = el("div", "lib-probehead");
+    const src = p.found.kind === "github" ? "github.com/" + p.found.source.replace(/^https?:\/\/github\.com\//, "") : tilde(p.found.source);
+    head.append(el("span", "note", c.length === 1 ? t("1 skill in {src}", { src }) : t("{n} skills in {src}", { n: c.length, src })));
+    head.append(el("span", "grow"));
+    const fresh = c.filter((x) => !x.have);
+    if (fresh.length > 1) {
+      const allOn = fresh.every((x) => p.pick.has(x.path));
+      head.append(button(allOn ? t("Select none") : t("Select all"), "", () => { for (const x of fresh) allOn ? p.pick.delete(x.path) : p.pick.add(x.path); render(); }));
+    }
+    box.append(head);
+    if (c.length > 8) {
+      const f = el("input", "lib-filter");
+      f.type = "text";
+      f.dataset.lib = "filter";
+      f.placeholder = t("Filter…");
+      f.value = p.filter;
+      f.oninput = () => { p.filter = f.value; drawList(); };
+      f.onkeydown = (e) => e.stopPropagation();
+      box.append(f);
+    }
+    const list = el("div", "lib-picks");
+    const drawList = () => {
+      list.replaceChildren();
+      const q = p.filter.toLowerCase();
+      for (const x of c) {
+        if (q && !(x.name + " " + x.description).toLowerCase().includes(q)) continue;
+        const r = el("label", "lib-pick" + (x.have ? " dim" : ""));
+        const cb = el("input");
+        cb.type = "checkbox";
+        cb.checked = p.pick.has(x.path);
+        cb.disabled = x.have;
+        cb.onchange = () => { if (cb.checked) p.pick.add(x.path); else p.pick.delete(x.path); syncGo(); };
+        const w = el("span", "who");
+        w.append(el("span", "name", x.name), el("span", "sub", x.description || x.path || ""));
+        r.append(cb, w);
+        if (x.have) r.append(tag(t("in the library"), ""));
+        list.append(r);
+      }
+    };
+    drawList();
+    box.append(list);
+    const foot = el("div", "lib-probefoot");
+    const agentsBox = el("div");
+    const drawAgents = () => agentsBox.replaceChildren(agentChips(skillAgents(), p.agents, (n) => { p.agents = n; drawAgents(); }, { names: false }));
+    drawAgents();
+    foot.append(el("span", "note", t("for")), agentsBox, el("span", "grow"));
+    foot.append(button(t("Cancel"), "", () => { probe = null; render(); }));
+    const go = button("", "primary", async () => {
+      go.disabled = true;
+      go.textContent = t("Installing…");
+      const n = p.pick.size;
+      if (await change("skills/install", { source: p.source, paths: [...p.pick], agents: p.agents }, n === 1 ? t("1 skill installed") : t("{n} skills installed", { n }))) { probe = null; render(); }
+      else { go.disabled = false; syncGo(); }
+    });
+    const syncGo = () => { const n = p.pick.size; go.textContent = n === 1 ? t("Install 1 skill") : t("Install {n} skills", { n }); go.disabled = !n; };
+    syncGo();
+    foot.append(go);
+    box.append(foot);
+    return box;
+  }
+
+  function skillRow(s, all) {
+    const row = el("div", "row lib-row click lib-skill" + (s.missing ? " missing" : ""));
+    const who = el("div", "who");
+    const nm = el("div", "name", s.name);
+    who.append(nm);
+    const sub = el("div", "sub", s.missing ? t("Its folder is gone from the library") : s.description || "");
+    sub.title = s.description || "";
+    who.append(sub);
+    if (s.source) {
+      const src = el("div", "lib-src");
+      if (s.kind === "github") {
+        const a = el("a", "lib-srclink", s.source.replace(/^https:\/\/github\.com\//, ""));
+        a.href = s.source;
+        a.target = "_blank";
+        a.rel = "noopener";
+        a.onclick = (e) => e.stopPropagation();
+        src.append(a);
+      } else {
+        src.append(el("span", "", t("linked from")), pathLink(s.source));
+      }
+      who.append(src);
+    }
+    const acts = el("div", "lib-rowacts");
+    if (s.kind === "github") {
+      const u = button("", "lib-icon", async (e, b) => {
+        b.classList.add("busy");
+        await change("skills/update", { name: s.name }, t("{name} is up to date", { name: s.name }));
+        b.classList.remove("busy");
+      });
+      u.append(svg(GLYPH.up, 13, 1.5));
+      u.title = t("Update from GitHub");
+      acts.append(u);
+    }
+    const rm = button("", "lib-icon danger", () => confirmRemoveSkill(s));
+    rm.append(svg(GLYPH.trash, 13, 1.4));
+    rm.title = t("Remove");
+    acts.append(rm);
+    row.append(mark(s.icon, GLYPH.skill), who, acts, agentChips(all, s.agents, (next) => change("skills/agents", { name: s.name, agents: next }), { problems: s.problems, via: viaFor(s) }));
+    row.onclick = () => viewSkill(s);
+    row.title = t("Read {name}'s SKILL.md", { name: s.name });
+    return row;
+  }
+
+  function confirmRemoveSkill(s) {
+    const ed = el("div", "editor lib-editor");
+    const head = el("div", "ehead");
+    head.append(glyph(GLYPH.trash), el("b", "", t("Remove {name}?", { name: s.name })));
+    ed.append(head);
+    ed.append(el("p", "lib-confirm", s.kind === "folder"
+      ? t("It is taken out of every agent it was given to. The folder it was linked from stays where it is.")
+      : t("It is taken out of every agent it was given to, and its folder is moved to magpie's backups.")));
+    const bar = el("div", "bar");
+    const go = button(t("Remove"), "primary danger-fill", async () => { if (await change("skills/remove", { name: s.name }, t("{name} removed", { name: s.name }))) closeLibModal(); });
+    bar.append(el("span", "grow"), button(t("Cancel"), "", closeLibModal), go);
+    ed.append(bar);
+    modal = { save: () => go.click() };
+    openLib(ed);
+  }
+
+  async function viewSkill(s) {
+    const ed = el("div", "editor lib-editor lib-reader");
+    const head = el("div", "ehead");
+    head.append(mark(s.icon, GLYPH.skill), el("b", "", s.name), el("span", "grow"));
+    const pre = el("pre", "lib-md", "…");
+    ed.append(head, pre);
+    const bar = el("div", "bar");
+    const where = el("span", "note");
+    bar.append(where, el("span", "grow"), button(t("Close"), "", closeLibModal));
+    ed.append(bar);
+    modal = {};
+    openLib(ed);
+    try {
+      const r = await api("library/skill?name=" + encodeURIComponent(s.name));
+      pre.textContent = r.text;
+      where.replaceChildren(pathLink(r.path));
+    } catch (e) { pre.textContent = e.message; }
+  }
+
+  function foundSkillRow(f) {
+    const row = el("div", "row lib-row");
+    const who = el("div", "who");
+    who.append(el("div", "name", f.name));
+    const sub = el("div", "sub", f.description || "");
+    sub.title = f.description || "";
+    who.append(sub);
+    if (f.link) { const src = el("div", "lib-src"); src.append(el("span", "", t("linked from")), pathLink(f.link)); who.append(src); }
+    const have = el("div", "lib-have");
+    for (const id of f.agents) { const a = agentOf(id); if (a) { const i = icon(a.icon); i.title = a.name; have.append(i); } }
+    row.append(glyph(GLYPH.skill), who, have);
+    if (f.others?.length) row.append(tag(t("differs in {agents}", { agents: f.others.map(nameOf).join(", ") }), "warn", t("{agents} has another skill by this name; bringing this one in leaves that one as it is", { agents: f.others.map(nameOf).join(", ") })));
+    const b = button(t("Bring in"), "action", () => change("skills/import", { name: f.name }, t("{name} is in the library now", { name: f.name })));
+    b.title = f.link ? t("Keeps a link to where it is: {agents} go on having it, and you can give it to the others", { agents: f.agents.map(nameOf).join(", ") })
+      : t("Moves it into the library and links it back: {agents} go on having it, and you can give it to the others", { agents: f.agents.map(nameOf).join(", ") });
+    row.append(b);
+    return row;
+  }
+
+  // ---------- the market ----------
+
+  // What the market offers: popular and featured ones until the reader
+  // searches. Kept across renders; asked for the first time a tab shows it.
+  const market = {
+    mcp: { q: "", items: null, error: "", loading: false, seq: 0, timer: 0 },
+    skills: { q: "", items: null, error: "", loading: false, seq: 0, timer: 0 },
+  };
+  const asked = new Set(); // skills whose description has been asked for
+
+  async function fetchMarket(kind) {
+    const m = market[kind];
+    const seq = ++m.seq;
+    m.loading = true;
+    drawMarket(kind);
+    try {
+      const r = await api("library/market/" + (kind === "mcp" ? "servers" : "skills") + "?q=" + encodeURIComponent(m.q.trim()));
+      if (seq !== m.seq) return;
+      m.items = r.items || [];
+      m.error = r.error || "";
+    } catch (e) {
+      if (seq !== m.seq) return;
+      m.items = m.items || [];
+      m.error = e.message;
+    }
+    m.loading = false;
+    drawMarket(kind);
+    if (kind === "skills") describeSkills();
+    // The market reads the library as it is now; one it calls added that
+    // this page doesn't list was added elsewhere — another window, the CLI.
+    const mine = new Set((kind === "mcp" ? lib?.servers : lib?.skills)?.map((x) => x.name) || []);
+    if (lib && m.items.some((x) => x.have && !mine.has(x.have))) quietLoad();
+  }
+
+  // The descriptions skills.sh doesn't list, read from each SKILL.md.
+  async function describeSkills() {
+    const ids = (market.skills.items || []).filter((x) => !x.description && !asked.has(x.id)).map((x) => x.id).slice(0, 60);
+    if (!ids.length) return;
+    ids.forEach((id) => asked.add(id));
+    try {
+      const about = await api("library/market/about", { ids });
+      for (const x of market.skills.items || []) if (about[x.id]) x.description = about[x.id];
+      for (const [id, d] of Object.entries(about)) {
+        const p = page.querySelector(`.mk-card[data-id="${CSS.escape(id)}"] .mk-desc`);
+        if (p && d) { p.textContent = d; p.title = d; p.classList.remove("wait"); }
+      }
+    } catch {}
+    for (const p of page.querySelectorAll(".mk-desc.wait")) { p.classList.remove("wait"); p.textContent = ""; }
+  }
+
+  function discover(kind) {
+    const m = market[kind];
+    const box = el("section", "mk");
+    box.dataset.market = kind;
+    const rh = el("div", "row-head");
+    rh.append(el("span", "label", t("Discover")), el("span", "grow"));
+    const note = el("span", "note mk-note");
+    rh.append(note);
+    box.append(rh);
+    const find = el("div", "mk-find");
+    const inp = el("input");
+    inp.type = "search";
+    inp.dataset.lib = "market-" + kind;
+    inp.placeholder = kind === "mcp" ? t("Search MCP servers — GitHub, Postgres, Figma…") : t("Search skills on skills.sh — react, pdf, testing…");
+    inp.spellcheck = false;
+    inp.autocomplete = "off";
+    inp.value = m.q;
+    inp.oninput = () => {
+      m.q = inp.value;
+      clearTimeout(m.timer);
+      const q = m.q.trim();
+      if (kind === "skills" && q.length === 1) return;
+      m.timer = setTimeout(() => fetchMarket(kind), 320);
+    };
+    inp.onkeydown = (e) => {
+      e.stopPropagation();
+      if (e.key === "Escape" && inp.value) { e.preventDefault(); inp.value = ""; inp.oninput(); }
+      else if (e.key === "Enter") { clearTimeout(m.timer); fetchMarket(kind); }
+    };
+    find.append(glyph(GLYPH.search, "lib-mini"), inp, el("span", "mk-spin"));
+    box.append(find);
+    box.append(el("div", "mk-grid"));
+    drawMarket(kind, box); // now, so the page keeps its scroll across a render
+    if (!m.items && !m.loading) queueMicrotask(() => fetchMarket(kind));
+    return box;
+  }
+
+  function drawMarket(kind, box = page.querySelector(`.mk[data-market="${kind}"]`)) {
+    if (!box) return;
+    const m = market[kind];
+    const q = m.q.trim();
+    box.classList.toggle("loading", m.loading);
+    const note = box.querySelector(".mk-note");
+    note.textContent = q && m.items ? (m.items.length === 1 ? t("1 result") : t("{n} results", { n: m.items.length }))
+      : kind === "mcp" ? t("Featured, and the official MCP Registry") : t("Popular on skills.sh");
+    const grid = box.querySelector(".mk-grid");
+    grid.replaceChildren();
+    if (!m.items) {
+      for (let i = 0; i < 6; i++) {
+        const c = el("div", "mk-card mk-skel");
+        const top = el("div", "mk-top");
+        const lines = el("div", "mk-who");
+        const a = el("span", "skeleton"); a.style.cssText = "width:55%;height:10px";
+        const b = el("span", "skeleton"); b.style.cssText = "width:35%;height:8px";
+        lines.append(a, b);
+        top.append(el("span", "mk-icon skeleton"), lines);
+        const d = el("span", "skeleton"); d.style.cssText = "width:90%;height:8px;margin-top:4px";
+        c.append(top, d);
+        grid.append(c);
+      }
+      return;
+    }
+    if (m.error) grid.append(el("div", "mk-msg err", m.error));
+    if (!m.items.length && !m.error) {
+      grid.append(el("div", "mk-msg", q ? t("Nothing matches “{q}”.", { q }) : t("Nothing to show.")));
+      return;
+    }
+    for (const x of m.items) grid.append(kind === "mcp" ? serverCard(x) : skillCard(x));
+  }
+
+  // A real picture: the project's own logo or its owner's, through magpie so
+  // it's cached; its initial on a tile when there's none.
+  function logo(url, name) {
+    const box = el("span", "mk-icon");
+    const fallback = () => { box.replaceChildren(el("span", "mk-mono", (name || "?").replace(/^[^a-z0-9]+/i, "").charAt(0).toUpperCase() || "?")); box.classList.add("mono"); };
+    if (!url) { fallback(); return box; }
+    const img = el("img");
+    img.alt = "";
+    img.decoding = "async";
+    img.loading = "lazy";
+    img.referrerPolicy = "no-referrer";
+    img.src = "/api/library/icon?u=" + encodeURIComponent(url);
+    if (/\.svg(\?|$)/i.test(url)) box.classList.add("svg");
+    img.onerror = fallback;
+    box.append(img);
+    return box;
+  }
+
+  function compact(n) {
+    if (n >= 1e6) return (n / 1e6).toFixed(n >= 1e7 ? 0 : 1).replace(/\.0$/, "") + "M";
+    if (n >= 1e3) return (n / 1e3).toFixed(n >= 1e4 ? 0 : 1).replace(/\.0$/, "") + "K";
+    return String(n);
+  }
+
+  function runsLabel(x) {
+    if (x.transport !== "stdio") return x.signIn ? t("Remote · sign-in") : t("Remote");
+    return x.runs || t("Local");
+  }
+  const needsKey = (x) => x.inputs?.some((i) => i.required);
+  // the featured servers' words are magpie's own, so they're translated
+  const about = (x) => (x.featured ? t(x.description) : x.description) || "";
+
+  function addButton(x, onAdd) {
+    if (x.have) {
+      const b = el("span", "mk-have");
+      b.append(svg(CHECK, 11, 2), el("span", "", t("Added")));
+      b.title = x.have === x.name ? t("In the library") : t("In the library as {name}", { name: x.have });
+      return b;
+    }
+    const b = button(t("Add"), "action mk-add", async (e, btn) => {
+      btn.disabled = true;
+      btn.classList.add("busy");
+      btn.textContent = t("Adding…");
+      const ok = await onAdd();
+      if (!ok && btn.isConnected) { btn.disabled = false; btn.classList.remove("busy"); btn.textContent = t("Add"); }
+    });
+    return b;
+  }
+
+  function serverCard(x) {
+    const c = el("div", "mk-card click" + (x.have ? " have" : ""));
+    c.dataset.id = x.id;
+    const top = el("div", "mk-top");
+    const who = el("div", "mk-who");
+    const nm = el("div", "mk-name");
+    nm.append(el("span", "mk-title", x.title || x.name));
+    who.append(nm);
+    const meta = el("div", "mk-meta");
+    if (x.publisher) meta.append(el("span", "mk-pub", x.publisher));
+    meta.append(el("span", "mk-badge", runsLabel(x)));
+    if (needsKey(x)) { const k = el("span", "mk-badge mk-needs"); k.append(svg(GLYPH.key, 11, 1.5)); k.title = t("Needs {what} to add", { what: x.inputs.filter((i) => i.required).map((i) => t(i.label)).join(", ") }); meta.append(k); }
+    who.append(meta);
+    top.append(logo(x.icon, x.title || x.name), who);
+    const d = el("p", "mk-desc", about(x));
+    d.title = about(x);
+    const foot = el("div", "mk-foot");
+    foot.append(el("span", "mk-id mono", x.name), el("span", "grow"), needsKey(x) && !x.have ? button(t("Add…"), "action mk-add", () => serverSheet(x)) : addButton(x, () => addServer(x, {}, null)));
+    c.append(top, d, foot);
+    c.onclick = () => serverSheet(x);
+    c.title = t("About {name}", { name: x.title || x.name });
+    return c;
+  }
+
+  async function addServer(x, values, agents) {
+    const body = { id: x.id, values };
+    if (agents) body.agents = agents;
+    const ok = await change("market/server", body, t("{name} is in the library now", { name: x.title || x.name }));
+    if (ok) { x.have = x.name; drawMarket("mcp"); fetchMarket("mcp"); }
+    return ok;
+  }
+
+  // A market server up close: what it is, what it needs, and who gets it.
+  function serverSheet(x) {
+    const all = mcpAgents();
+    let agents = all.filter((a) => !(x.transport === "sse" && a.noSSE)).map((a) => a.id);
+    const values = {};
+    const ed = el("div", "editor lib-editor mk-sheet");
+    const head = el("div", "mk-sheethead");
+    const who = el("div", "mk-who");
+    who.append(el("div", "mk-name big", x.title || x.name));
+    const meta = el("div", "mk-meta");
+    if (x.publisher) meta.append(el("span", "mk-pub", x.publisher));
+    meta.append(el("span", "mk-badge", runsLabel(x)));
+    who.append(meta);
+    head.append(logo(x.icon, x.title || x.name), who);
+    if (x.homepage) head.append(extLink(x.homepage, t("Homepage")));
+    ed.append(head);
+    if (x.description) ed.append(el("p", "mk-about", about(x)));
+    if (x.signIn) ed.append(el("p", "mk-hint", t("Each agent asks you to sign in, in the browser, the first time it uses it.")));
+    const firsts = [];
+    for (const i of x.inputs || []) {
+      const f = field2("", i.placeholder || (i.where === "env" ? i.key : ""), (v) => { values[i.key] = v.trim(); });
+      if (i.secret) f.type = "password";
+      f.classList.add("mono");
+      f.dataset.key = i.key;
+      firsts.push(f);
+      const hint = [i.description && t(i.description), i.where === "env" ? t("Set as {key}", { key: i.key }) : i.where === "header" ? t("Sent as the {key} header", { key: i.key }) : ""].filter(Boolean).join(" · ");
+      ed.append(...field(t(i.label) + (i.required ? "" : " " + t("(optional)")), f, hint));
+    }
+    const agentsBox = el("div");
+    const drawAgents = () => agentsBox.replaceChildren(agentChips(all, agents, (n) => { agents = n; drawAgents(); }, { names: true, blocked: sseBlocked(x) }));
+    drawAgents();
+    ed.append(...field(t("Agents"), agentsBox));
+    const err = el("div", "editor-error");
+    ed.append(err);
+    const bar = el("div", "bar");
+    bar.append(el("span", "mk-id mono", x.name), el("span", "grow"), button(t(x.have ? "Close" : "Cancel"), "", closeLibModal));
+    let save = () => {};
+    if (!x.have) {
+      const go = button(t("Add to the library"), "primary", async () => {
+        err.textContent = "";
+        const miss = (x.inputs || []).find((i) => i.required && !values[i.key]);
+        if (miss) { err.textContent = t("{what} is needed", { what: t(miss.label) }); ed.querySelector(`[data-key="${CSS.escape(miss.key)}"]`)?.focus(); return; }
+        go.disabled = true;
+        go.textContent = t("Adding…");
+        if (await addServer(x, values, agents)) closeLibModal();
+        else { go.disabled = false; go.textContent = t("Add to the library"); }
+      });
+      bar.append(go);
+      save = () => go.click();
+    } else bar.prepend(el("span", "mk-have", t("In the library as {name}", { name: x.have })));
+    ed.append(bar);
+    modal = { save };
+    openLib(ed);
+    if (firsts.length) requestAnimationFrame(() => firsts[0].focus());
+  }
+
+  function extLink(href, text) {
+    const a = el("a", "mk-ext");
+    a.href = href;
+    a.target = "_blank";
+    a.rel = "noopener";
+    a.append(el("span", "", text), svg(GLYPH.out, 11, 1.5));
+    a.onclick = (e) => e.stopPropagation();
+    return a;
+  }
+
+  function skillCard(x) {
+    const c = el("div", "mk-card click" + (x.have ? " have" : ""));
+    c.dataset.id = x.id;
+    const top = el("div", "mk-top");
+    const who = el("div", "mk-who");
+    const nm = el("div", "mk-name");
+    nm.append(el("span", "mk-title", x.name));
+    if (x.official) { const o = el("span", "mk-official"); o.append(svg(CHECK, 9, 2.2)); o.title = t("Official — from the team that makes it"); nm.append(o); }
+    who.append(nm);
+    const meta = el("div", "mk-meta");
+    meta.append(el("span", "mk-pub", x.source));
+    who.append(meta);
+    top.append(logo(x.icon, x.source), who);
+    const d = el("p", "mk-desc" + (x.description ? "" : " wait"), x.description || "");
+    d.title = x.description || "";
+    const foot = el("div", "mk-foot");
+    const n = el("span", "mk-installs");
+    n.append(svg(GLYPH.down, 11, 1.5), el("span", "", compact(x.installs)));
+    n.title = t("{n} installs", { n: x.installs.toLocaleString() });
+    foot.append(n, el("span", "grow"), addButton(x, () => addSkill(x)));
+    c.append(top, d, foot);
+    c.onclick = () => skillSheet(x);
+    c.title = t("About {name}", { name: x.name });
+    return c;
+  }
+
+  async function addSkill(x, agents) {
+    const body = { source: x.source, id: x.skillId };
+    if (agents) body.agents = agents;
+    const ok = await change("market/skill", body, t("{name} is in the library now", { name: x.name }));
+    if (ok) { x.have = x.name; drawMarket("skills"); fetchMarket("skills"); }
+    return ok;
+  }
+
+  function skillSheet(x) {
+    const all = skillAgents();
+    let agents = all.map((a) => a.id);
+    const ed = el("div", "editor lib-editor mk-sheet");
+    const head = el("div", "mk-sheethead");
+    const who = el("div", "mk-who");
+    who.append(el("div", "mk-name big", x.name));
+    const meta = el("div", "mk-meta");
+    meta.append(el("span", "mk-pub", x.source), el("span", "mk-badge", t("{n} installs", { n: compact(x.installs) })));
+    if (x.official) meta.append(el("span", "mk-badge", t("Official")));
+    who.append(meta);
+    head.append(logo(x.icon, x.source), who, extLink("https://skills.sh/" + x.source + "/" + x.skillId, "skills.sh"));
+    ed.append(head);
+    const about = el("p", "mk-about", x.description || "…");
+    ed.append(about);
+    if (!x.description) api("library/market/about", { ids: [x.id] }).then((r) => { x.description = r[x.id] || ""; about.textContent = x.description || t("No description."); }).catch(() => { about.textContent = ""; });
+    const src = el("div", "mk-hint");
+    src.append(el("span", "", t("From")), extLink("https://github.com/" + x.source, "github.com/" + x.source));
+    ed.append(src);
+    const agentsBox = el("div");
+    const drawAgents = () => agentsBox.replaceChildren(agentChips(all, agents, (n) => { agents = n; drawAgents(); }, { names: true }));
+    drawAgents();
+    if (!x.have) ed.append(...field(t("Agents"), agentsBox));
+    const bar = el("div", "bar");
+    bar.append(el("span", "grow"), button(t(x.have ? "Close" : "Cancel"), "", closeLibModal));
+    let save = () => {};
+    if (!x.have) {
+      const go = button(t("Add to the library"), "primary", async () => {
+        go.disabled = true;
+        go.textContent = t("Adding…");
+        if (await addSkill(x, agents)) closeLibModal();
+        else { go.disabled = false; go.textContent = t("Add to the library"); }
+      });
+      bar.append(go);
+      save = () => go.click();
+    } else bar.prepend(el("span", "mk-have", t("In the library as {name}", { name: x.have })));
+    ed.append(bar);
+    modal = { save };
+    openLib(ed);
+  }
+
+  // ---------- the dialog ----------
+
+  function openLib(content) { openModal(content); $("#modal").classList.add("lib"); }
+  function closeLibModal() { modal = null; closeModal(); setTimeout(() => { if (!modal) $("#modal").classList.remove("lib"); }, 200); }
+  // The dialog is the providers page's; while the library has it, its
+  // backdrop and Escape close it here.
+  $("#modal").addEventListener("click", (e) => {
+    if (modal && e.target === e.currentTarget) { e.stopImmediatePropagation(); closeLibModal(); }
+  }, true);
+  document.addEventListener("keydown", (e) => {
+    if (modal && e.key === "Escape") { e.stopImmediatePropagation(); closeLibModal(); }
+  }, true);
+  // leaving the page with the shared text not saved asks first
+  window.addEventListener("beforeunload", (e) => { if (lib && dirty()) e.preventDefault(); });
+  // Back to the window, the library is read again — it may have changed
+  // in another window or through the CLI meanwhile. Not over an open dialog,
+  // unsaved text, or a lookup under way.
+  page.addEventListener("scroll", () => page.querySelector(".lib-head")?.classList.toggle("stuck", page.scrollTop > 0), { passive: true });
+  // What changed there changes what the market calls added, too.
+  async function quietLoad() {
+    if (page.hidden || modal || dirty() || probing) return;
+    const was = shelf();
+    await load();
+    if (shelf() !== was) for (const kind of ["mcp", "skills"]) if (market[kind].items) fetchMarket(kind);
+  }
+  const shelf = () => JSON.stringify([lib?.servers?.map((x) => x.name), lib?.skills?.map((x) => x.name)]);
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) quietLoad(); });
+  window.addEventListener("focus", quietLoad);
+  // opened on ?view=library: app.js showed the page before this was here
+  if (!page.hidden) load();
+})();

@@ -1,0 +1,781 @@
+package library
+
+import (
+	"archive/tar"
+	"compress/gzip"
+	"errors"
+	"fmt"
+	"io"
+	"io/fs"
+	"net/http"
+	"net/url"
+	"os"
+	"path/filepath"
+	"regexp"
+	"runtime"
+	"slices"
+	"sort"
+	"strings"
+	"sync"
+	"time"
+
+	"gopkg.in/yaml.v3"
+)
+
+// Skill is a folder with a SKILL.md, kept in the library and linked into
+// the agents that get it.
+type Skill struct {
+	Name   string   `json:"name"`
+	Source *Source  `json:"source,omitempty"`
+	Agents []string `json:"agents"`
+}
+
+// Source is where a skill came from: a GitHub repository it can be updated
+// from, or a folder on this machine the library links to, so that editing
+// the folder is editing the skill.
+type Source struct {
+	Kind string `json:"kind"` // github | folder
+	Repo string `json:"repo,omitempty"`
+	Ref  string `json:"ref,omitempty"`
+	Path string `json:"path,omitempty"` // in the repository
+	Dir  string `json:"dir,omitempty"`  // the folder, for kind folder
+}
+
+func (s *Source) String() string {
+	if s == nil {
+		return ""
+	}
+	if s.Kind == "folder" {
+		return s.Dir
+	}
+	u := "https://github.com/" + s.Repo
+	if s.Ref != "" || s.Path != "" {
+		ref := s.Ref
+		if ref == "" {
+			ref = "HEAD"
+		}
+		u += "/tree/" + ref
+		if s.Path != "" {
+			u += "/" + s.Path
+		}
+	}
+	return u
+}
+
+func skillsDir() string { return filepath.Join(Dir(), "skills") }
+
+func skillDir(name string) string { return filepath.Join(skillsDir(), name) }
+
+// meta is what a SKILL.md says of itself in its front matter.
+type meta struct {
+	Name        string `yaml:"name" json:"name"`
+	Description string `yaml:"description" json:"description"`
+}
+
+func readMeta(dir string) (meta, bool) {
+	b, err := os.ReadFile(filepath.Join(dir, "SKILL.md"))
+	if err != nil {
+		return meta{}, false
+	}
+	return parseMeta(b), true
+}
+
+// parseMeta reads a SKILL.md's front matter.
+func parseMeta(b []byte) meta {
+	var m meta
+	s := strings.ReplaceAll(string(b), "\r\n", "\n")
+	if rest, ok := strings.CutPrefix(s, "---\n"); ok {
+		if front, _, ok := strings.Cut(rest, "\n---"); ok {
+			_ = yaml.Unmarshal([]byte(front), &m)
+		}
+	}
+	m.Name, m.Description = strings.TrimSpace(m.Name), strings.Join(strings.Fields(m.Description), " ")
+	return m
+}
+
+var unsafe = regexp.MustCompile(`[^A-Za-z0-9_-]+`)
+
+// nameFor is the name a skill found at dir goes by: what its SKILL.md
+// says, else its folder's, made fit for a file name.
+func nameFor(dir string, m meta) string {
+	n := m.Name
+	if n == "" {
+		n = filepath.Base(dir)
+	}
+	n = strings.Trim(unsafe.ReplaceAllString(n, "-"), "-_")
+	if len(n) > 64 {
+		n = n[:64]
+	}
+	return n
+}
+
+// ---- linking into agents --------------------------------------------------
+
+// marker is left in a copy magpie makes where it can't link (Windows
+// without the right to), to know the copy for its own.
+const marker = ".magpie-library"
+
+// ours reports whether the entry at p is magpie's link (or copy) of the
+// library's skill by that name.
+func ours(p, name string) bool {
+	fi, err := os.Lstat(p)
+	if err != nil {
+		return false
+	}
+	if fi.Mode()&fs.ModeSymlink != 0 {
+		to, err := os.Readlink(p)
+		return err == nil && filepath.Clean(to) == filepath.Clean(skillDir(name))
+	}
+	if fi.IsDir() {
+		_, err := os.Stat(filepath.Join(p, marker))
+		return err == nil
+	}
+	return false
+}
+
+func link(p, name string) error {
+	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+		return err
+	}
+	err := os.Symlink(skillDir(name), p)
+	if err == nil || runtime.GOOS != "windows" {
+		return err
+	}
+	if err := copyDir(skillDir(name), p); err != nil {
+		os.RemoveAll(p)
+		return err
+	}
+	return os.WriteFile(filepath.Join(p, marker), []byte("copied from "+skillDir(name)+"\n"), 0o644)
+}
+
+func unlink(p string) error {
+	fi, err := os.Lstat(p)
+	if err != nil {
+		return nil
+	}
+	if fi.Mode()&fs.ModeSymlink != 0 {
+		return os.Remove(p)
+	}
+	return os.RemoveAll(p)
+}
+
+// realDir is where a folder really is, links followed.
+func realDir(p string) string {
+	if r, err := filepath.EvalSymlinks(p); err == nil {
+		return r
+	}
+	return filepath.Clean(p)
+}
+
+func (l *Library) syncSkills(t *Target, res *Result, all []*Target) {
+	if t.Skills == "" {
+		return
+	}
+	id := t.Agent.ID
+	a := l.applied(id)
+	// another agent may read the very same folder (one linked to the other):
+	// what that agent is to have stays
+	sharers := []string{}
+	for _, o := range all {
+		if o != t && o.Skills != "" && realDir(o.Skills) == realDir(t.Skills) {
+			sharers = append(sharers, o.Agent.ID)
+		}
+	}
+	wanted := func(s *Skill) bool {
+		if s == nil {
+			return false
+		}
+		return slices.Contains(s.Agents, id) || slices.ContainsFunc(sharers, func(o string) bool { return slices.Contains(s.Agents, o) })
+	}
+	var mine []string
+	for _, name := range a.Skills {
+		s := l.skill(name)
+		p := filepath.Join(t.Skills, name)
+		if wanted(s) || !ours(p, name) {
+			continue
+		}
+		if err := unlink(p); err != nil {
+			res.fail(id, "skill:"+name, err)
+			mine = append(mine, name)
+			continue
+		}
+		res.changed(id)
+	}
+	for _, s := range l.Skills {
+		if !slices.Contains(s.Agents, id) {
+			continue
+		}
+		p := filepath.Join(t.Skills, s.Name)
+		if ours(p, s.Name) {
+			mine = append(mine, s.Name)
+			continue
+		}
+		if _, err := os.Lstat(p); err == nil {
+			res.fail(id, "skill:"+s.Name, fmt.Errorf("%s already has a skill of its own called %s", t.Agent.Name, s.Name))
+			continue
+		}
+		if err := link(p, s.Name); err != nil {
+			res.fail(id, "skill:"+s.Name, err)
+			continue
+		}
+		mine = append(mine, s.Name)
+		res.changed(id)
+	}
+	a.Skills = mine
+}
+
+// ---- finding skills to install --------------------------------------------
+
+// Candidate is a skill found where the user pointed: in a repository, or
+// in a folder.
+type Candidate struct {
+	Path        string `json:"path"` // in the repository or the folder; "" for its root
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Have        bool   `json:"have"` // the library has a skill by that name
+}
+
+// Probe is what was found at a source.
+type Probe struct {
+	Source     string      `json:"source"`
+	Kind       string      `json:"kind"`
+	Candidates []Candidate `json:"candidates"`
+	root       string      // the folder the candidates' paths are in
+	src        Source
+}
+
+var probes = struct {
+	sync.Mutex
+	m map[string]*probeEntry
+}{m: map[string]*probeEntry{}}
+
+type probeEntry struct {
+	p   *Probe
+	tmp string
+	at  time.Time
+}
+
+// githubSource reads a repository out of what the user typed: owner/repo,
+// or a github.com URL, to a folder in it.
+func githubSource(s string) (Source, bool) {
+	s = strings.TrimSpace(s)
+	s = strings.TrimSuffix(s, "/")
+	if !strings.Contains(s, "://") && strings.HasPrefix(s, "github.com/") {
+		s = "https://" + s
+	}
+	var parts []string
+	if u, err := url.Parse(s); err == nil && u.Scheme != "" {
+		if u.Host != "github.com" && u.Host != "www.github.com" {
+			return Source{}, false
+		}
+		parts = strings.Split(strings.Trim(u.Path, "/"), "/")
+	} else if regexp.MustCompile(`^[\w.-]+/[\w.-]+$`).MatchString(s) {
+		parts = strings.Split(s, "/")
+	} else {
+		return Source{}, false
+	}
+	if len(parts) < 2 {
+		return Source{}, false
+	}
+	src := Source{Kind: "github", Repo: parts[0] + "/" + strings.TrimSuffix(parts[1], ".git")}
+	if len(parts) >= 4 && (parts[2] == "tree" || parts[2] == "blob") {
+		src.Ref = parts[3]
+		src.Path = strings.Join(parts[4:], "/")
+		src.Path = strings.TrimSuffix(strings.TrimSuffix(src.Path, "SKILL.md"), "/")
+	}
+	return src, true
+}
+
+func expand(p string) string {
+	if rest, ok := strings.CutPrefix(p, "~"); ok && (rest == "" || rest[0] == '/' || rest[0] == '\\') {
+		return filepath.Join(home(), rest)
+	}
+	return p
+}
+
+// tarballURL is where GitHub hands out a repository's files; a variable
+// for tests.
+var tarballURL = func(repo, ref string) string {
+	u := "https://api.github.com/repos/" + repo + "/tarball"
+	if ref != "" {
+		u += "/" + url.PathEscape(ref)
+	}
+	return u
+}
+
+// fetch downloads the repository into a new folder and gives it back.
+func fetch(src Source) (string, error) {
+	req, _ := http.NewRequest("GET", tarballURL(src.Repo, src.Ref), nil)
+	req.Header.Set("User-Agent", "magpie")
+	req.Header.Set("Accept", "application/vnd.github+json")
+	c := &http.Client{Timeout: 2 * time.Minute}
+	resp, err := c.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("couldn't reach GitHub: %w", err)
+	}
+	defer resp.Body.Close()
+	switch {
+	case resp.StatusCode == 404:
+		if src.Ref != "" {
+			return "", fmt.Errorf("GitHub has no %s at %s (a private repository can't be installed from)", src.Repo, src.Ref)
+		}
+		return "", fmt.Errorf("GitHub has no repository %s (a private one can't be installed from)", src.Repo)
+	case resp.StatusCode == 403 || resp.StatusCode == 429:
+		return "", fmt.Errorf("GitHub is limiting requests from here; try again in a while")
+	case resp.StatusCode != 200:
+		return "", fmt.Errorf("GitHub answered %s", resp.Status)
+	}
+	tmp, err := os.MkdirTemp("", "magpie-skill-")
+	if err != nil {
+		return "", err
+	}
+	if err := untar(resp.Body, tmp); err != nil {
+		os.RemoveAll(tmp)
+		return "", err
+	}
+	return tmp, nil
+}
+
+// untar unpacks a GitHub tarball, whose one top folder is dropped.
+func untar(r io.Reader, dst string) error {
+	gz, err := gzip.NewReader(r)
+	if err != nil {
+		return err
+	}
+	tr := tar.NewReader(gz)
+	total := int64(0)
+	for {
+		h, err := tr.Next()
+		if err == io.EOF {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		_, rel, _ := strings.Cut(h.Name, "/")
+		if rel == "" {
+			continue
+		}
+		p := filepath.Join(dst, filepath.FromSlash(rel))
+		if !strings.HasPrefix(p, dst+string(filepath.Separator)) {
+			continue // never outside
+		}
+		switch h.Typeflag {
+		case tar.TypeDir:
+			if err := os.MkdirAll(p, 0o755); err != nil {
+				return err
+			}
+		case tar.TypeReg:
+			if total += h.Size; total > 200<<20 {
+				return fmt.Errorf("the repository is too big to install skills from (over 200 MB)")
+			}
+			if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+				return err
+			}
+			mode := os.FileMode(0o644)
+			if h.Mode&0o111 != 0 {
+				mode = 0o755
+			}
+			f, err := os.OpenFile(p, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode)
+			if err != nil {
+				return err
+			}
+			_, err = io.Copy(f, tr)
+			f.Close()
+			if err != nil {
+				return err
+			}
+		}
+	}
+}
+
+// candidates are the skills under root/sub: a folder with a SKILL.md,
+// looked for a few folders deep, and not inside another skill.
+func candidates(root, sub string) []Candidate {
+	base := filepath.Join(root, filepath.FromSlash(sub))
+	var out []Candidate
+	var walk func(dir string, depth int)
+	walk = func(dir string, depth int) {
+		if m, ok := readMeta(dir); ok {
+			rel, _ := filepath.Rel(root, dir)
+			if rel == "." {
+				rel = ""
+			}
+			out = append(out, Candidate{Path: filepath.ToSlash(rel), Name: nameFor(dir, m), Description: m.Description})
+			return
+		}
+		if depth == 0 {
+			return
+		}
+		es, _ := os.ReadDir(dir)
+		for _, e := range es {
+			n := e.Name()
+			if strings.HasPrefix(n, ".") || n == "node_modules" {
+				continue
+			}
+			p := filepath.Join(dir, n)
+			if fi, err := os.Stat(p); err == nil && fi.IsDir() {
+				walk(p, depth-1)
+			}
+		}
+	}
+	walk(base, 4)
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out
+}
+
+// ProbeSkills looks for skills at what the user typed: a GitHub repository
+// (or a folder in one), or a folder on this machine.
+func ProbeSkills(input string) (*Probe, error) {
+	input = strings.TrimSpace(input)
+	if input == "" {
+		return nil, fmt.Errorf("paste a GitHub link or a folder's path")
+	}
+	probes.Lock()
+	for k, e := range probes.m {
+		if time.Since(e.at) > 15*time.Minute {
+			os.RemoveAll(e.tmp)
+			delete(probes.m, k)
+		}
+	}
+	probes.Unlock()
+
+	p := &Probe{Source: input}
+	if dir := expand(input); filepath.IsAbs(dir) {
+		fi, err := os.Stat(dir)
+		if err != nil || !fi.IsDir() {
+			return nil, fmt.Errorf("%s isn't a folder", input)
+		}
+		p.Kind, p.root, p.src = "folder", dir, Source{Kind: "folder", Dir: dir}
+		p.Candidates = candidates(dir, "")
+	} else if src, ok := githubSource(input); ok {
+		tmp, err := fetch(src)
+		if err != nil {
+			return nil, err
+		}
+		p.Kind, p.root, p.src = "github", tmp, src
+		if _, err := os.Stat(filepath.Join(tmp, filepath.FromSlash(src.Path))); src.Path != "" && err != nil {
+			os.RemoveAll(tmp)
+			return nil, fmt.Errorf("%s has no folder %s", src.Repo, src.Path)
+		}
+		p.Candidates = candidates(tmp, src.Path)
+		probes.Lock()
+		if old := probes.m[input]; old != nil {
+			os.RemoveAll(old.tmp)
+		}
+		probes.m[input] = &probeEntry{p: p, tmp: tmp, at: time.Now()}
+		probes.Unlock()
+	} else {
+		return nil, fmt.Errorf("that's neither a GitHub repository nor a folder's full path")
+	}
+	if p.Candidates == nil {
+		p.Candidates = []Candidate{}
+	}
+	if l, err := load(); err == nil {
+		for i, c := range p.Candidates {
+			p.Candidates[i].Have = l.skill(c.Name) != nil
+		}
+	}
+	return p, nil
+}
+
+func cachedProbe(input string) (*Probe, error) {
+	probes.Lock()
+	e := probes.m[strings.TrimSpace(input)]
+	probes.Unlock()
+	if e != nil {
+		if _, err := os.Stat(e.tmp); err == nil {
+			return e.p, nil
+		}
+	}
+	return ProbeSkills(input)
+}
+
+// InstallSkills adds the skills at those paths of the source to the library
+// and gives them to the agents named.
+func InstallSkills(input string, paths, agents []string) (*Result, error) {
+	p, err := cachedProbe(input)
+	if err != nil {
+		return nil, err
+	}
+	return change(func(l *Library) error {
+		for _, path := range paths {
+			i := slices.IndexFunc(p.Candidates, func(c Candidate) bool { return c.Path == path })
+			if i < 0 {
+				return fmt.Errorf("no skill at %q", path)
+			}
+			c := p.Candidates[i]
+			if err := checkName("skill", c.Name); err != nil {
+				return err
+			}
+			if l.skill(c.Name) != nil {
+				return fmt.Errorf("the library already has a skill called %s", c.Name)
+			}
+			from := filepath.Join(p.root, filepath.FromSlash(c.Path))
+			src := p.src
+			if err := os.MkdirAll(skillsDir(), 0o755); err != nil {
+				return err
+			}
+			if src.Kind == "folder" {
+				src.Dir = from
+				if err := os.Symlink(from, skillDir(c.Name)); err != nil {
+					if err := copyDir(from, skillDir(c.Name)); err != nil {
+						return err
+					}
+				}
+			} else {
+				src.Path = c.Path
+				if err := copyDir(from, skillDir(c.Name)); err != nil {
+					os.RemoveAll(skillDir(c.Name))
+					return err
+				}
+			}
+			l.Skills = append(l.Skills, &Skill{Name: c.Name, Source: &src, Agents: slices.Clone(agents)})
+		}
+		return nil
+	})
+}
+
+// UpdateSkill fetches a skill from GitHub again, in place: the agents'
+// links go on pointing at it.
+func UpdateSkill(name string) (*Result, error) {
+	mu.Lock()
+	l, err := load()
+	mu.Unlock()
+	if err != nil {
+		return nil, err
+	}
+	s := l.skill(name)
+	if s == nil {
+		return nil, fmt.Errorf("no skill called %s", name)
+	}
+	if s.Source == nil || s.Source.Kind != "github" {
+		return nil, fmt.Errorf("%s isn't from GitHub; it's kept as it is", name)
+	}
+	tmp, err := fetch(*s.Source)
+	if err != nil {
+		return nil, err
+	}
+	defer os.RemoveAll(tmp)
+	from := filepath.Join(tmp, filepath.FromSlash(s.Source.Path))
+	if _, ok := readMeta(from); !ok {
+		return nil, fmt.Errorf("%s has no SKILL.md at %s any more", s.Source.Repo, s.Source.Path)
+	}
+	return change(func(l *Library) error {
+		next, old := skillDir("."+name+".next"), skillDir("."+name+".old")
+		os.RemoveAll(next)
+		os.RemoveAll(old)
+		if err := copyDir(from, next); err != nil {
+			os.RemoveAll(next)
+			return err
+		}
+		if err := os.Rename(skillDir(name), old); err != nil {
+			os.RemoveAll(next)
+			return err
+		}
+		if err := os.Rename(next, skillDir(name)); err != nil {
+			os.Rename(old, skillDir(name))
+			return err
+		}
+		return os.RemoveAll(old)
+	})
+}
+
+// SkillAgents sets which agents get a skill.
+func SkillAgents(name string, agents []string) (*Result, error) {
+	return change(func(l *Library) error {
+		s := l.skill(name)
+		if s == nil {
+			return fmt.Errorf("no skill called %s", name)
+		}
+		s.Agents = slices.Sorted(slices.Values(agents))
+		return nil
+	})
+}
+
+// RemoveSkill takes a skill out of the library and every agent; its folder
+// is kept aside with the backups, never just deleted.
+func RemoveSkill(name string) (*Result, error) {
+	return change(func(l *Library) error {
+		i := slices.IndexFunc(l.Skills, func(s *Skill) bool { return s.Name == name })
+		if i < 0 {
+			return fmt.Errorf("no skill called %s", name)
+		}
+		l.Skills = slices.Delete(l.Skills, i, i+1)
+		p := skillDir(name)
+		if fi, err := os.Lstat(p); err == nil && fi.Mode()&fs.ModeSymlink != 0 {
+			return os.Remove(p) // a folder of the user's: only the link goes
+		}
+		aside := filepath.Join(BackupDir(), time.Now().Format("2006-01-02_15-04-05.000"), "skills", name)
+		if err := os.MkdirAll(filepath.Dir(aside), 0o700); err != nil {
+			return err
+		}
+		return move(p, aside)
+	})
+}
+
+// ---- skills the agents have of their own ----------------------------------
+
+// FoundSkill is a skill an agent has that the library doesn't.
+type FoundSkill struct {
+	Name        string   `json:"name"`
+	Description string   `json:"description"`
+	Agents      []string `json:"agents"`           // the agents that have this very folder
+	Others      []string `json:"others,omitempty"` // agents with another by that name
+	Link        string   `json:"link,omitempty"`   // where it really is, when it's a link
+	real        string
+	at          string // the entry in the first agent's folder
+}
+
+func foundSkills(l *Library) []FoundSkill {
+	var out []*FoundSkill
+	byName := map[string]*FoundSkill{}
+	for _, t := range Targets() {
+		if t.Skills == "" {
+			continue
+		}
+		es, _ := os.ReadDir(t.Skills)
+		for _, e := range es {
+			name := e.Name()
+			p := filepath.Join(t.Skills, name)
+			if strings.HasPrefix(name, ".") || ours(p, name) || l.skill(name) != nil || !nameRe.MatchString(name) {
+				continue
+			}
+			m, ok := readMeta(p)
+			if !ok {
+				continue
+			}
+			r := realDir(p)
+			f := byName[name]
+			switch {
+			case f == nil:
+				f = &FoundSkill{Name: name, Description: m.Description, Agents: []string{t.Agent.ID}, real: r, at: p}
+				if fi, err := os.Lstat(p); err == nil && fi.Mode()&fs.ModeSymlink != 0 {
+					f.Link = r
+				}
+				byName[name] = f
+				out = append(out, f)
+			case f.real == r:
+				if !slices.Contains(f.Agents, t.Agent.ID) {
+					f.Agents = append(f.Agents, t.Agent.ID)
+				}
+			default:
+				f.Others = append(f.Others, t.Agent.ID)
+			}
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	res := []FoundSkill{}
+	for _, f := range out {
+		res = append(res, *f)
+	}
+	return res
+}
+
+// ImportSkill takes a skill the agents have of their own into the library:
+// a folder is moved in, a link to a folder elsewhere is linked to from the
+// library, and the agents that had it get the library's from then on.
+func ImportSkill(name string) (*Result, error) {
+	return change(func(l *Library) error {
+		i := slices.IndexFunc(foundSkills(l), func(f FoundSkill) bool { return f.Name == name })
+		if i < 0 {
+			return fmt.Errorf("no agent has a skill called %s that the library hasn't", name)
+		}
+		f := foundSkills(l)[i]
+		if err := os.MkdirAll(skillsDir(), 0o755); err != nil {
+			return err
+		}
+		src := &Source{Kind: "folder", Dir: f.real}
+		if f.Link != "" {
+			if err := os.Symlink(f.real, skillDir(name)); err != nil {
+				return err
+			}
+		} else {
+			if err := move(f.real, skillDir(name)); err != nil {
+				return err
+			}
+			src = nil
+		}
+		for _, id := range f.Agents { // links to what was moved, or to the folder elsewhere
+			if t := targetByID(id); t != nil {
+				p := filepath.Join(t.Skills, name)
+				if fi, err := os.Lstat(p); err == nil && fi.Mode()&fs.ModeSymlink != 0 {
+					os.Remove(p)
+				}
+			}
+		}
+		l.Skills = append(l.Skills, &Skill{Name: name, Source: src, Agents: slices.Clone(f.Agents)})
+		return nil
+	})
+}
+
+// ---- files ----------------------------------------------------------------
+
+func copyDir(from, to string) error {
+	return filepath.WalkDir(from, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, _ := filepath.Rel(from, p)
+		dst := filepath.Join(to, rel)
+		if d.IsDir() {
+			if d.Name() == ".git" && p != from {
+				return filepath.SkipDir
+			}
+			return os.MkdirAll(dst, 0o755)
+		}
+		if d.Type()&fs.ModeSymlink != 0 {
+			if t, err := os.Readlink(p); err == nil {
+				return os.Symlink(t, dst)
+			}
+			return nil
+		}
+		if !d.Type().IsRegular() {
+			return nil
+		}
+		in, err := os.Open(p)
+		if err != nil {
+			return err
+		}
+		defer in.Close()
+		fi, _ := d.Info()
+		out, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, fi.Mode().Perm())
+		if err != nil {
+			return err
+		}
+		if _, err := io.Copy(out, in); err != nil {
+			out.Close()
+			return err
+		}
+		return out.Close()
+	})
+}
+
+// move renames, or copies and removes where a rename can't cross disks.
+func move(from, to string) error {
+	if err := os.Rename(from, to); err == nil {
+		return nil
+	} else if errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	if err := copyDir(from, to); err != nil {
+		os.RemoveAll(to)
+		return err
+	}
+	return os.RemoveAll(from)
+}
+
+// SkillText is a library skill's SKILL.md, for the page to show.
+func SkillText(name string) (string, error) {
+	if err := checkName("skill", name); err != nil {
+		return "", err
+	}
+	b, err := os.ReadFile(filepath.Join(skillDir(name), "SKILL.md"))
+	if err != nil {
+		return "", fmt.Errorf("%s has no SKILL.md in the library", name)
+	}
+	return string(b), nil
+}
+
+// SkillPath is where a library skill's folder is.
+func SkillPath(name string) string { return skillDir(name) }

@@ -222,8 +222,14 @@ func trimBlank(lines []string) []string {
 	return lines
 }
 
+// Raw is a TOML value written as it is: an array or an inline table the
+// caller has already spelled out.
+type Raw string
+
 func tomlLiteral(v any) string {
 	switch x := v.(type) {
+	case Raw:
+		return string(x)
 	case bool:
 		return strconv.FormatBool(x)
 	case int:
