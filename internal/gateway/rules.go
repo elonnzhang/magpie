@@ -38,6 +38,19 @@ type RuleHit struct {
 	// Unready: the member the rule names has nobody to take it now, and
 	// the group routes the request as it would without the rule.
 	Unready bool `json:"unready,omitempty"`
+	// Classified: the group's classifier was asked which intent the
+	// turn's first message is
+	Classified *Classified `json:"classified,omitempty"`
+}
+
+// Classified is what the classifier was asked as a turn began, and said.
+type Classified struct {
+	By      string   `json:"by"`               // the classifier model
+	Intents []string `json:"intents"`          // what it chose among
+	Intent  string   `json:"intent,omitempty"` // what it said the message is; "" for none
+	Cached  bool     `json:"cached,omitempty"` // said before, for the same message
+	Ms      int      `json:"ms,omitempty"`     // how long asking it took
+	Error   string   `json:"error,omitempty"`  // why it couldn't say: no intent matches then
 }
 
 type turnRule struct {
@@ -46,6 +59,8 @@ type turnRule struct {
 	n     int
 	at    time.Time
 	input int // the tokens the vendor counted the conversation's last request as
+	// intent is what the classifier said the turn's first message is
+	intent string
 }
 
 var turnRules = struct {
@@ -80,11 +95,13 @@ func firstWords(req *Request) string {
 }
 
 // ruleFor is the rule a group request goes by: at a turn's start, the
-// first of the group's rules it matches; within the turn — the agent
-// handing tool results back — what was decided when it began, unless the
-// conversation has grown past what that model can take and a rule sends
-// it to one with more room. It returns nil for a group without rules.
-func ruleFor(key string, g provider.Group, ms []provider.Member, req *Request, agent string) *RuleHit {
+// first of the group's rules it matches — asking the group's classifier
+// first when a rule that may match has an intent; within the turn — the
+// agent handing tool results back — what was decided when it began, unless
+// the conversation has grown past what that model can take and a rule
+// sends it to one with more room. It returns nil for a group without
+// rules.
+func ruleFor(key string, g provider.Group, ms []provider.Member, req *Request, agent string, ask classifier) *RuleHit {
 	if len(g.Rules) == 0 || req == nil {
 		return nil
 	}
@@ -96,14 +113,10 @@ func ruleFor(key string, g provider.Group, ms []provider.Member, req *Request, a
 			break
 		}
 	}
-	var ctx map[string]int
-	if within {
-		ctx = memberContexts(ms) // before the lock: it reads the catalog
-	}
 	now := time.Now()
 	turnRules.Lock()
-	defer turnRules.Unlock()
 	tr, had := turnRules.m[key]
+	turnRules.Unlock()
 	if had && now.Sub(tr.at) > stickKeep {
 		had = false
 	}
@@ -117,6 +130,12 @@ func ruleFor(key string, g provider.Group, ms []provider.Member, req *Request, a
 	if within {
 		// the same turn: what was decided as it began, while the group
 		// still has that rule; else nothing moves it
+		ctx := memberContexts(ms) // before the lock: it reads the catalog
+		if had {
+			q.Intent = tr.intent // as the classifier said when the turn began
+		}
+		turnRules.Lock()
+		defer turnRules.Unlock()
 		switch {
 		case !had || tr.turn != turn && turn > 0:
 			hit.Waits = true
@@ -129,19 +148,50 @@ func ruleFor(key string, g provider.Group, ms []provider.Member, req *Request, a
 		}
 		if grown, ok := outgrown(g, ctx, hit, q); ok {
 			hit = grown
-			turnRules.m[key] = turnRule{turn: turn, use: hit.Use, n: hit.N, at: now, input: tr.input}
+			turnRules.m[key] = turnRule{turn: turn, use: hit.Use, n: hit.N, at: now, input: tr.input, intent: q.Intent}
 			return hit
 		}
 		if had {
-			tr.at = now
-			turnRules.m[key] = tr
+			if cur, ok := turnRules.m[key]; ok {
+				cur.at = now
+				turnRules.m[key] = cur
+			}
 		}
 		return hit
+	}
+	// a new turn: the classifier is asked only when a rule that could be
+	// the first to match waits on its intent
+	if intents := provider.Intents(g.Rules, q); len(intents) > 0 {
+		c := &Classified{By: g.Classifier, Intents: intents}
+		text := userText(req)
+		switch {
+		case g.Classifier == "":
+			c.Error = "the group has no classifier"
+		case ask == nil:
+			c.Error = "nothing to ask the classifier with"
+		case text == "":
+			c.Error = "the message has no words to classify"
+		default:
+			t0 := time.Now()
+			intent, cached, err := classify(ask, g.Classifier, intents, text)
+			c.Intent, c.Cached, c.Ms = intent, cached, int(time.Since(t0).Milliseconds())
+			if err != nil {
+				c.Error = err.Error()
+			}
+		}
+		q.Intent = c.Intent
+		hit.Classified = c
 	}
 	if i := provider.MatchRule(g.Rules, q); i >= 0 {
 		hit.N, hit.Use, hit.When = i+1, g.Rules[i].Use, g.Rules[i].Conditions()
 	}
-	turnRules.m[key] = turnRule{turn: turn, use: hit.Use, n: hit.N, at: now, input: tr.input}
+	turnRules.Lock()
+	defer turnRules.Unlock()
+	input := tr.input
+	if cur, ok := turnRules.m[key]; ok {
+		input = cur.input // answered while the classifier was asked
+	}
+	turnRules.m[key] = turnRule{turn: turn, use: hit.Use, n: hit.N, at: now, input: input, intent: q.Intent}
 	if len(turnRules.m) > 4096 {
 		for k, tr := range turnRules.m {
 			if now.Sub(tr.at) > stickKeep {

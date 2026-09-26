@@ -44,6 +44,10 @@ type Group struct {
 	// Rules send the requests they match to one member first, in order:
 	// the first that matches decides (see Rule).
 	Rules []Rule `json:"rules,omitempty"`
+	// Classifier is the model ("provider/model", not a group) asked which
+	// of the rules' intents a user's message is. Rules with an intent need
+	// one; a small, fast model without reasoning does.
+	Classifier string `json:"classifier,omitempty"`
 	// Auto is set on a group magpie found: one model served by several
 	// providers. It is derived, never stored.
 	Auto bool `json:"auto,omitempty"`
@@ -254,6 +258,21 @@ func SaveGroup(g Group) error {
 		return err
 	}
 	g.Rules = rules
+	g.Classifier = strings.TrimPrefix(strings.TrimSpace(g.Classifier), "magpie/")
+	intents := slices.ContainsFunc(g.Rules, func(r Rule) bool { return r.Intent != "" })
+	switch {
+	case strings.HasPrefix(g.Classifier, GroupPrefix):
+		return fmt.Errorf("the classifier is a model, not a group (%s)", g.Classifier)
+	case intents && g.Classifier == "":
+		return errors.New("a rule with an intent needs the group's classifier: the model that tells which intent a message is")
+	case !intents:
+		g.Classifier = "" // nothing to ask it
+	}
+	if g.Classifier != "" {
+		if _, _, ok := Resolve(g.Classifier); !ok {
+			return fmt.Errorf("magpie knows no model %q to classify with", g.Classifier)
+		}
+	}
 	g.Auto, g.Hidden = false, false
 	f := load()
 	for i := range f.Groups {

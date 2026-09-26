@@ -18,6 +18,8 @@ func TestCleanRules(t *testing.T) {
 		{Rule{Use: "a/m", Effort: "huge"}, "effort is on or one of"},
 		{Rule{Use: "a/m"}, "needs a condition"},
 		{Rule{Use: "a/m", Agents: []string{" ", ""}}, "needs a condition"},
+		{Rule{Use: "a/m", Intent: " \n\t "}, "needs a condition"},
+		{Rule{Use: "a/m", Intent: strings.Repeat("字", MaxIntent+1)}, "at most"},
 	} {
 		_, err := cleanRules([]Rule{{Use: "b/big", Images: true}, tc.rule}, members)
 		if err == nil || !strings.Contains(err.Error(), tc.err) || !strings.HasPrefix(err.Error(), "rule 2:") {
@@ -26,7 +28,7 @@ func TestCleanRules(t *testing.T) {
 	}
 	got, err := cleanRules([]Rule{
 		{Use: " b/big ", Effort: " HIGH ", Agents: []string{" Claude-Code ", "codex", "codex", ""}},
-		{Use: "a/m", Effort: "On", Agents: []string{}},
+		{Use: "a/m", Effort: "On", Agents: []string{}, Intent: "  writing\n  tests "},
 	}, members)
 	if err != nil {
 		t.Fatal(err)
@@ -34,7 +36,7 @@ func TestCleanRules(t *testing.T) {
 	if got[0].Use != "b/big" || got[0].Effort != "high" || !slices.Equal(got[0].Agents, []string{"claude-code", "codex"}) {
 		t.Errorf("%+v", got[0])
 	}
-	if got[1].Effort != "on" || got[1].Agents != nil {
+	if got[1].Effort != "on" || got[1].Agents != nil || got[1].Intent != "writing tests" {
 		t.Errorf("%+v", got[1])
 	}
 	if got, err := cleanRules(nil, members); err != nil || got != nil {
@@ -103,6 +105,53 @@ func TestMatchRuleFirstWins(t *testing.T) {
 	}
 }
 
+// An intent matches the classifier's answer, whatever its case; it holds
+// with the rule's other conditions.
+func TestRuleIntent(t *testing.T) {
+	r := Rule{Use: "a/m", Intent: "Writing tests", Agents: []string{"codex"}}
+	for _, tc := range []struct {
+		q         RuleRequest
+		match, bi bool
+	}{
+		{RuleRequest{Agent: "codex", Intent: "writing tests"}, true, true},
+		{RuleRequest{Agent: "codex", Intent: "WRITING TESTS"}, true, true},
+		{RuleRequest{Agent: "codex"}, false, true},
+		{RuleRequest{Agent: "codex", Intent: "debugging"}, false, true},
+		{RuleRequest{Agent: "claude", Intent: "writing tests"}, false, false},
+	} {
+		if r.Matches(tc.q) != tc.match || r.MatchesBesidesIntent(tc.q) != tc.bi {
+			t.Errorf("%+v: %v %v", tc.q, r.Matches(tc.q), r.MatchesBesidesIntent(tc.q))
+		}
+	}
+	if c := r.Conditions(); len(c) != 2 || c[1] != `intent "Writing tests"` {
+		t.Errorf("%q", c)
+	}
+	rules := []Rule{
+		{Use: "a", Intent: "quick question"},
+		{Use: "b", Intent: "debugging", Images: true},
+		{Use: "b", Intent: "Quick Question", Agents: []string{"codex"}},
+		{Use: "c", Intent: "planning"},
+		{Use: "d", Tokens: 100},
+		{Use: "e", Intent: "after"},
+	}
+	for _, tc := range []struct {
+		q    RuleRequest
+		want []string
+	}{
+		{RuleRequest{Tokens: 500, Agent: "codex"}, []string{"quick question", "planning"}},
+		{RuleRequest{Tokens: 500, Images: true}, []string{"quick question", "debugging", "planning"}},
+		{RuleRequest{Tokens: 500}, []string{"quick question", "planning"}},
+		{RuleRequest{Tokens: 5}, []string{"quick question", "planning", "after"}},
+	} {
+		if got := Intents(rules, tc.q); !slices.Equal(got, tc.want) {
+			t.Errorf("%+v: %q, want %q", tc.q, got, tc.want)
+		}
+	}
+	if got := Intents([]Rule{{Use: "d", Tokens: 1}, {Use: "a", Intent: "x"}}, RuleRequest{Tokens: 5}); got != nil {
+		t.Errorf("a plain rule first: %q", got)
+	}
+}
+
 func TestRuleConditions(t *testing.T) {
 	got := Rule{Tokens: 200000, Images: true, Effort: "high", Agents: []string{"codex", "claude-code"}}.Conditions()
 	want := []string{"tokens ≥ 200000", "images", "effort ≥ high", "agent codex|claude-code"}
@@ -160,6 +209,8 @@ func TestRuledEntry(t *testing.T) {
 		{"long rule", []string{"a/text", "b/huge"}, []Rule{{Use: "b/huge", Tokens: 100000}}, false, 1000000},
 		{"long rule past a member", []string{"a/text", "b/huge"}, []Rule{{Use: "b/huge", Tokens: 150000}}, false, 128000},
 		{"long rule, a smaller member", []string{"a/text", "b/small", "b/huge"}, []Rule{{Use: "b/huge", Tokens: 100000}}, false, 32000},
+		{"images and an intent", []string{"a/text", "a/vision"}, []Rule{{Use: "a/vision", Images: true, Intent: "screenshots"}}, false, 128000},
+		{"long rule and an intent", []string{"a/text", "b/huge"}, []Rule{{Use: "b/huge", Tokens: 100000, Intent: "big refactors"}}, false, 128000},
 		{"long rule and more", []string{"a/text", "b/huge"}, []Rule{{Use: "b/huge", Tokens: 100000, Effort: "on"}}, false, 128000},
 		{"capped by a rule before", []string{"a/text", "a/vision", "b/huge"}, []Rule{{Use: "a/vision", Agents: []string{"codex"}}, {Use: "b/huge", Tokens: 100000}}, false, 200000},
 		{"long rule to less", []string{"a/text", "a/vision"}, []Rule{{Use: "a/text", Tokens: 1000}}, false, 128000},
@@ -193,5 +244,43 @@ func TestSaveGroupRules(t *testing.T) {
 	g, _, ok := FindGroup(GroupPrefix + "r")
 	if !ok || len(g.Rules) != 1 || g.Rules[0].Effort != "high" || g.Rules[0].Use != "b/big" {
 		t.Fatalf("%v %+v", ok, g)
+	}
+}
+
+// A group with an intent needs a classifier: a model magpie knows, not a
+// group. Without intents it keeps none.
+func TestSaveGroupClassifier(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	for _, id := range []string{"a", "b"} {
+		if err := Save(Provider{ID: id, Name: id, Key: "k", Chat: "http://127.0.0.1:1/v1", Models: []string{"m", "big"}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	intent := []Rule{{Use: "b/big", Intent: "planning"}}
+	for _, tc := range []struct {
+		classifier, err string
+	}{
+		{"", "needs the group's classifier"},
+		{"group/other", "not a group"},
+		{"z/nothing", "knows no model"},
+	} {
+		err := SaveGroup(Group{Name: "R", Members: []string{"a/m", "b/big"}, Rules: intent, Classifier: tc.classifier})
+		if err == nil || !strings.Contains(err.Error(), tc.err) {
+			t.Errorf("%q: %v, want …%s", tc.classifier, err, tc.err)
+		}
+	}
+	if err := SaveGroup(Group{Name: "R", Members: []string{"a/m", "b/big"}, Rules: intent, Classifier: " magpie/a/m "}); err != nil {
+		t.Fatal(err)
+	}
+	g, _, _ := FindGroup(GroupPrefix + "r")
+	if g.Classifier != "a/m" || g.Rules[0].Intent != "planning" {
+		t.Fatalf("%+v", g)
+	}
+	if err := SaveGroup(Group{Name: "R", Members: []string{"a/m", "b/big"}, Rules: []Rule{{Use: "b/big", Tokens: 5}}, Classifier: "a/m"}); err != nil {
+		t.Fatal(err)
+	}
+	if g, _, _ := FindGroup(GroupPrefix + "r"); g.Classifier != "" {
+		t.Fatalf("kept %q without an intent", g.Classifier)
 	}
 }

@@ -250,6 +250,12 @@
 .rt-cond .ic { width: 14px; height: 14px; flex: none; }
 .rt-cond > span { overflow: hidden; text-overflow: ellipsis; }
 .rt-cond.tk { cursor: text; }
+.rt-cond.in { cursor: text; }
+.rt-cond.in input { width: 24ch; }
+.rt-classifier { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; margin-top: 8px; }
+.rt-classifier[hidden] { display: none; }
+.rt-classifier .w { color: var(--muted); font-size: 12px; }
+.rt-classifier .hint { flex-basis: 100%; }
 .rt-cond input { width: 7ch; height: 20px; padding: 0 2px; border: 0; background: transparent; color: inherit; font: inherit; font-variant-numeric: tabular-nums; outline: none; -moz-appearance: textfield; }
 .rt-cond input::-webkit-outer-spin-button, .rt-cond input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
 .rt-rwarn { color: var(--amber, var(--muted)); font-size: 11.5px; }

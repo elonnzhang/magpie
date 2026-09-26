@@ -98,7 +98,7 @@
     if (h < 48) return t("{n} h", { n: Math.round(m / 60) });
     return t("{n} d", { n: Math.round(m / 1440) });
   }
-  const took = (ms) => ms < 1000 ? t("{n} ms", { n: ms }) : t("{n} s", { n: (ms / 1000).toFixed(ms < 10e3 ? 1 : 0) });
+  const took = (ms = 0) => ms < 1000 ? t("{n} ms", { n: ms }) : t("{n} s", { n: (ms / 1000).toFixed(ms < 10e3 ? 1 : 0) });
   function clock(s) {
     const d = new Date(s), n = new Date();
     const hm = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
@@ -217,6 +217,8 @@
     const out = [];
     const aff = affWhy(r, true) ? null : affWhy(r, false);
     if (aff) out.push(aff);
+    const cls = classWhy(r);
+    if (cls) out.push(cls);
     const rule = ruleWhy(r, false);
     if (rule) out.push(rule);
     const smart = (x) => !x.routing && x.kind === "account";
@@ -283,9 +285,20 @@
     if (x.held) return null;
     return t("No rule matches turn {turn} (about {n} tokens{img}), so the group routes it as usual.", { turn: x.turn, n: tokens(x.tokens), img: x.images ? t(", with an image") : "" });
   }
+  // classWhy tells what the group's classifier said of the turn's message
+  function classWhy(r) {
+    const c = r.rule?.classified;
+    if (!c) return null;
+    const by = c.by || t("the classifier"), kinds = (c.intents || []).map((x) => `“${x}”`).join(", ");
+    if (c.error) return t("{by} was to tell which of {kinds} turn {turn} is, but couldn't — {err} — so no rule with an intent matches it.", { by, kinds, turn: r.rule.turn, err: c.error });
+    const when = c.cached ? t("said before, for the same message") : t("in {ms}", { ms: took(c.ms) });
+    if (!c.intent) return t("{by} was asked which of {kinds} turn {turn} is, and said none ({took}).", { by, kinds, turn: r.rule.turn, took: when });
+    return t("{by} was asked which of {kinds} turn {turn} is, and said “{intent}” ({took}).", { by, kinds, turn: r.rule.turn, intent: c.intent, took: when });
+  }
   // a rule's condition as the gateway writes it, in the page's words
   function condText(c) {
     let m;
+    if ((m = /^intent "(.*)"$/.exec(c))) return t("asks for “{intent}”", { intent: m[1].replace(/\\"/g, '"').replace(/\\\\/g, "\\") });
     if ((m = /^tokens ≥ (\d+)$/.exec(c))) return t("≥ {n} tokens", { n: Number(m[1]).toLocaleString() });
     if (c === "images") return t("has an image");
     if (c === "reasoning") return t("reasoning on");
@@ -1124,6 +1137,7 @@
     if (r.images) bits.push(t("has an image"));
     if (r.effort) bits.push(r.effort === "on" ? t("reasoning on") : t("reasoning ≥ {level}", { level: r.effort }));
     if (r.agents?.length) bits.push(r.agents.map((id) => (state.clients || state.agents || []).find((a) => a.id === id)?.name || id).join(" / "));
+    if (r.intent) bits.push(t("asks for “{intent}”", { intent: r.intent }));
     return bits.join(" · ");
   }
   const slug = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
@@ -1196,7 +1210,7 @@
     if (!g.ready) tags.append(el("span", "tag bad", t("no member ready")));
     const edit = el("button", "text", t("Edit"));
     edit.onclick = (e) => { e.stopPropagation(); open(); };
-    const open = () => { gEdit = { id: g.id, draft: { name: g.name, members: [...g.members], routing: g.routing || "", affinity: g.affinity || "", rules: (g.rules || []).map((r) => ({ ...r, agents: [...(r.agents || [])] })) } }; renderGroups(); };
+    const open = () => { gEdit = { id: g.id, draft: { name: g.name, members: [...g.members], routing: g.routing || "", affinity: g.affinity || "", classifier: g.classifier || "", rules: (g.rules || []).map((r) => ({ ...r, intent: r.intent || "", agents: [...(r.agents || [])] })) } }; renderGroups(); };
     row.onclick = open;
     row.append(ics, main, tags, edit);
     return row;
@@ -1318,7 +1332,15 @@
           r.agents = !v ? [] : r.agents.includes(v) ? r.agents.filter((x) => x !== v) : [...r.agents, v];
           ag.textContent = agentsName(); ag.classList.toggle("on", r.agents.length > 0);
         });
-        when.append(tk, im, ef, ag);
+        // intent: what the message asks for, as the classifier judges it
+        const it = el("span", "rt-cond in" + (r.intent ? " on" : ""));
+        it.onclick = () => ii.focus();
+        const ii = input(r.intent || "", t("what it asks for, e.g. writing tests"));
+        ii.maxLength = 200;
+        ii.oninput = () => { r.intent = ii.value; it.classList.toggle("on", !!r.intent.trim()); drawClassifier(); };
+        ii.onkeydown = (e) => e.stopPropagation();
+        it.append(el("span", "", t("asks for")), ii);
+        when.append(tk, im, ef, ag, it);
         // the member it sends to
         const use = el("div", "rt-use");
         const ub = el("button", "rt-cond on");
@@ -1343,11 +1365,28 @@
         row.append(el("span", "i", String(i + 1)), when, use, ctl);
         rlist.append(row);
       });
+      drawClassifier();
     };
-    rAdd.onclick = () => { d.rules.push({ use: d.members[d.members.length - 1], tokens: 0, images: false, effort: "", agents: [] }); drawRules(); };
+    rAdd.onclick = () => { d.rules.push({ use: d.members[d.members.length - 1], tokens: 0, images: false, effort: "", agents: [], intent: "" }); drawRules(); };
+    // the classifier, once a rule has an intent: the model asked which
+    // intent a turn's message is
+    const cls = el("div", "rt-classifier");
+    const drawClassifier = () => {
+      const on = d.rules.some((r) => r.intent?.trim());
+      cls.hidden = !on;
+      if (!on) return;
+      const m = groups.models.find((x) => x.id === d.classifier);
+      const cb = el("button", "rt-cond" + (d.classifier ? " on" : ""));
+      if (d.classifier) cb.append(icon(m?.icon || "generic"), el("span", "", m ? `${m.name || m.id} · ${m.providerName}` : d.classifier));
+      else cb.append(el("span", "", t("choose a model")));
+      cb.onclick = (ev) => openPicker({ id: "", name: "", fields: [] }, { key: "classifier", label: "model", value: d.classifier, options: groups.models.map((x) => ({ value: x.id, label: x.name || x.id, note: x.providerName, icon: x.icon, group: x.providerName, ref: x.id })),
+        onPick: (id) => { if (id) d.classifier = id; drawClassifier(); } }, cb, ev);
+      cls.replaceChildren(el("span", "w", t("Intent told by")), cb,
+        el("div", "hint", t("As a turn begins, this model is asked which of the intents the message is — once; a small, fast one without reasoning is best. If it fails or can't say, no intent matches. Its calls show in the usage as magpie’s own.")));
+    };
     rbox.append(rlist, rAdd);
     const rw2 = el("div");
-    rw2.append(rbox, rHint2);
+    rw2.append(rbox, cls, rHint2);
     ed.append(el("label", "", t("Rules")), rw2);
     drawRules();
 
@@ -1363,10 +1402,12 @@
     const saveBtn = el("button", "text primary", t(g ? "Save" : "Add"));
     const save = () => {
       if (!d.members.length) { addBtn.focus({ preventScroll: true }); return status(t("A group needs a model in it"), "warn"); }
-      const bare = d.rules.findIndex((r) => !r.tokens && !r.images && !r.effort && !r.agents.length);
+      d.rules.forEach((r) => { r.intent = (r.intent || "").trim(); });
+      const bare = d.rules.findIndex((r) => !r.tokens && !r.images && !r.effort && !r.agents.length && !r.intent);
       if (bare >= 0) return status(t("Rule {n} needs a condition", { n: bare + 1 }), "warn");
+      if (d.rules.some((r) => r.intent) && !d.classifier) return status(t("Choose the model that tells which intent a message is"), "warn");
       saveBtn.classList.add("busy");
-      groupAction("save", { id: idOf(), name: d.name.trim() || idOf(), members: d.members, routing: d.routing, affinity: d.affinity, rules: d.rules }, t(g ? "{name} saved" : "{name} added", { name: d.name.trim() || idOf() }));
+      groupAction("save", { id: idOf(), name: d.name.trim() || idOf(), members: d.members, routing: d.routing, affinity: d.affinity, rules: d.rules, classifier: d.rules.some((r) => r.intent) ? d.classifier : "" }, t(g ? "{name} saved" : "{name} added", { name: d.name.trim() || idOf() }));
     };
     saveBtn.onclick = save;
     bar.append(cancel, saveBtn);

@@ -651,6 +651,9 @@ func showGroup(g provider.Group) error {
 		}
 		kv(k, fmt.Sprintf("%d %s", i+1, ruleLine(r)))
 	}
+	if g.Classifier != "" {
+		kv("classifier", g.Classifier+muted.Render("  tells which intent a message is"))
+	}
 	if u := groupUses()[g.ID]; len(u) > 0 {
 		kv("used by", green.Render(strings.Join(u, ", ")))
 	}

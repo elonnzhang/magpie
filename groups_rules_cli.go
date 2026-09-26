@@ -14,10 +14,13 @@ import (
 
 const ruleUsage = `usage:
   magpie group rule <group>               the group's rules
-  magpie group rule add <group> use=<model> [tokens=<n>] [images] [effort=on|low|medium|high|xhigh|max] [agents=a,b…] [at=<n>]
+  magpie group rule add <group> use=<model> [tokens=<n>] [images] [effort=on|low|medium|high|xhigh|max] [agents=a,b…]
+                        [intent="<what the message asks for>"] [classifier=<model>] [at=<n>]
                                           a rule: a turn that matches it goes to <model>, one of the group's, first
   magpie group rule rm <group> <n>        remove rule n
   magpie group rule mv <group> <n> <to>   move rule n to place <to>
+  magpie group rule classifier <group> <model>
+                                          the model that tells which intent a message is
 
   Rules are looked at top first when you send a message (a new turn); the first that
   matches puts its model first, and the group's others stay behind it if it fails.
@@ -28,9 +31,14 @@ const ruleUsage = `usage:
   images   it carries an image, now or earlier in the conversation
   effort   the agent asked for reasoning: on (any), or at least this level
   agents   it comes from one of these agents (claude, codex, opencode, … as magpie usage names them)
+  intent   the user's message is of this kind, in your words ("writing or fixing tests", "a quick
+           question"): as the turn begins, the group's classifier — any model magpie has, best a small
+           fast one without reasoning — is asked which of the intents that may match the message is,
+           once; if it fails or can't say, no intent matches. Its call shows in the usage as magpie's own
 
   e.g. magpie group rule add opus-anywhere use=openrouter/google/gemini-3-pro tokens=200k
-       magpie group rule add opus-anywhere use=a/vision-model images`
+       magpie group rule add opus-anywhere use=a/vision-model images
+       magpie group rule add opus-anywhere use=deepseek/deepseek-v4-flash intent="a quick question" classifier=groq/llama-3.1-8b-instant`
 
 // parseTokens reads 200000, 200k, 1.5m.
 func parseTokens(v string) (int, error) {
@@ -50,10 +58,9 @@ func parseTokens(v string) (int, error) {
 }
 
 // parseRule makes a rule of k=v words; the model is resolved among the
-// group's members.
-func parseRule(g provider.Group, words []string) (provider.Rule, int, error) {
-	var r provider.Rule
-	at := 0
+// group's members. classifier is the group's classifier when one was
+// given.
+func parseRule(g provider.Group, words []string) (r provider.Rule, at int, classifier string, err error) {
 	for _, w := range words {
 		k, v, hasV := strings.Cut(w, "=")
 		k = strings.ToLower(strings.TrimSpace(k))
@@ -61,13 +68,13 @@ func parseRule(g provider.Group, words []string) (provider.Rule, int, error) {
 		case "use", "model", "to":
 			id, err := groupMember(g, v)
 			if err != nil {
-				return r, 0, err
+				return r, 0, "", err
 			}
 			r.Use = id
 		case "tokens", "context", "longer":
 			n, err := parseTokens(v)
 			if err != nil {
-				return r, 0, err
+				return r, 0, "", err
 			}
 			r.Tokens = n
 		case "images", "image":
@@ -77,7 +84,7 @@ func parseRule(g provider.Group, words []string) (provider.Rule, int, error) {
 			case "no", "false", "off", "0":
 				r.Images = false
 			default:
-				return r, 0, fmt.Errorf("images takes no value (or yes/no), not %q", v)
+				return r, 0, "", fmt.Errorf("images takes no value (or yes/no), not %q", v)
 			}
 		case "effort", "reasoning", "thinking":
 			if !hasV {
@@ -86,20 +93,32 @@ func parseRule(g provider.Group, words []string) (provider.Rule, int, error) {
 			r.Effort = strings.ToLower(strings.TrimSpace(v))
 		case "agents", "agent":
 			r.Agents = splitList(v)
+		case "intent", "asks", "about":
+			r.Intent = strings.TrimSpace(v)
+			if r.Intent == "" {
+				return r, 0, "", fmt.Errorf(`intent says what the message asks for: intent="writing or fixing tests"`)
+			}
+		case "classifier", "classify", "by":
+			if classifier = strings.TrimSpace(v); classifier == "" {
+				return r, 0, "", fmt.Errorf("classifier=<model>: the model that tells which intent a message is")
+			}
 		case "at":
 			n, err := strconv.Atoi(v)
 			if err != nil || n < 1 {
-				return r, 0, fmt.Errorf("at is a place from 1, not %q", v)
+				return r, 0, "", fmt.Errorf("at is a place from 1, not %q", v)
 			}
 			at = n
 		default:
-			return r, 0, fmt.Errorf("unknown %q (use, tokens, images, effort, agents, at)\n\n%s", w, ruleUsage)
+			return r, 0, "", fmt.Errorf("unknown %q (use, tokens, images, effort, agents, intent, classifier, at)\n\n%s", w, ruleUsage)
 		}
 	}
 	if r.Use == "" {
-		return r, 0, fmt.Errorf("use=<model> is missing: one of %s", strings.Join(g.Members, ", "))
+		return r, 0, "", fmt.Errorf("use=<model> is missing: one of %s", strings.Join(g.Members, ", "))
 	}
-	return r, at, nil
+	if r.Intent != "" && classifier == "" && g.Classifier == "" {
+		return r, 0, "", fmt.Errorf("a rule with an intent needs the group's classifier, the model that tells which intent a message is: add classifier=<model>, best a small fast one")
+	}
+	return r, at, classifier, nil
 }
 
 // groupMember is the group's member a typed model names: its id, its
@@ -167,9 +186,12 @@ func ruleCmd(args []string) error {
 	}
 	switch verb {
 	case "add", "new":
-		r, at, err := parseRule(g, rest[1:])
+		r, at, classifier, err := parseRule(g, rest[1:])
 		if err != nil {
 			return err
+		}
+		if classifier != "" {
+			g.Classifier = classifier
 		}
 		if at == 0 || at > len(g.Rules) {
 			g.Rules = append(g.Rules, r)
@@ -199,6 +221,14 @@ func ruleCmd(args []string) error {
 		}
 		r := g.Rules[i]
 		g.Rules = slices.Insert(slices.Delete(g.Rules, i, i+1), j, r)
+	case "classifier", "classify":
+		if len(rest) != 2 {
+			return fmt.Errorf("magpie group rule classifier <group> <model>")
+		}
+		if !slices.ContainsFunc(g.Rules, func(r provider.Rule) bool { return r.Intent != "" }) {
+			return fmt.Errorf("%s has no rule with an intent to classify for", g.ID)
+		}
+		g.Classifier = rest[1]
 	default:
 		return fmt.Errorf("magpie group rule has no %q\n\n%s", verb, ruleUsage)
 	}

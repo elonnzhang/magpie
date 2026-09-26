@@ -46,6 +46,9 @@ func fresh(t *testing.T) {
 	turnRules.Lock()
 	turnRules.m = map[string]turnRule{}
 	turnRules.Unlock()
+	classified.Lock()
+	classified.m, classified.failed = map[string]classifiedAs{}, map[string]classifyFailure{}
+	classified.Unlock()
 }
 
 func serveOn(t *testing.T, id, key string, models []string, v http.Handler, keys ...string) {

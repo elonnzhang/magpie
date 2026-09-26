@@ -111,6 +111,65 @@ func TestGroupRuleCmd(t *testing.T) {
 	}
 }
 
+// A rule with an intent, and the group's classifier with it.
+func TestGroupRuleIntentCmd(t *testing.T) {
+	groupsHome(t)
+	if _, err := addGroup("Opus", []string{"models=a/claude-opus-5-5,b/gpt-5.5,a/only-a"}); err != nil {
+		t.Fatal(err)
+	}
+	group := func() provider.Group {
+		t.Helper()
+		g, err := findGroup("opus")
+		if err != nil {
+			t.Fatal(err)
+		}
+		return g
+	}
+	for _, bad := range [][]string{
+		{"add", "opus", "use=gpt-5.5", "intent=a quick question"},                         // no classifier
+		{"add", "opus", "use=gpt-5.5", "intent=", "classifier=a/only-a"},                  // no words
+		{"add", "opus", "use=gpt-5.5", "intent=a quick question", "classifier=z/nothing"}, // unknown model
+		{"add", "opus", "use=gpt-5.5", "intent=a quick question", "classifier=group/opus"},
+		{"classifier", "opus", "a/only-a"}, // no intent yet
+	} {
+		if err := ruleCmd(bad); err == nil {
+			t.Errorf("%v taken", bad)
+		}
+	}
+	if err := ruleCmd([]string{"add", "opus", "use=gpt-5.5", "intent=  a quick   question ", "classifier=magpie/a/only-a"}); err != nil {
+		t.Fatal(err)
+	}
+	g := group()
+	if len(g.Rules) != 1 || g.Rules[0].Intent != "a quick question" || g.Classifier != "a/only-a" {
+		t.Fatalf("%+v", g)
+	}
+	// a second needs no classifier again
+	if err := ruleCmd([]string{"add", "opus", "use=claude-opus-5-5", "intent=planning", "agents=codex"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := ruleCmd([]string{"classifier", "opus", "b/gpt-5.5"}); err != nil || group().Classifier != "b/gpt-5.5" {
+		t.Fatalf("%v %+v", err, group())
+	}
+	if err := ruleCmd([]string{"opus"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := ruleLine(group().Rules[1]); !strings.Contains(got, `agent codex · intent "planning"`) {
+		t.Fatalf("%q", got)
+	}
+	// with the intents gone, so is the classifier
+	for range 2 {
+		if err := ruleCmd([]string{"rm", "opus", "1"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if g := group(); len(g.Rules) != 0 || g.Classifier != "" {
+		t.Fatalf("%+v", g)
+	}
+	if gs := storedGroups(t); gs[0]["classifier"] != nil {
+		t.Fatalf("stored: %v", gs)
+	}
+}
+
 func TestGroupMemberNames(t *testing.T) {
 	g := provider.Group{ID: "x", Members: []string{"a/m", "b/vendor/m", "a/Big", "c/deepseek/deepseek-v4-pro"}}
 	for in, want := range map[string]string{"a/m": "a/m", "magpie/a/m": "a/m", "A/BIG": "a/Big", "big": "a/Big", "vendor/m": "b/vendor/m",

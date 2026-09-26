@@ -3,8 +3,11 @@ package provider
 // A group's rules: which member a request goes to first, by what can be
 // seen in the request itself — how long it is, whether it carries an
 // image, how hard the agent asked the model to think, which agent sent it.
-// Nothing is guessed from what the request says: the same request is
-// always routed the same way, and the trace tells which rule did it.
+// Those are never guessed: the same request is always routed the same way,
+// and the trace tells which rule did it. The one exception is a rule with
+// an intent (what the user asks for, in the user's words): as a turn
+// begins, a model the group names (its Classifier) is asked which of the
+// intents the user's message is, once, and the trace tells what it said.
 //
 // A rule decides when a user's turn begins; the agent's requests within
 // that turn — tool results sent back — stay with what it decided, so a
@@ -36,7 +39,14 @@ type Rule struct {
 	Effort string `json:"effort,omitempty"`
 	// Agents: the request is from one of these agents (usage.AgentOf ids).
 	Agents []string `json:"agents,omitempty"`
+	// Intent: the user's message at the turn's start is of this kind, as
+	// the group's Classifier judges it — "writing or fixing tests",
+	// "a quick question". When the classifier can't say, it doesn't match.
+	Intent string `json:"intent,omitempty"`
 }
+
+// MaxIntent is how long an intent may be, in characters.
+const MaxIntent = 200
 
 // Conditions says what a rule matches, for a list or a trace.
 func (r Rule) Conditions() []string {
@@ -57,6 +67,9 @@ func (r Rule) Conditions() []string {
 	if len(r.Agents) > 0 {
 		out = append(out, "agent "+strings.Join(r.Agents, "|"))
 	}
+	if r.Intent != "" {
+		out = append(out, fmt.Sprintf("intent %q", r.Intent))
+	}
 	return out
 }
 
@@ -66,6 +79,7 @@ func cleanRules(rules []Rule, members []string) ([]Rule, error) {
 		r.Use = strings.TrimSpace(r.Use)
 		r.Effort = strings.ToLower(strings.TrimSpace(r.Effort))
 		r.Agents = cleanList(r.Agents)
+		r.Intent = strings.Join(strings.Fields(r.Intent), " ")
 		for j := range r.Agents {
 			r.Agents[j] = strings.ToLower(r.Agents[j])
 		}
@@ -79,8 +93,10 @@ func cleanRules(rules []Rule, members []string) ([]Rule, error) {
 			return nil, fmt.Errorf("rule %d: tokens can't be negative", n)
 		case r.Effort != "" && r.Effort != "on" && !slices.Contains(Efforts, r.Effort):
 			return nil, fmt.Errorf("rule %d: effort is on or one of %s, not %q", n, strings.Join(Efforts, ", "), r.Effort)
+		case len([]rune(r.Intent)) > MaxIntent:
+			return nil, fmt.Errorf("rule %d: an intent is at most %d characters", n, MaxIntent)
 		case len(r.Conditions()) == 0:
-			return nil, fmt.Errorf("rule %d: it needs a condition (tokens, images, effort or agents)", n)
+			return nil, fmt.Errorf("rule %d: it needs a condition (tokens, images, effort, agents or intent)", n)
 		}
 		if len(r.Agents) == 0 {
 			r.Agents = nil
@@ -97,10 +113,22 @@ type RuleRequest struct {
 	Thinking bool   // the agent asked for reasoning
 	Effort   string // at what level, when it said
 	Agent    string
+	// Intent is the one of the rules' intents the classifier said the
+	// user's message is; "" when none, or it wasn't asked.
+	Intent string
 }
 
 // Matches reports whether the request is one the rule is for.
 func (r Rule) Matches(q RuleRequest) bool {
+	if r.Intent != "" && !strings.EqualFold(r.Intent, q.Intent) {
+		return false
+	}
+	return r.MatchesBesidesIntent(q)
+}
+
+// MatchesBesidesIntent is Matches but for the rule's intent: whether the
+// classifier's answer is all it waits on.
+func (r Rule) MatchesBesidesIntent(q RuleRequest) bool {
 	if r.Tokens > 0 && q.Tokens < r.Tokens {
 		return false
 	}
@@ -129,6 +157,27 @@ func MatchRule(rules []Rule, q RuleRequest) int {
 	return slices.IndexFunc(rules, func(r Rule) bool { return r.Matches(q) })
 }
 
+// Intents are the intents the classifier is to choose among for q: those
+// of the rules that match it but for their intent, up to the first that
+// matches outright (a rule after it could never be the first to match).
+// None when no rule before that one has an intent — the classifier then
+// isn't asked. Each is given once, as the first rule has it.
+func Intents(rules []Rule, q RuleRequest) []string {
+	var out []string
+	for _, r := range rules {
+		if !r.MatchesBesidesIntent(q) {
+			continue
+		}
+		if r.Intent == "" {
+			break
+		}
+		if !slices.ContainsFunc(out, func(s string) bool { return strings.EqualFold(s, r.Intent) }) {
+			out = append(out, r.Intent)
+		}
+	}
+	return out
+}
+
 // ruledEntry tells agents what a group with rules can do: images, when a
 // rule of images alone sends every request with one to a member that takes
 // them (and any rule before it, which may take such a request first, sends
@@ -155,11 +204,11 @@ func ruledEntry(e *Entry, g Group, ms []Member, entries []Entry) {
 		if !ok {
 			continue
 		}
-		if r.Images && r.Tokens == 0 && r.Effort == "" && len(r.Agents) == 0 && sees(x) && !e.Images &&
+		if r.Images && r.Tokens == 0 && r.Effort == "" && len(r.Agents) == 0 && r.Intent == "" && sees(x) && !e.Images &&
 			!slices.ContainsFunc(g.Rules[:i], func(b Rule) bool { y, ok := of(b.Use); return !ok || !sees(y) }) {
 			e.Images, e.ImageInput = true, x.ImageInput
 		}
-		if r.Tokens == 0 || r.Images || r.Effort != "" || len(r.Agents) > 0 || x.Context <= e.Context {
+		if r.Tokens == 0 || r.Images || r.Effort != "" || len(r.Agents) > 0 || r.Intent != "" || x.Context <= e.Context {
 			continue // only a rule of length alone takes every long request
 		}
 		// every request up to the rule's length must fit whoever may get

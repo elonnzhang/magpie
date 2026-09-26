@@ -388,7 +388,7 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request, from provider.Pro
 	if isGroup && len(g.Rules) > 0 {
 		if req, err := parse(from, body); err == nil {
 			ruleAt, words = ruleKey(g, r.Header, req), firstWords(req)
-			hit = ruleFor(ruleAt, g, ms, req, call.Agent)
+			hit = ruleFor(ruleAt, g, ms, req, call.Agent, s.askClassifier)
 			ruled, ruleOK = ruleMember(hit, ms)
 		}
 	}
