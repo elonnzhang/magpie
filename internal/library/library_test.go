@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"encoding/json"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -704,5 +705,36 @@ func TestClaudeDesktopMCP(t *testing.T) {
 		if s.Name == "web" && s.Problems["claude-desktop"] != "no-remote" {
 			t.Errorf("web problems: %v", s.Problems)
 		}
+	}
+}
+
+// The servers Codex's app writes into its config itself are told apart:
+// its own, not ones to bring in.
+func TestFoundServersAppOwned(t *testing.T) {
+	h := sandbox(t)
+	write(t, filepath.Join(h, ".codex/config.toml"), `[mcp_servers.node_repl]
+command = 'C:\Users\u\AppData\Local\OpenAI\Codex\runtimes\cua_node\1.0\node_repl.exe'
+
+[mcp_servers.cua_repl]
+command = 'C:\Program Files\WindowsApps\OpenAI.Codex_1.0_x64\ChatGPT.exe'
+enabled = false
+
+[mcp_servers.computer-use]
+command = "./Codex Computer Use.app/Contents/SharedSupport/SkyComputerUseClient.app/Contents/MacOS/SkyComputerUseClient"
+
+[mcp_servers.gh]
+command = "gh-mcp"
+`)
+	v, err := Read(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	own := map[string]bool{}
+	for _, f := range v.FoundServers {
+		own[f.Server.Name] = f.Own
+	}
+	want := map[string]bool{"node_repl": true, "cua_repl": true, "computer-use": true, "gh": false}
+	if !maps.Equal(own, want) {
+		t.Errorf("own: %v, want %v", own, want)
 	}
 }

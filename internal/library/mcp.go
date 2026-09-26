@@ -599,6 +599,26 @@ type Found struct {
 	Server *Server  `json:"server"`
 	Others []string `json:"others,omitempty"`
 	Icon   string   `json:"icon,omitempty"`
+	// Own: the agent's app puts it there itself, each time it starts
+	// (Codex's node_repl and cua_repl): it isn't one to bring in, and
+	// taking it out doesn't last.
+	Own bool `json:"own,omitempty"`
+}
+
+// appOwned is whether a server runs from inside an app's own install — a
+// Mac app bundle, a Microsoft Store app, the Codex app's runtimes — as the
+// servers an agent's app writes into its config itself do.
+func appOwned(s *Server) bool {
+	if s.Remote() {
+		return false
+	}
+	cmd := strings.ToLower(strings.ReplaceAll(s.Command, `\`, "/"))
+	for _, in := range []string{".app/contents/", "/windowsapps/", "/cua_node/", "/openai/codex/runtimes/"} {
+		if strings.Contains(cmd, in) {
+			return true
+		}
+	}
+	return false
 }
 
 func foundServers(l *Library) []Found {
@@ -621,7 +641,7 @@ func foundServers(l *Library) []Found {
 			switch {
 			case f == nil:
 				s.Agents = []string{t.Agent.ID}
-				byName[name] = &Found{Server: s}
+				byName[name] = &Found{Server: s, Own: appOwned(s)}
 				names = append(names, name)
 			case f.Server.same(s):
 				f.Server.Agents = append(f.Server.Agents, t.Agent.ID)

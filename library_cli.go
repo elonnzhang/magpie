@@ -187,6 +187,20 @@ func libraryStatus() error {
 			fmt.Println("   ", amber.Render("!"), a, muted.Render(e))
 		}
 	}
+	var found, own []string
+	for _, f := range v.FoundServers {
+		if f.Own {
+			own = append(own, f.Server.Name+muted.Render(" ("+strings.Join(f.Server.Agents, ", ")+"'s own)"))
+		} else {
+			found = append(found, f.Server.Name+muted.Render(" ("+strings.Join(f.Server.Agents, ", ")+")"))
+		}
+	}
+	if len(found) > 0 {
+		fmt.Println(" ", muted.Render("in your agents, not in the library:"), strings.Join(found, ", "))
+	}
+	if len(own) > 0 {
+		fmt.Println(" ", muted.Render("added by the agent itself, left as they are:"), strings.Join(own, ", "))
+	}
 	fmt.Println(bold.Render("Skills"))
 	if len(v.Skills) == 0 {
 		fmt.Println(" ", muted.Render("none yet"))

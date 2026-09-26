@@ -442,13 +442,20 @@
       after.append(button(t("＋ Add server"), "", () => editServer(null)));
       body.append(after);
     }
-    if (lib.foundServers.length) {
+    const found = lib.foundServers.filter((f) => !f.own), own = lib.foundServers.filter((f) => f.own);
+    if (found.length) {
       const rh = el("div", "row-head");
       rh.append(el("span", "label", t("In your agents")), el("span", "grow"), el("span", "note", t("not in the library — bring one in to manage it here")));
       body.append(rh);
       const list = el("div", "list lib-list");
-      for (const f of lib.foundServers) list.append(foundServerRow(f));
+      for (const f of found) list.append(foundServerRow(f));
       body.append(list);
+    }
+    if (own.length) {
+      const by = [...new Set(own.flatMap((f) => f.server.agents))].map(nameOf).join(", ");
+      const p = el("p", "lib-aside", t("{agents} adds these itself, each time it starts, and magpie leaves them as they are: {names}", { agents: by, names: own.map((f) => f.server.name).join(", ") }));
+      p.title = own.map((f) => f.server.name + ": " + serverLine(f.server)).join("\n");
+      body.append(p);
     }
     const skip = shownAgents().filter((a) => !a.mcp);
     if (skip.length) body.append(el("p", "lib-aside", t("{agents} has no MCP servers magpie can write.", { agents: skip.map((a) => a.name).join(", ") })));
