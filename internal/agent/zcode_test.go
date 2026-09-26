@@ -132,3 +132,62 @@ func TestZCode(t *testing.T) {
 		t.Fatal("sync added the provider")
 	}
 }
+
+// What the user did in ZCode stays: magpie turned off stays off, in both
+// files; its rule stays where it is among theirs; and a rule they removed
+// isn't put back when magpie syncs.
+func TestZCodeKeepsUserChoices(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	t.Setenv("XDG_CACHE_HOME", filepath.Join(home, ".cache"))
+	if err := provider.Save(provider.Provider{ID: "deepseek", Name: "DeepSeek", Chat: "https://api.deepseek.com/v1", Key: "k", Models: []string{"pro"}}); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(home, ".zcode", "v2", "config.json")
+	rules := filepath.Join(home, ".zcode", "v2", "provider_config.json")
+	os.MkdirAll(filepath.Dir(path), 0o755)
+	os.WriteFile(path, []byte(`{"provider":{"magpie":{"name":"magpie","kind":"anthropic","enabled":false}}}`), 0o644)
+	os.WriteFile(rules, []byte(`{"schemaVersion":1,"config":{"providerConfigRules":{"providerRules":[
+	  {"providerId":"a","config":{}},{"providerId":"magpie","enabled":false,"config":{}},{"providerId":"b","config":{}}]}}}`), 0o600)
+	a := zcode(home)
+	if err := a.Sync(); err != nil {
+		t.Fatal(err)
+	}
+	ids := func() (out []string, on []any) {
+		var d struct {
+			Config struct {
+				ProviderConfigRules struct {
+					ProviderRules []map[string]any `json:"providerRules"`
+				} `json:"providerConfigRules"`
+			} `json:"config"`
+		}
+		b, _ := os.ReadFile(rules)
+		json.Unmarshal(b, &d)
+		for _, r := range d.Config.ProviderConfigRules.ProviderRules {
+			out = append(out, r["providerId"].(string))
+			on = append(on, r["enabled"])
+		}
+		return out, on
+	}
+	if got, on := ids(); len(got) != 3 || got[1] != "magpie" || on[1] != false {
+		t.Fatalf("rules %v %v", got, on)
+	}
+	var c struct {
+		Provider map[string]map[string]any `json:"provider"`
+	}
+	b, _ := os.ReadFile(path)
+	json.Unmarshal(b, &c)
+	if c.Provider["magpie"]["enabled"] != false || c.Provider["magpie"]["models"] == nil {
+		t.Fatalf("config.json: %s", b)
+	}
+
+	// removed in ZCode: not put back
+	os.WriteFile(rules, []byte(`{"schemaVersion":1,"config":{"providerConfigRules":{"providerRules":[{"providerId":"a","config":{}}]}}}`), 0o600)
+	if err := a.Sync(); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := ids(); len(got) != 1 {
+		t.Fatalf("magpie put back: %v", got)
+	}
+}

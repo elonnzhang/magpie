@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 
 	"github.com/yetone/magpie/internal/edit"
 	"github.com/yetone/magpie/internal/gateway"
@@ -64,10 +65,14 @@ func zcode(home string) *Agent {
 			if !wired() {
 				return nil
 			}
-			if err := zcodeRules(rules, true); err != nil {
-				return err
+			// a ZCode that keeps its providers as rules, with magpie's taken
+			// out there, had it removed in ZCode: it isn't put back
+			if _, err := os.Stat(rules); err != nil || zcodeRuled(rules) {
+				if err := zcodeRules(rules, true); err != nil {
+					return err
+				}
 			}
-			return edit.SetJSON(path, edit.KV{Path: key, Value: zcodeProviderJSON()})
+			return edit.SetJSON(path, edit.KV{Path: key, Value: zcodeProviderJSON(path)})
 		},
 		Fields: []Field{{
 			Key: "provider", Label: "provider",
@@ -84,7 +89,7 @@ func zcode(home string) *Agent {
 				if v == "" {
 					return edit.DelJSON(path, key)
 				}
-				return edit.SetJSON(path, edit.KV{Path: key, Value: zcodeProviderJSON()})
+				return edit.SetJSON(path, edit.KV{Path: key, Value: zcodeProviderJSON(path)})
 			},
 			Options: func(map[string]string) []Option {
 				return []Option{{Value: magpieID, Label: "magpie", Icon: "magpie", Note: "every magpie model in ZCode's picker"}}
@@ -93,7 +98,9 @@ func zcode(home string) *Agent {
 	}
 }
 
-func zcodeProviderJSON() any {
+// zcodeProviderJSON is magpie's provider in config.json at path; one
+// turned off in ZCode stays off.
+func zcodeProviderJSON(path string) any {
 	ms := map[string]any{}
 	for _, m := range magpieModels("zcode") {
 		window := m.Context
@@ -107,7 +114,11 @@ func zcodeProviderJSON() any {
 		ms[m.ID] = map[string]any{"name": m.Name, "limit": map[string]any{"context": window},
 			"modalities": map[string]any{"input": in, "output": []string{"text"}}}
 	}
-	return map[string]any{"name": "magpie", "kind": "anthropic", "enabled": true, "source": "custom",
+	on := true
+	if v, ok := edit.GetJSON(path, "provider."+magpieID+".enabled"); ok && v == "false" {
+		on = false
+	}
+	return map[string]any{"name": "magpie", "kind": "anthropic", "enabled": on, "source": "custom",
 		"options": map[string]any{"apiKey": gateway.Token, "baseURL": gateway.URL()}, "models": ms}
 }
 
@@ -161,9 +172,11 @@ func zcodeRules(path string, on bool) error {
 
 	var old map[string]any
 	var providers []any
+	at := -1 // where magpie's was, which it keeps
 	for _, r := range zcodeList(pcr, "providerRules") {
 		if mine(r) {
 			old, _ = r.(map[string]any)
+			at = len(providers)
 			continue
 		}
 		providers = append(providers, r)
@@ -213,7 +226,11 @@ func zcodeRules(path string, on bool) error {
 		if e, ok := old["enabled"].(bool); ok {
 			rule["enabled"] = e
 		}
-		providers = append(providers, rule)
+		if at >= 0 {
+			providers = slices.Insert(providers, at, any(rule))
+		} else {
+			providers = append(providers, rule)
+		}
 	}
 	pcr["providerRules"] = zcodeNonNil(providers)
 	mcr["providerModelRules"] = zcodeNonNil(models)

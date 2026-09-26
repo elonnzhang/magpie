@@ -755,6 +755,18 @@ func (s *Server) passthrough(w http.ResponseWriter, r *http.Request, p provider.
 	if err != nil {
 		return writeError(w, proto, 502, p.Name+": "+err.Error()), err.Error(), true
 	}
+	if proto == provider.Anthropic && res.StatusCode == http.StatusBadRequest {
+		// a model that always thinks refuses thinking turned off: asked
+		// again with it left to the model
+		b, _ := io.ReadAll(io.LimitReader(res.Body, 1<<20))
+		res.Body.Close()
+		res.Body = io.NopCloser(bytes.NewReader(b))
+		if nb, ok := withoutThinkingOff(body); ok && alwaysThinks.Match(b) {
+			if res, err = s.forward(r.Context(), p, proto, pathOf(proto), p.Prepare(nb), r.Header); err != nil {
+				return writeError(w, proto, 502, p.Name+": "+err.Error()), err.Error(), true
+			}
+		}
+	}
 	defer res.Body.Close()
 	if res.StatusCode >= 400 {
 		b, _ := io.ReadAll(io.LimitReader(res.Body, 1<<20))

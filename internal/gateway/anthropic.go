@@ -154,6 +154,25 @@ func thinkingOffUnlessAsked(body []byte) []byte {
 	return withFields(body, map[string]any{"thinking": map[string]any{"type": "disabled"}})
 }
 
+// alwaysThinks is a vendor refusing to turn a model's thinking off: Z.ai's
+// GLM-5.3 answers 1210, "…always engages in thinking…".
+var alwaysThinks = regexp.MustCompile(`(?i)always engages in thinking|thinking (?:can ?not|can't) be (?:disabled|turned off)`)
+
+// withoutThinkingOff is body with its thinking left to the model, when it
+// says thinking is off; false when it doesn't.
+func withoutThinkingOff(body []byte) ([]byte, bool) {
+	var q map[string]json.RawMessage
+	var th struct {
+		Type string `json:"type"`
+	}
+	if json.Unmarshal(body, &q) != nil || json.Unmarshal(q["thinking"], &th) != nil || th.Type != "disabled" {
+		return nil, false
+	}
+	delete(q, "thinking")
+	out, err := json.Marshal(q)
+	return out, err == nil
+}
+
 // buildAnthropic renders a request for an Anthropic-style upstream.
 // claudeVersion finds the family's version in a Claude model id however a
 // relay spells it: claude-opus-4-6, claude-opus-5, anthropic.claude-sonnet-4.6-v1.
