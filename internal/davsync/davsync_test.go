@@ -115,6 +115,11 @@ func TestSync(t *testing.T) {
 	provider.Save(provider.Provider{ID: "deepseek", Name: "DeepSeek", Chat: "https://api.deepseek.com/v1", Key: "k1"})
 	settings.Save(settings.Settings{Theme: "dark", Proxy: "http://127.0.0.1:7890", Window: []int{900, 700}})
 	profile.Save("work", profile.Profile{Fields: map[string]string{"claude.model": "x"}})
+	same := cfg
+	same.Passphrase = cfg.Password
+	if err := Configure(same); err == nil || !strings.Contains(err.Error(), "of its own") {
+		t.Fatalf("a passphrase that is the password: %v", err)
+	}
 	if err := Configure(cfg); err != nil {
 		t.Fatal(err)
 	}

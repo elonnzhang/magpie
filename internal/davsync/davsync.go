@@ -105,6 +105,10 @@ func Configure(c Config) error {
 	if c.Passphrase == "" {
 		return errors.New("sync needs a passphrase: the file is sealed with it before it leaves this computer")
 	}
+	if c.Password != "" && c.Passphrase == c.Password {
+		// the server is sent the password: with it, it could open the file
+		return errors.New("the passphrase is the server's password: the server is sent the password, and could open the file with it. Pick a passphrase of its own")
+	}
 	b, err := json.MarshalIndent(c, "", "  ")
 	if err != nil {
 		return err
