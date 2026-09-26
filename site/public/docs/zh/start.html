@@ -42,6 +42,7 @@
   <div class="links">
     <a href="/">首页</a>
     <a href="/docs/zh/start">快速上手</a>
+    <a href="/docs/zh/intent">意图路由</a>
     <a href="/docs/zh/import">Add to magpie</a>
     <a href="https://github.com/yetone/magpie-releases/releases">版本发布</a>
   </div>
@@ -172,7 +173,7 @@
       <li>规则只在一轮开始时决定；Agent 回传工具结果的过程中一直留在那个模型上，不会半途换掉而丢掉厂商的缓存。唯一例外：这一轮涨到超过所在模型的上下文，会换到装得下的成员。</li>
       <li>token 数取请求大小的估算与厂商对这个会话上一个请求的计数中较大的一个。请留出余量：给 200k 的模型设 150k，而不是 199k。</li>
       <li>子 Agent 是单独的会话，规则可以把它发到别处，主 Agent 仍留在原处。</li>
-      <li>意图是用几个词描述用户想做什么，例如“写或修测试”“一个简单问题”。每一轮开始时，magpie 会问一次组里指定的意图判断模型：用户这条消息属于哪个可能命中的意图。这个模型可以是 magpie 里的任意模型，建议选小而快、不带推理的。发过去的只有这条消息，不包括整段对话。它出错、超时（8 秒）或给不出答案时，意图条件都不命中，这一轮按其他规则走。如果前面有不带意图的规则已经能决定，就不会去问；同一条消息也不会问两次。它的调用在用量里显示为 magpie 自己的调用。</li>
+      <li>意图是用几个词描述用户想做什么，例如“写或修测试”“一个简单问题”。每一轮开始时，magpie 会问一次组里指定的意图判断模型：用户这条消息属于哪个可能命中的意图。这个模型可以是 magpie 里的任意模型，建议选小而快、不带推理的。发过去的只有这条消息，不包括整段对话。它出错、超时（8 秒）或给不出答案时，意图条件都不命中，这一轮按其他规则走。如果前面有不带意图的规则已经能决定，就不会去问；同一条消息也不会问两次。它的调用在用量里显示为 magpie 自己的调用。它具体被问了什么、回答怎么用、失败时怎么办，详见<a href="/docs/zh/intent">意图路由</a>。</li>
       <li>路由标签页会显示每一轮是被哪条规则送到哪里的，以及意图判断模型给出的答案。</li>
     </ul>
     <p><span class="ui">路由</span> 标签页实时显示网关的决定：每个请求由谁回答、为什么。在终端里也能管理路由组：</p>
@@ -237,6 +238,7 @@ magpie claude group/opus-anywhere    <span class="c"># 使用它</span></pre>
   <span>© 2026 magpie · MIT</span>
   <div class="links">
     <a href="/">首页</a>
+    <a href="/docs/zh/intent">意图路由</a>
     <a href="/docs/zh/import">Add to magpie</a>
     <a href="https://github.com/yetone/magpie">GitHub</a>
     <a href="https://discord.gg/vGSnD3ZKQF">Discord</a>
