@@ -138,11 +138,33 @@ func (s *Server) codexUpstream(w http.ResponseWriter, r *http.Request, rest stri
 	if r.URL.RawQuery != "" {
 		u += "?" + r.URL.RawQuery
 	}
+	// a turn goes in the Routing view's live trace as the others do, to
+	// the one it can go to: Codex's own sign-in, or its key
+	var tr *Route
+	end := func(status int, msg string, tokens int) {}
+	if rest == "/responses" {
+		who := "Codex's own sign-in"
+		if base == codexAPIBase {
+			who = "Codex's API key"
+		}
+		model := modelOf(body)
+		seat := Weighed{ID: "codex", Provider: "openai", Name: "OpenAI", Icon: "openai", Who: who, Kind: "account", Agent: "codex", Model: model}
+		tr = s.trace.begin(Route{Time: start, Agent: usage.AgentOf(r.Header.Get("User-Agent")), Model: model, Provider: "openai",
+			Order: []Weighed{seat}, Tries: []Try{{ID: seat.ID, Model: model, Start: start}}})
+		end = func(status int, msg string, tokens int) {
+			ms := time.Since(start).Milliseconds()
+			s.trace.update(tr, func(t *Route) {
+				t.Tries[0].Done, t.Tries[0].Status, t.Tries[0].Millis, t.Tries[0].Error = true, status, ms, msg
+				t.Done, t.Status, t.Error, t.Millis, t.Tokens = true, status, msg, ms, tokens
+			})
+		}
+	}
 	var res *http.Response
 	for tries := 0; ; tries++ {
 		req, err := http.NewRequestWithContext(r.Context(), r.Method, u, bytes.NewReader(body))
 		if err != nil {
 			writeError(w, provider.Responses, 502, err.Error())
+			end(502, err.Error(), 0)
 			return
 		}
 		copyHeaders(req.Header, r.Header)
@@ -150,6 +172,7 @@ func (s *Server) codexUpstream(w http.ResponseWriter, r *http.Request, rest stri
 		req.Header.Del("Accept-Encoding")
 		if res, err = s.client.Do(req); err != nil {
 			writeError(w, provider.Responses, 502, "OpenAI: "+err.Error())
+			end(502, "OpenAI: "+err.Error(), 0)
 			return
 		}
 		if rest != "/responses" || tries >= 3 || (res.StatusCode != 400 && res.StatusCode != 404) {
@@ -178,6 +201,7 @@ func (s *Server) codexUpstream(w http.ResponseWriter, r *http.Request, rest stri
 		s.record(Call{Time: start, From: provider.Responses, To: provider.Responses, Model: modelOf(body),
 			Provider: "openai", Agent: usage.AgentOf(r.Header.Get("User-Agent")), Status: res.StatusCode,
 			Millis: time.Since(start).Milliseconds(), Error: res.Status})
+		end(res.StatusCode, res.Status, 0)
 		return
 	}
 	for k, vs := range res.Header {
@@ -226,6 +250,7 @@ func (s *Server) codexUpstream(w http.ResponseWriter, r *http.Request, rest stri
 	if res.StatusCode >= 400 {
 		call.Error = res.Status
 	}
+	end(call.Status, call.Error, uu.Input+uu.Output+uu.CacheRead+uu.CacheWrite)
 	s.record(call)
 	usage.Append(usage.Record{Time: start, Agent: call.Agent, Provider: call.Provider, Model: call.Model,
 		Input: uu.Input, Output: uu.Output, CacheRead: uu.CacheRead, CacheWrite: uu.CacheWrite,

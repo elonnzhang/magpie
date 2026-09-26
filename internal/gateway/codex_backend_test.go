@@ -78,6 +78,33 @@ func TestCodexOwnModelPassesThrough(t *testing.T) {
 	}
 }
 
+// A turn on one of Codex's own models shows in the Routing view's live
+// trace, as those on magpie's do.
+func TestCodexOwnModelTraced(t *testing.T) {
+	setup(t, provider.Chat, &fake{t: t})
+	chatgpt(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		io.WriteString(w, sse(`data: {"type":"response.completed","response":{"id":"r1","usage":{"input_tokens":9,"output_tokens":2}}}`))
+	})
+	s := New()
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest("POST", CodexPath+"/responses", strings.NewReader(`{"model":"gpt-5.5","stream":true,"input":"hi"}`))
+	req.Header.Set("Authorization", "Bearer chatgpt-token")
+	s.Handler().ServeHTTP(rec, req)
+	st := s.Trace(t.Context(), 0, 0)
+	if len(st.Routes) != 1 {
+		t.Fatalf("routes %+v", st.Routes)
+	}
+	r := st.Routes[0]
+	if !r.Done || r.Status != 200 || r.Model != "gpt-5.5" || r.Tokens != 11 ||
+		len(r.Order) != 1 || r.Order[0].Who != "Codex's own sign-in" || len(r.Tries) != 1 || !r.Tries[0].Done || r.Tries[0].Status != 200 {
+		t.Errorf("route %+v", r)
+	}
+	if st.Totals.Requests != 1 {
+		t.Errorf("totals %+v", st.Totals)
+	}
+}
+
 func TestCodexOwnModelOmitsNonemptyReasoning(t *testing.T) {
 	setup(t, provider.Chat, &fake{t: t})
 	var got []byte
