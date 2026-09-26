@@ -786,7 +786,9 @@ func (r *subscriptionRun) finish() {
 	if ch != nil {
 		close(ch)
 	}
-	r.bridge.removeRun(r)
+	if r.bridge != nil { // a run made in a test may have none
+		r.bridge.removeRun(r)
+	}
 }
 
 func (r *subscriptionRun) abort() {
