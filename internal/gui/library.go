@@ -159,7 +159,10 @@ func libraryRoutes(mux *http.ServeMux, w Windows) {
 			}
 			p = up
 		}
-		w.OpenFolder(p)
+		if err := w.OpenFolder(p); err != nil {
+			fail(rw, err)
+			return
+		}
 		rw.WriteHeader(http.StatusNoContent)
 	})
 	// every change answers with the page as it is after it, and what it did

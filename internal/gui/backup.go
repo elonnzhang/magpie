@@ -51,7 +51,7 @@ func backupRoutes(mux *http.ServeMux, w Windows) {
 			return
 		}
 		os.Chmod(name, 0o600)
-		w.OpenFolder(dir)
+		_ = w.OpenFolder(dir) // saved either way; the path is in the answer
 		writeJSON(rw, map[string]any{"path": tilde(name), "providers": len(b.Providers), "profiles": len(b.Profiles), "agents": len(b.Agents)})
 	})
 	mux.HandleFunc("POST /api/backup/import", func(rw http.ResponseWriter, r *http.Request) {
@@ -106,7 +106,7 @@ func backupRoutes(mux *http.ServeMux, w Windows) {
 		case "dismiss":
 			davsync.Dismiss()
 		case "reveal":
-			w.OpenFolder(filepath.Join(settings.Dir(), "sync"))
+			err = w.OpenFolder(filepath.Join(settings.Dir(), "sync"))
 		default:
 			http.NotFound(rw, r)
 			return

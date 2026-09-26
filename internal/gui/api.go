@@ -38,7 +38,7 @@ type Windows interface {
 	// OpenURL hands a link to the system browser.
 	OpenURL(url string)
 	// OpenFolder shows a folder in the system file manager.
-	OpenFolder(path string)
+	OpenFolder(path string) error
 	// Copy puts text on the system clipboard, which the page's own
 	// navigator.clipboard can't always reach from inside the app.
 	Copy(text string) bool
@@ -304,7 +304,10 @@ func Handler(w Windows, gw *gateway.Server) http.Handler {
 	})
 	// the config folder only: the page names no path, so it can't open others
 	mux.HandleFunc("POST /api/settings/reveal", func(rw http.ResponseWriter, r *http.Request) {
-		w.OpenFolder(settings.Dir())
+		if err := w.OpenFolder(settings.Dir()); err != nil {
+			fail(rw, err)
+			return
+		}
 		rw.WriteHeader(http.StatusNoContent)
 	})
 	mux.HandleFunc("POST /api/window/{action}", func(rw http.ResponseWriter, r *http.Request) {

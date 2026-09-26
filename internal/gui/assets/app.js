@@ -3705,7 +3705,7 @@ function renderSettings() {
   };
   renderUpdate(row(t("Version"), "", s.version));
   const open = el("button", "text", t("Open"));
-  open.onclick = () => api("settings/reveal", {}).catch(() => {});
+  open.onclick = () => api("settings/reveal", {}).catch((e) => status(e.message, "err"));
   row(t("Config folder"), t("providers, profiles and these settings"), s.dir, copyBtn(s.dir, t("Path")), open);
   row(t("Gateway URL"), t("the address every agent is pointed at"), s.gateway, copyBtn(s.gateway, t("Gateway URL")));
   const join = el("button", "discord");
@@ -3766,7 +3766,7 @@ async function renderSync(v) {
     for (const l of lines) who.append(el("div", "sub", l));
     who.append(el("div", "sub", t("The copies replaced are kept in the sync folder.")));
     const val = el("div", "val");
-    val.append(btn(t("Show"), () => api("davsync/reveal", {})), btn(t("OK"), async () => renderSync(await api("davsync/dismiss", {}))));
+    val.append(btn(t("Show"), () => api("davsync/reveal", {}).catch((e) => status(e.message, "err"))), btn(t("OK"), async () => renderSync(await api("davsync/dismiss", {}))));
     r.append(who, val);
     box.append(r);
   }

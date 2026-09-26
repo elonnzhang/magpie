@@ -80,10 +80,10 @@ func (h *host) Import(link string) {
 		h.main.Focus()
 	})
 }
-func (h *host) Quit()                  { h.app.Quit() }
-func (h *host) OpenURL(url string)     { _ = h.app.Browser.OpenURL(url) }
-func (h *host) OpenFolder(path string) { _ = h.app.Env.OpenFileManager(path, false) }
-func (h *host) Copy(text string) bool  { return h.app.Clipboard.SetText(text) }
+func (h *host) Quit()                        { h.app.Quit() }
+func (h *host) OpenURL(url string)           { _ = h.app.Browser.OpenURL(url) }
+func (h *host) OpenFolder(path string) error { return openFolder(h.app, path) }
+func (h *host) Copy(text string) bool        { return h.app.Clipboard.SetText(text) }
 
 const panelWidth, panelMin, panelMax = 440, 220, 720
 
