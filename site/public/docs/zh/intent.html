@@ -131,6 +131,14 @@ magpie group rule rm coder 2</pre>
       <li>判断模型回答 <code>0</code>（都不是）：没有规则命中，按分组的路由方式走（这里是「按顺序」，deepseek-v4-pro 排第一）。</li>
     </ul>
 
+    <h3>在界面里看</h3>
+    <p>一个真实请求：分组里有两条带意图的规则（“a quick question or explanation, with no code to write or change”和“writing or fixing tests”），从 Claude Code 发出一条消息，要它给 cache.go 里的 LRU 缓存加单元测试，覆盖淘汰和并发读写。<span class="ui">路由</span>页实时显示它的去向。</p>
+    <figure class="figure">
+      <img class="for-light" src="/img/intent-routing-hit-zh-light.png" width="2080" height="1116" loading="lazy" alt="路由页：Claude Code 经 magpie 到 aihubmix/glm-5.3 并由它回答；记录里写着命中规则 2（意图是“writing or fixing tests”），deepseek-flash 用时 964 毫秒作出判断">
+      <img class="for-dark" src="/img/intent-routing-hit-zh-dark.png" width="2080" height="1116" loading="lazy" alt="路由页：Claude Code 经 magpie 到 aihubmix/glm-5.3 并由它回答；记录里写着命中规则 2（意图是“writing or fixing tests”），deepseek-flash 用时 964 毫秒作出判断">
+      <figcaption>判断模型 deepseek-flash 用 964 毫秒判断为“writing or fixing tests”，于是规则 2 把 glm-5.3 排到分组原本的第一个模型前面，5.6 秒完成回答。</figcaption>
+    </figure>
+
     <h2 id="prompt"><a class="anchor" href="#prompt">意图判断模型看到什么</a></h2>
     <p>下面就是完整的请求，此外不发送任何内容。系统消息是固定的；用户消息按第 2 步收集的顺序（也就是规则顺序）列出你的意图：</p>
     <div class="code">

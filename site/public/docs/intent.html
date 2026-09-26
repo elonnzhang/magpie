@@ -131,6 +131,14 @@ magpie group rule rm coder 2</pre>
       <li>The classifier says <code>0</code> (none): no rule matches, and the turn goes by the group’s routing (here <em>In order</em>, so deepseek-v4-pro first).</li>
     </ul>
 
+    <h3>In the app</h3>
+    <p>A real request through a group with two intent rules (“a quick question or explanation, with no code to write or change” and “writing or fixing tests”), sent from Claude Code: “Add unit tests for the LRU cache in cache.go, covering eviction and concurrent reads and writes”. The <span class="ui">Routing</span> tab shows it as it happens.</p>
+    <figure class="figure">
+      <img class="for-light" src="/img/intent-routing-hit-light.png" width="2080" height="1116" loading="lazy" alt="The Routing tab: Claude Code to magpie to aihubmix/glm-5.3, which answered; the trace says rule 2 matched “writing or fixing tests”, as deepseek-flash said in 964 ms">
+      <img class="for-dark" src="/img/intent-routing-hit-dark.png" width="2080" height="1116" loading="lazy" alt="The Routing tab: Claude Code to magpie to aihubmix/glm-5.3, which answered; the trace says rule 2 matched “writing or fixing tests”, as deepseek-flash said in 964 ms">
+      <figcaption>The classifier (deepseek-flash) said “writing or fixing tests” in 964 ms, so rule 2 put glm-5.3 first, ahead of the group’s usual first model; it answered in 5.6 s.</figcaption>
+    </figure>
+
     <h2 id="prompt"><a class="anchor" href="#prompt">What the classifier sees</a></h2>
     <p>This is the whole request, and nothing else is sent. The system message is fixed. The user message lists your intents in rule order, as they were collected in step 2:</p>
     <div class="code">
