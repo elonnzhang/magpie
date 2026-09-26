@@ -175,11 +175,12 @@ body.window:not(.mac) .brand { display: none; } /* the title bar above already s
 .logo { color: var(--fg); display: inline-flex; } /* ink, like the wordmark; the accent blue fought the text in light mode */
 .seg {
   position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
-  display: inline-flex; padding: 2px; border-radius: 8px;
+  display: inline-flex; padding: 2px; border-radius: 9px;
   background: var(--pill);
 }
+.seg > .thumb { border-radius: 7px; }
 body.panel .seg { display: none; }
-.seg button { position: relative; z-index: 1; white-space: nowrap; height: 24px; padding: 0 12px; border-radius: 6px; font-size: 12.5px; color: var(--muted); transition: color .18s var(--ease), transform .14s var(--ease); }
+.seg button { position: relative; z-index: 1; white-space: nowrap; height: 30px; padding: 0 14px; border-radius: 7px; font-size: 13.5px; color: var(--muted); transition: color .18s var(--ease), transform .14s var(--ease); }
 .seg button.on { color: var(--fg); }
 .seg button:hover:not(.on) { color: var(--fg-2); }
 .actions { margin-left: auto; display: flex; gap: 2px; }
@@ -213,7 +214,7 @@ body.panel .seg { display: none; }
 .top.tight .brand > span:not(.logo), .top.tight .update span { display: none; }
 .top.tight .update { width: 22px; padding: 0; justify-content: center; margin-right: 4px; }
 body.window .top.cramped .seg { position: relative; left: auto; top: auto; transform: none; margin: 0 auto; } /* relative still: its thumb sits in it, not over the whole header */
-.top.cramped .seg button { padding: 0 8px; }
+.top.cramped .seg button { padding: 0 10px; }
 @keyframes update-in { from { opacity: 0; transform: translateY(-3px) scale(.94); } }
 @keyframes spin { to { transform: rotate(360deg); } }
 
