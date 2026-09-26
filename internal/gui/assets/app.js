@@ -1261,7 +1261,7 @@ function renderExcluded() {
   for (const x of providers.excluded) {
     const r = el("div", "excluded");
     r.append(icon(x.agentIcon), el("span", "", ""));
-    r.lastChild.append(el("b", "", t("{agent} is signed in, but stays out of this list. ", { agent: x.agentName })), t(x.why));
+    r.lastChild.append(el("b", "", t(x.signedOut ? "{agent}'s saved accounts aren't offered. " : "{agent} is signed in, but stays out of this list. ", { agent: x.agentName })), x.signedOut ? x.why : t(x.why));
     if (x.provider) {
       const back = el("button", "link", t("Add it back"));
       back.onclick = () => providerAction("show", { id: x.provider }, t("{name} added back", { name: x.agentName }));

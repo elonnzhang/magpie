@@ -97,6 +97,10 @@ func providers() error {
 			name = a.Name
 		}
 		fmt.Println()
+		if x.SignedOut {
+			fmt.Println(" ", amber.Render("!"), name+"'s saved accounts are not offered: "+x.Why)
+			continue
+		}
 		back := ""
 		if x.Provider != "" {
 			back = " · magpie provider add " + x.Provider + " brings it back"
@@ -641,6 +645,11 @@ func serve() error {
 		fmt.Println(amber.Render("!"), "no models yet ·", "magpie provider add deepseek sk-…")
 	} else {
 		fmt.Printf("  %d models · %s\n", n, muted.Render("magpie models"))
+	}
+	for _, x := range provider.Excluded() {
+		if x.SignedOut {
+			fmt.Println(amber.Render("!"), x.Agent+":", x.Why)
+		}
 	}
 	return s.ListenAndServe(context.Background())
 }

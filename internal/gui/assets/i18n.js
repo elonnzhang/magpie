@@ -142,6 +142,7 @@ const I18N = {
     "Local servers need no key": "本地服务无需密钥",
     "Open the row and paste an API key": "展开这一行并粘贴 API 密钥",
     "{agent} is signed in, but stays out of this list. ": "{agent} 已登录，但不在此列表中。",
+    "{agent}'s saved accounts aren't offered. ": "{agent} 保存的账号没有提供出来。",
     "signed in": "已登录",
     "{p} exposes no models yet — pick some below": "{p} 尚未暴露模型 — 在下方选几个",
     "＋ Add provider": "＋ 添加供应商",

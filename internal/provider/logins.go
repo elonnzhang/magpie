@@ -237,6 +237,37 @@ func readClaudeProfile() (map[string]any, error) {
 	return m, nil
 }
 
+// savedButSignedOut is, for each agent with accounts saved in magpie that
+// isn't signed in where magpie looks, why none of them is offered: they
+// are served beside the account the agent is signed in to, and there is
+// none.
+func savedButSignedOut() []Exclusion {
+	saved := map[string]int{}
+	for _, l := range readLogins() {
+		saved[l.Agent]++
+	}
+	var out []Exclusion
+	for _, a := range loginAgents {
+		if saved[a] == 0 {
+			continue
+		}
+		if _, ok := liveLogin(a); ok {
+			continue
+		}
+		where, signIn := codexAuthPath(), "codex login"
+		if a == "claude" {
+			where, signIn = claudeCredentialsPath(), "claude, then /login"
+		}
+		n := "1 account is"
+		if saved[a] > 1 {
+			n = fmt.Sprintf("%d accounts are", saved[a])
+		}
+		out = append(out, Exclusion{Agent: a, SignedOut: true,
+			Why: fmt.Sprintf("%s saved in magpie, but it isn't signed in here (nothing at %s), and they are only offered beside the account it is signed in to. Sign in (%s) with this HOME.", n, where, signIn)})
+	}
+	return out
+}
+
 // liveLogin reads the account an agent is signed in to now.
 func liveLogin(agent string) (savedLogin, bool) {
 	switch agent {

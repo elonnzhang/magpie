@@ -112,16 +112,20 @@ type Exclusion struct {
 	Agent    string `json:"agent"`
 	Provider string `json:"provider,omitempty"` // set when the user removed it; saving it brings it back
 	Why      string `json:"why"`
+	// SignedOut: the agent has accounts saved in magpie but isn't signed
+	// in where magpie looks, and so none of them is offered.
+	SignedOut bool `json:"signedOut,omitempty"`
 }
 
 // Excluded lists sign-ins magpie detects but leaves out: the accounts the
-// user removed from magpie.
+// user removed from magpie, and the saved accounts of an agent that isn't
+// signed in here (a magpie serve under another HOME, say).
 func Excluded() []Exclusion {
 	var out []Exclusion
 	for _, a := range Hidden() {
 		out = append(out, Exclusion{Agent: a.Account.Agent, Provider: a.ID, Why: "You removed it from magpie."})
 	}
-	return out
+	return append(out, savedButSignedOut()...)
 }
 
 const (
@@ -242,13 +246,19 @@ type claudeCredentialLocation struct {
 	keychain bool
 }
 
-func readClaudeCredential() (claudeCredentials, claudeCredentialLocation, bool) {
+// claudeCredentialsPath is Claude Code's credentials file, where it keeps
+// its sign-in off the Mac's keychain.
+func claudeCredentialsPath() string {
 	dir := os.Getenv("CLAUDE_CONFIG_DIR")
 	if dir == "" {
 		home, _ := os.UserHomeDir()
 		dir = filepath.Join(home, ".claude")
 	}
-	path := filepath.Join(dir, ".credentials.json")
+	return filepath.Join(dir, ".credentials.json")
+}
+
+func readClaudeCredential() (claudeCredentials, claudeCredentialLocation, bool) {
+	path := claudeCredentialsPath()
 	if b, err := os.ReadFile(path); err == nil {
 		if c, ok := parseClaudeCredentials(b); ok {
 			return c, claudeCredentialLocation{path: path}, true
