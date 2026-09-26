@@ -60,7 +60,10 @@ func libraryCmd(args []string) error {
 			text := string(b)
 			res, err = library.SaveInstructions(library.InstructionsChange{Shared: &text})
 		case rest[0] == "agents" && len(rest) == 2:
-			res, err = library.SaveInstructions(library.InstructionsChange{Agents: agentList(rest[1])})
+			var as []string
+			if as, err = libraryAgents(rest[1], "instructions"); err == nil {
+				res, err = library.SaveInstructions(library.InstructionsChange{Agents: as})
+			}
 		default:
 			return fmt.Errorf("usage:\n  %s", libraryUsage)
 		}
@@ -71,7 +74,9 @@ func libraryCmd(args []string) error {
 			var cmd []string
 			for _, a := range rest[2:] {
 				if v, ok := strings.CutPrefix(a, "agents="); ok {
-					s.Agents = agentList(v)
+					if s.Agents, err = libraryAgents(v, "mcp"); err != nil {
+						return err
+					}
 				} else {
 					cmd = append(cmd, a)
 				}
@@ -89,7 +94,10 @@ func libraryCmd(args []string) error {
 			}
 			res, err = library.SaveServer("", s)
 		case len(rest) == 3 && rest[0] == "agents":
-			res, err = library.ServerAgents(rest[1], agentList(rest[2]))
+			var as []string
+			if as, err = libraryAgents(rest[2], "mcp"); err == nil {
+				res, err = library.ServerAgents(rest[1], as)
+			}
 		case len(rest) == 2 && rest[0] == "rm":
 			res, err = library.RemoveServer(rest[1])
 		default:
@@ -98,7 +106,10 @@ func libraryCmd(args []string) error {
 	case "skill", "skills":
 		switch {
 		case len(rest) == 3 && rest[0] == "agents":
-			res, err = library.SkillAgents(rest[1], agentList(rest[2]))
+			var as []string
+			if as, err = libraryAgents(rest[2], "skills"); err == nil {
+				res, err = library.SkillAgents(rest[1], as)
+			}
 		case len(rest) == 2 && rest[0] == "rm":
 			res, err = library.RemoveSkill(rest[1])
 		default:
@@ -126,6 +137,20 @@ func agentList(s string) []string {
 		}
 	}
 	return out
+}
+
+// libraryAgents is agentList with each agent's id, refused when the library
+// has no place in it for kind.
+func libraryAgents(s, kind string) ([]string, error) {
+	out := []string{}
+	for _, a := range agentList(s) {
+		id, err := library.Takes(a, kind)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, id)
+	}
+	return out, nil
 }
 
 func printLibraryResult(res *library.Result) {

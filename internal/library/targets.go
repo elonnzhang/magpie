@@ -1,8 +1,10 @@
 package library
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/yetone/magpie/internal/agent"
 )
@@ -116,6 +118,13 @@ func targetOf(a *agent.Agent) *Target {
 		t.MCP = &mcpFile{Path: a.Path, Format: fmtCrush}
 		t.Skills = filepath.Join(filepath.Dir(a.Path), "skills")
 		t.SkillsAlso = []string{"claude"}
+	case "zcode":
+		// ZCode's own servers are its cli/config.json's mcp.servers (the
+		// app's MCP settings write there); AGENTS.md and skills beside it
+		d := filepath.Join(h, ".zcode")
+		t.Instructions = filepath.Join(d, "AGENTS.md")
+		t.MCP = &mcpFile{Path: filepath.Join(d, "cli", "config.json"), Format: fmtZCode}
+		t.Skills = filepath.Join(d, "skills")
 	case "claude-desktop":
 		// Claude Desktop reads only commands from its file: a remote server
 		// is added in its own Connectors settings
@@ -160,4 +169,40 @@ func targetByID(id string) *Target {
 		}
 	}
 	return nil
+}
+
+// Takes is the id of the agent q names (its id, an alias, its name) when
+// the library can give it kind — "instructions", "mcp" or "skills" — or
+// why not: an agent it has no place for isn't recorded as getting it and
+// then given nothing.
+func Takes(q, kind string) (string, error) {
+	var a *agent.Agent
+	for _, app := range apps() {
+		if strings.EqualFold(app.ID, q) || strings.EqualFold(app.Name, q) {
+			a = app
+		}
+	}
+	if a == nil {
+		var err error
+		if a, err = agent.Find(q); err != nil {
+			return "", err
+		}
+	}
+	t := targetOf(a)
+	var has bool
+	what := map[string]string{"instructions": "instructions", "mcp": "MCP servers", "skills": "skills"}[kind]
+	if t != nil {
+		switch kind {
+		case "instructions":
+			has = t.Instructions != ""
+		case "mcp":
+			has = t.MCP != nil
+		case "skills":
+			has = t.Skills != ""
+		}
+	}
+	if !has {
+		return "", fmt.Errorf("%s has no user-wide place for %s that magpie knows of", a.Name, what)
+	}
+	return a.ID, nil
 }
