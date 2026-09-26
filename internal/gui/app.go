@@ -288,7 +288,10 @@ func Run(version string, showMain bool, link string) error {
 	if runtime.GOOS == "windows" {
 		h.main.OnWindowEvent(events.Windows.WebViewNavigationCompleted, func(*application.WindowEvent) { markReady() })
 	} else {
-		h.app.Event.OnApplicationEvent(events.Common.ApplicationStarted, func(*application.ApplicationEvent) { markReady() })
+		h.app.Event.OnApplicationEvent(events.Common.ApplicationStarted, func(*application.ApplicationEvent) {
+			plainTitlebar(h.main) // Linux: the page's header is the title bar
+			markReady()
+		})
 	}
 	if showMain {
 		h.whenReady(func() { h.ShowMain("") })

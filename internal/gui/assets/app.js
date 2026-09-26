@@ -4,12 +4,15 @@ const $$ = (s) => document.querySelectorAll(s);
 const params = new URLSearchParams(location.search);
 const mode = params.get("mode") || "window";
 document.body.classList.add(mode);
-// Only the Mac window draws its title bar inside the page (the traffic lights).
+// The Mac window draws its title bar inside the page (the traffic lights);
+// on Linux the page's header is the whole title bar (plainTitlebar), so it
+// has the name, the close button and a double-click to maximise.
 if (/^Mac/.test(navigator.platform)) document.body.classList.add("mac");
+if (/^Linux/.test(navigator.platform)) document.body.classList.add("linux");
 // The window is dragged by its header, and only where the header says so
 // (--wails-draggable), so the tabs and buttons in it stay plain clicks.
 // Outside the app — a browser on the gateway's page — there is no runtime.
-if (mode === "window") import("/wails/runtime.js").catch(() => {});
+const winRuntime = mode === "window" ? import("/wails/runtime.js").catch(() => null) : Promise.resolve(null);
 if (params.get("theme")) document.documentElement.dataset.theme = params.get("theme");
 // the saved language and theme from boot.js, so the first paint is in them
 if (window.bootPrefs) {
@@ -4114,8 +4117,13 @@ $("#sync").onclick = async () => {
 $("#open").onclick = () => api("window/main", {});
 $("#openMain").onclick = () => api("window/main", {});
 $("#quit").onclick = () => api("window/quit", {});
+$("#winclose").onclick = () => winRuntime.then((w) => w?.Window.Close()); // hides it: the tray stays
+$(".top").addEventListener("dblclick", (e) => {
+  if (document.body.classList.contains("linux") && !e.target.closest("button, nav")) winRuntime.then((w) => w?.Window.ToggleMaximise());
+});
 if (mode === "window") { $("#open").remove(); $("#openMain").remove(); $("#quit").remove(); }
 else { $("#nav").remove(); }
+if (mode !== "window" || !document.body.classList.contains("linux")) $("#winclose").remove();
 
 // Config files may change underneath us (another magpie, an editor); reload when
 // the panel comes back into view.

@@ -137,7 +137,11 @@ code { font: 11.5px var(--code); }
 body.window.mac .top { padding-left: 96px; height: 50px; padding-top: 2px; } /* the traffic lights centre 25.75pt from the top, not 25 */
 body.window.mac .seg { top: calc(50% + 1px); } /* 50% centres in the padding box; the 2px top padding puts the flex row a pixel lower */
 .brand { display: flex; align-items: center; gap: 6px; font-weight: 600; letter-spacing: .01em; }
-body.window:not(.mac) .brand { display: none; } /* the title bar above already shows the icon and the name */
+body.window:not(.mac):not(.linux) .brand { display: none; } /* Windows' title bar above already shows the icon and the name */
+/* Linux: the header is the title bar, so it closes the window too — round,
+   as GNOME draws its close button, and set a little apart from the icons */
+.icon.winclose { align-self: center; width: 22px; height: 22px; margin-left: 8px; border-radius: 50%; background: var(--pill); color: var(--fg-2); }
+.icon.winclose:hover { background: color-mix(in srgb, var(--fg) 12%, transparent); }
 /* the magpie flaps, flicks its tail and bobs when the window opens and on
    hover. It moves in pieces cut from the logo, and is drawn whole at rest, so
    the cuts never show. */
