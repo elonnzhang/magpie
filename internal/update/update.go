@@ -391,6 +391,41 @@ func RemoveOld(exe string) {
 	}
 }
 
+// Replaced reports whether exe is no longer the binary that was there when
+// this process looked (started, from os.Stat): another magpie installed an
+// update over it, and this one runs from where it was moved aside.
+func Replaced(exe string, started os.FileInfo) bool {
+	now, err := os.Stat(exe)
+	return err == nil && started != nil && (now.Size() != started.Size() || !now.ModTime().Equal(started.ModTime()))
+}
+
+// RemoveStaleNew removes exe.new when it is exe over again: the update a
+// magpie left running from before it downloaded once more.
+func RemoveStaleNew(exe string) {
+	staged := exe + ".new"
+	a, err1 := os.Stat(exe)
+	b, err2 := os.Stat(staged)
+	if err1 != nil || err2 != nil || a.Size() != b.Size() {
+		return
+	}
+	if ha, hb := fileHash(exe), fileHash(staged); ha != "" && ha == hb {
+		os.Remove(staged)
+	}
+}
+
+func fileHash(path string) string {
+	f, err := os.Open(path)
+	if err != nil {
+		return ""
+	}
+	defer f.Close()
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return ""
+	}
+	return hex.EncodeToString(h.Sum(nil))
+}
+
 // InstallBinaryAsAdmin is InstallBinary with the administrator's password.
 func InstallBinaryAsAdmin(staged, exe string) error {
 	err := asAdmin("mv -f " + shellQuote(staged) + " " + shellQuote(exe))

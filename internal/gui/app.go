@@ -314,18 +314,18 @@ func Run(version string, showMain bool, link string) error {
 	return h.app.Run()
 }
 
+// served is the gateway this process serves, nil while another magpie
+// has it.
+var served atomic.Pointer[gateway.Server]
+
 // startBackend starts what serves the page and the agents: the gateway,
 // unless another magpie has it (then that one serves and this one only
-// shows its status, and gw is nil), and the model lists kept warm.
+// shows its status, and gw is nil — until that one is gone: a magpie left
+// running from before an update, a magpie serve in a terminal), and the
+// model lists kept warm.
 func startBackend() (gw *gateway.Server) {
-	if !gateway.Running() {
-		gw = gateway.New()
-		go func() {
-			if err := gw.ListenAndServe(context.Background()); err != nil {
-				log.Println("gateway:", err)
-			}
-		}()
-	}
+	gw = serveGateway()
+	go watchGateway()
 	// Model lists are fetched, never compiled in: whatever the agents can see
 	// comes from the models.dev catalog plus each vendor's own /models answer.
 	// Keep both halves warm without making the user click anything.
@@ -355,6 +355,35 @@ func startBackend() (gw *gateway.Server) {
 		// lists an older magpie wrote into agents' files, without what
 		// it has learnt since (context windows, providers added)
 		agent.SyncCatalog()
+	}()
+	return gw
+}
+
+var gatewayWatch = 15 * time.Second
+
+// watchGateway takes the gateway up once the magpie that had it is gone.
+func watchGateway() {
+	for {
+		time.Sleep(gatewayWatch)
+		if served.Load() == nil && !gateway.Running() {
+			serveGateway()
+		}
+	}
+}
+
+// serveGateway starts the gateway here when no magpie has it: the one
+// started, or nil.
+func serveGateway() *gateway.Server {
+	if gateway.Running() {
+		return nil
+	}
+	gw := gateway.New()
+	served.Store(gw)
+	go func() {
+		if err := gw.ListenAndServe(context.Background()); err != nil {
+			log.Println("gateway:", err)
+			served.CompareAndSwap(gw, nil) // another took the port first
+		}
 	}()
 	return gw
 }

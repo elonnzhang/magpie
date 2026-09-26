@@ -221,7 +221,7 @@ func providerInfo(p provider.Provider, agents []*agent.Agent) providerJSON {
 	return out
 }
 
-func providersState(gw *gateway.Server) providersJSON {
+func providersState() providersJSON {
 	agents := agent.Detected()
 	s := providersJSON{Providers: []providerJSON{}, Presets: []presetJSON{}, Excluded: []excludedJSON{}}
 	for _, x := range provider.Excluded() {
@@ -256,7 +256,7 @@ func providersState(gw *gateway.Server) providersJSON {
 		}
 		s.Gateway.Groups = append(s.Gateway.Groups, g)
 	}
-	if gw != nil {
+	if gw := served.Load(); gw != nil {
 		s.Gateway.Running, s.Gateway.Mine = true, true
 		s.Gateway.Calls = gw.Recent()
 	} else {
@@ -279,12 +279,12 @@ func ago(t time.Time) string {
 	}
 }
 
-func providerRoutes(mux *http.ServeMux, w Windows, gw *gateway.Server) {
-	importAppsRoutes(mux, gw)
-	traceRoutes(mux, gw)
+func providerRoutes(mux *http.ServeMux, w Windows) {
+	importAppsRoutes(mux)
+	traceRoutes(mux)
 	groupRoutes(mux)
 	mux.HandleFunc("GET /api/providers", func(rw http.ResponseWriter, r *http.Request) {
-		writeJSON(rw, providersState(gw))
+		writeJSON(rw, providersState())
 	})
 	// a picture for a provider, picked in the editor: kept by content before
 	// the provider is saved, which then points at it. The page sends it as
@@ -468,7 +468,7 @@ func providerRoutes(mux *http.ServeMux, w Windows, gw *gateway.Server) {
 			http.NotFound(rw, r)
 			return
 		}
-		writeJSON(rw, providersState(gw))
+		writeJSON(rw, providersState())
 	})
 	// How much of its allowance each of an agent's accounts has used.
 	mux.HandleFunc("GET /api/login/usage", func(rw http.ResponseWriter, r *http.Request) {
@@ -500,7 +500,7 @@ func providerRoutes(mux *http.ServeMux, w Windows, gw *gateway.Server) {
 			fail(rw, err)
 			return
 		}
-		writeJSON(rw, providersState(gw))
+		writeJSON(rw, providersState())
 	})
 	// A provider's several keys: add one, put one in use, name or remove it.
 	mux.HandleFunc("POST /api/keys/{action}", func(rw http.ResponseWriter, r *http.Request) {
@@ -545,7 +545,7 @@ func providerRoutes(mux *http.ServeMux, w Windows, gw *gateway.Server) {
 				cancel()
 			}
 		}
-		writeJSON(rw, providersState(gw))
+		writeJSON(rw, providersState())
 	})
 	// Adding a subscription: magpie opens the vendor's sign-in in the
 	// browser and the window follows it until the account is in.

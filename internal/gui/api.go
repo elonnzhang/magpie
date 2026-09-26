@@ -121,8 +121,12 @@ func settingsState() settingsJSON {
 var onDock func(bool)
 
 // Handler serves the embedded UI and the JSON API.
-// gw is the gateway this process serves, or nil when another magpie has it.
+// gw is the gateway this process serves, or nil when another magpie has it
+// (for now: see startBackend).
 func Handler(w Windows, gw *gateway.Server) http.Handler {
+	if gw != nil {
+		served.Store(gw)
+	}
 	mux := http.NewServeMux()
 	mux.Handle("/", devPage(http.FileServer(http.FS(staticFS()))))
 	devRoutes(mux)
@@ -258,7 +262,7 @@ func Handler(w Windows, gw *gateway.Server) http.Handler {
 		}
 		writeJSON(rw, state())
 	})
-	providerRoutes(mux, w, gw)
+	providerRoutes(mux, w)
 	importRoutes(mux)
 	usageRoutes(mux)
 	backupRoutes(mux, w)
