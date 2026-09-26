@@ -36,6 +36,9 @@ func (p Provider) Available() []catalog.Model {
 		}
 	}
 	if live, _, ok := catalog.Live(p.ID); ok {
+		if p.ID == "cursor" {
+			live = withCursorContexts(live)
+		}
 		return catalog.Decorate(live, known)
 	}
 	if signedIn {
@@ -380,7 +383,9 @@ func providerEntries() []Entry {
 // and the bare model id when exactly one provider serves it.
 // A group's id resolves to its first member.
 func Resolve(id string) (Provider, string, bool) {
-	id = strings.TrimSpace(id)
+	// Claude Code's mark for a model with a 1M window; it drops it before
+	// asking, but a value in its settings still has it
+	id = strings.TrimSuffix(strings.TrimSpace(id), "[1m]")
 	if strings.HasPrefix(id, GroupPrefix) {
 		for _, e := range Catalog() {
 			if e.ID == id {
