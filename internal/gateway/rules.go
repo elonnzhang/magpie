@@ -358,7 +358,7 @@ func membersImageInput(ms []provider.Member, ruled []provider.Member) *bool {
 		ms = ruled
 	}
 	var out *bool
-	cat := provider.Catalog()
+	cat := provider.Served() // an unlisted member counts as much as the others
 	for i, m := range ms {
 		var in *bool
 		for _, e := range cat {

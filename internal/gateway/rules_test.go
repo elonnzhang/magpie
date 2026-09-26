@@ -499,3 +499,20 @@ func TestRuleTurnOutgrowsUnlistedMember(t *testing.T) {
 		t.Fatalf("unlisted member failed to grow: %s %+v", out, r.Rule)
 	}
 }
+
+// An unlisted text-only member still keeps images out of its group.
+func TestRuleImagesUnlistedMember(t *testing.T) {
+	img := `{"model":"group/r","messages":[{"role":"user","content":[{"type":"text","text":"look"},{"type":"image_url","image_url":{"url":"data:image/png;base64,aGVsbG8="}}]}]}`
+	s, a, b := ruled(t)
+	p, err := provider.Find("a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.Unlisted = true
+	if err := provider.Save(*p); err != nil {
+		t.Fatal(err)
+	}
+	if code, out := postAs(t, s, "x", img); code != 400 || a.n() != 0 || b.n() != 0 {
+		t.Fatalf("%d %s, a %d b %d", code, out, a.n(), b.n())
+	}
+}
