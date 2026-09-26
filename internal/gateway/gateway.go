@@ -168,6 +168,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/models", s.models)
 	mux.HandleFunc("GET /models", s.models)
 	mux.HandleFunc("GET /v1/models/{id}", s.model)
+	mux.HandleFunc("GET /v1/magpie/quotas", s.quotas)
 	mux.HandleFunc("POST /v1/chat/completions", s.handle(provider.Chat))
 	mux.HandleFunc("POST /chat/completions", s.handle(provider.Chat))
 	mux.HandleFunc("POST /v1/responses", s.handle(provider.Responses))
@@ -187,7 +188,22 @@ func (s *Server) Handler() http.Handler {
 
 func (s *Server) info(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"name": "magpie", "version": Version, "models": len(provider.Catalog()),
-		"apis": []string{"/v1/chat/completions", "/v1/responses", "/v1/messages", "/v1beta/models/{model}:generateContent"}})
+		"apis": []string{"/v1/chat/completions", "/v1/responses", "/v1/messages", "/v1beta/models/{model}:generateContent", "/v1/magpie/quotas"}})
+}
+
+// quotas is what is left of every subscription, plan and key magpie has,
+// for an agent choosing where to send its work (magpie quota --json is the
+// same). It names the accounts and their balances, so it answers only on
+// this machine, when the gateway listens beyond it too.
+func (s *Server) quotas(w http.ResponseWriter, r *http.Request) {
+	host, _, _ := net.SplitHostPort(r.RemoteAddr)
+	if ip := net.ParseIP(host); ip == nil || !ip.IsLoopback() {
+		writeError(w, provider.Chat, http.StatusForbidden, "magpie's quotas are only told to this machine")
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 12*time.Second)
+	defer cancel()
+	writeJSON(w, 200, map[string]any{"object": "list", "data": provider.QuotaReport(ctx, time.Now())})
 }
 
 func modelObject(e provider.Entry) map[string]any {

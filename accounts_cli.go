@@ -161,13 +161,7 @@ type accountRow struct {
 	Lapsed  string      `json:"lapsed,omitempty"` // its sign-in has to be made again
 }
 
-type quotaSpan struct {
-	Name      string     `json:"name"`
-	Used      float64    `json:"used"`      // percent
-	Remaining float64    `json:"remaining"` // percent
-	ResetsAt  *time.Time `json:"resetsAt,omitempty"`
-	Display   string     `json:"display,omitempty"`
-}
+type quotaSpan = provider.QuotaSpan
 
 // accountRows asks each agent's accounts for their allowance at once; what
 // was asked less than a minute ago comes from magpie's cache.
