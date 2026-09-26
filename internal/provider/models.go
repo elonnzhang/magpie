@@ -355,6 +355,9 @@ func providerEntries() []Entry {
 			if ctx == 0 {
 				ctx = catalog.ContextOf(m.ID)
 			}
+			if n := p.ContextOf(m.ID); n > 0 {
+				ctx = n
+			}
 			output := m.Output
 			if output == 0 {
 				output = catalog.OutputOf(m.ID)
@@ -434,4 +437,13 @@ func IDs() []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// ContextOf is the context the user set for the provider's model: its own,
+// else the provider's "*"; 0 when none is set.
+func (p Provider) ContextOf(model string) int {
+	if n := p.Contexts[model]; n > 0 {
+		return n
+	}
+	return p.Contexts["*"]
 }

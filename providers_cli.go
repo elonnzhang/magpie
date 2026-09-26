@@ -43,7 +43,10 @@ const providerUsage = `usage:
        magpie provider add "My Relay" url=https://relay.example.com/v1 key=sk-… balance=https://relay.example.com/api/usage/token balance.path='$data.total_available / 500000'
        magpie provider set my-relay balance.path='(1 - credits.monthlyCredits / 70) %'
                                    (balance.path: where the amount is in the reply, or a sum of those with + - * / and
-                                    brackets; $ or ¥ in front adds the sign, % after it shows a percent of 1)`
+                                    brackets; $ or ¥ in front adds the sign, % after it shows a percent of 1)
+       magpie provider set my-relay context=272k context.gpt-6=1m
+                                   (context: how long a request agents are told the models take, over what the
+                                    vendor or models.dev says; context.<model> for one of them; empty clears)`
 
 // providers: `magpie providers`
 func providers() error {
@@ -562,6 +565,10 @@ func applyPairs(p *provider.Provider, pairs []string) error {
 			p.BalancePath = v
 		case "models.url":
 			p.ModelsURL = v
+		case "context":
+			if err := setContext(p, "*", v); err != nil {
+				return err
+			}
 		case "icon":
 			// a picture on disk is kept by magpie; anything else is one of
 			// the built-in icons' names
@@ -593,9 +600,36 @@ func applyPairs(p *provider.Provider, pairs []string) error {
 				p.Headers[name] = v
 				continue
 			}
+			if len(k) > len("context.") && strings.EqualFold(k[:len("context.")], "context.") {
+				if err := setContext(p, k[len("context."):], v); err != nil {
+					return err
+				}
+				continue
+			}
 			return fmt.Errorf("unknown field %q\n\n%s", k, providerUsage)
 		}
 	}
+	return nil
+}
+
+// setContext sets the context agents are told model takes ("*" for all
+// the provider's); empty or 0 leaves it to the vendor and models.dev again.
+func setContext(p *provider.Provider, model, v string) error {
+	n := 0
+	if strings.TrimSpace(v) != "" {
+		var err error
+		if n, err = parseTokens(v); err != nil {
+			return fmt.Errorf("context: %w", err)
+		}
+	}
+	if n == 0 {
+		delete(p.Contexts, model)
+		return nil
+	}
+	if p.Contexts == nil {
+		p.Contexts = map[string]int{}
+	}
+	p.Contexts[model] = n
 	return nil
 }
 

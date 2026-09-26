@@ -54,6 +54,9 @@ type Group struct {
 	// of the rules' intents a user's message is. Rules with an intent need
 	// one; a small, fast model without reasoning does.
 	Classifier string `json:"classifier,omitempty"`
+	// Context is how long a request the user says the group takes, in
+	// tokens: agents are told it rather than its shortest member's.
+	Context int `json:"context,omitempty"`
 	// Auto is set on a group magpie found: one model served by several
 	// providers. It is derived, never stored.
 	Auto bool `json:"auto,omitempty"`
@@ -281,6 +284,9 @@ func groupEntries(entries []Entry) []Entry {
 			e.Images = false
 		}
 		ruledEntry(&e, g, ms, entries)
+		if g.Context > 0 {
+			e.Context = g.Context
+		}
 		out = append(out, e)
 	}
 	return out

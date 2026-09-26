@@ -1565,7 +1565,7 @@
       if (bare >= 0) return status(t("Rule {n} needs a condition", { n: bare + 1 }), "warn");
       if (d.rules.some((r) => r.intent) && !d.classifier) return status(t("Choose the model that tells which intent a message is"), "warn");
       saveBtn.classList.add("busy");
-      groupAction("save", { id: idOf(), from: g?.id, name: d.name.trim() || idOf(), members: d.members, routing: d.routing, affinity: d.affinity, rules: d.rules, classifier: d.rules.some((r) => r.intent) ? d.classifier : "" }, t(g ? "{name} saved" : "{name} added", { name: d.name.trim() || idOf() }));
+      groupAction("save", { id: idOf(), from: g?.id, name: d.name.trim() || idOf(), members: d.members, routing: d.routing, affinity: d.affinity, rules: d.rules, classifier: d.rules.some((r) => r.intent) ? d.classifier : "", context: g?.context || 0 }, t(g ? "{name} saved" : "{name} added", { name: d.name.trim() || idOf() }));
     };
     saveBtn.onclick = save;
     bar.append(cancel, saveBtn);

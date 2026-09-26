@@ -383,6 +383,9 @@ func providerRoutes(mux *http.ServeMux, w Windows) {
 					// the other keys are kept apart, in the Accounts list
 					in.Keys = old.Keys
 					in.Routing = old.Routing // set on its own, with route
+					if in.Contexts == nil {
+						in.Contexts = old.Contexts // set from the terminal
+					}
 					if in.Key == old.Key {
 						in.KeyName, in.KeyProtocol = old.KeyName, old.KeyProtocol
 					}
