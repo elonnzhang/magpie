@@ -308,7 +308,7 @@
   }
 
   function tryWhy(r, i) {
-    const tr = r.tries[i], w = r.order.find((x) => x.id === tr.id), agent = agentName(r.agent);
+    const tr = r.tries[i], w = tried(r, tr), agent = agentName(r.agent);
     const name = w ? `${who(w)} (${w.model})` : tr.id;
     if (!tr.done) return t("{who} is answering…", { who: name });
     if (tr.status < 400) {
@@ -327,7 +327,7 @@
       return t("{who} answered {status} · {fail}, and nobody else is left to ask — a failure that may pass, so it is tried again in {d}, before any of the reply reaches {agent}.",
         { who: name, status: tr.status, fail: failWord(tr.fail), d: took(tr.again), agent });
     if (tr.rest) {
-      const next = r.tries[i + 1], nw = next && r.order.find((x) => x.id === next.id);
+      const next = r.tries[i + 1], nw = next && tried(r, next);
       return t("{who} answered {status} · {fail}. {how}; the request goes on to {next} before any of the reply reaches {agent}.",
         { who: name, status: tr.status, fail: failWord(tr.fail), how: restHow(tr.rest, at(tr.start) + (tr.ms || 0)), next: nw ? who(nw) : t("the next"), agent });
     }
@@ -453,7 +453,12 @@
     return [...r.order].sort(cmp);
   }
 
-  const setOf = (r) => r.order.map((w) => w.id).sort().join("\n");
+  // a seat is one of a route's keys or accounts for one model: two of a
+  // group's models on one provider go over the same keys, and are two seats
+  const seat = (x) => x.id + "\u0000" + (x.model || "");
+  // tried is the seat a try went to
+  const tried = (r, tr) => r.order.find((x) => seat(x) === seat(tr)) || r.order.find((x) => x.id === tr.id);
+  const setOf = (r) => r.order.map(seat).sort().join("\n");
 
   // staged: the routes the stage shows — a picked one alone; else those
   // playing, and each agent's latest while it lingers, a few agents at most
@@ -551,9 +556,9 @@
     const ids = [], wOf = new Map(), rOf = new Map();
     for (const k of sets) {
       const r = latest.get(k);
-      for (const w of seated(r)) if (!ids.includes(w.id)) ids.push(w.id);
+      for (const w of seated(r)) if (!ids.includes(seat(w))) ids.push(seat(w));
     }
-    for (const r of rs) for (const w of [...r.order, ...(r.left || [])]) { wOf.set(w.id, w); rOf.set(w.id, r.id); }
+    for (const r of rs) for (const w of [...r.order, ...(r.left || [])]) { wOf.set(seat(w), w); rOf.set(seat(w), r.id); }
     const before = new Map([...rows].map(([id, row]) => [id, row.li.getBoundingClientRect().top]));
     for (const [id, row] of rows) if (!ids.includes(id)) { row.li.remove(); row.wire.remove(); rows.delete(id); }
     if (list.querySelector(".idle")) list.replaceChildren();
@@ -614,7 +619,7 @@
     hubText();
     const n = now(), rs = staged();
     const trying = new Set(), busy = new Set();
-    for (const r of rs) for (const tr of r.tries) if (!tr.done) { trying.add(tr.id); busy.add(r.agent); }
+    for (const r of rs) for (const tr of r.tries) if (!tr.done) { trying.add(seat(tr)); busy.add(r.agent); }
     const onWire = new Set();
     for (const f of flying.values()) { onWire.add(f.id); busy.add(f.agent); }
     for (const [id, row] of rows) {
@@ -622,12 +627,12 @@
       const r = routes.get(row.rid) || pinned || cur, answered = new Set(), rests = new Map(), gave = new Map();
       for (const w of r.order) if (w.rest) rests.set(w.id, w.rest);
       for (const tr of r.tries) {
-        if (tr.done && tr.status < 400) answered.add(tr.id);
-        else if (tr.done && !tr.rest && !tr.again) gave.set(tr.id, tr); // the error the agent got
+        if (tr.done && tr.status < 400) answered.add(seat(tr));
+        else if (tr.done && !tr.rest && !tr.again) gave.set(seat(tr), tr); // the error the agent got
         if (tr.rest) rests.set(tr.id, tr.rest);
       }
-      for (const id of answered) rests.delete(id); // it answered: whatever rest it began in is over
-      const w = row.w, rest = rests.get(id), resting = rest && at(rest.until) > n;
+      for (const tr of r.tries) if (tr.done && tr.status < 400) rests.delete(tr.id); // it answered: whatever rest it began in is over
+      const w = row.w, rest = rests.get(w.id), resting = rest && at(rest.until) > n;
       let s;
       if (w.unlisted) s = unlistedWord(w);
       else if (resting) s = `${failWord(rest.why)} · ${restWhen(rest)}`;
@@ -702,10 +707,10 @@
   // who answered a request, or what its agent got
   function outcome(r) {
     if (!r.done) {
-      const tr = r.tries[r.tries.length - 1], w = tr && r.order.find((x) => x.id === tr.id);
+      const tr = r.tries[r.tries.length - 1], w = tr && tried(r, tr);
       return [w ? t("{who} is answering…", { who: `${who(w)} · ${w.model}` }) : t("routing…"), "wait"];
     }
-    const ok = r.tries.find((tr) => tr.done && tr.status < 400), w = ok && r.order.find((x) => x.id === ok.id);
+    const ok = r.tries.find((tr) => tr.done && tr.status < 400), w = ok && tried(r, ok);
     if (r.status < 400) return [w ? `${who(w)} · ${w.model}` : r.provider, r.tries.length > 1 ? "moved" : "ok"];
     const last = r.tries[r.tries.length - 1];
     return [last ? `${r.status} · ${failWord(last.fail)}` : `${r.status || ""} ${r.error || ""}`.trim(), "bad"];
@@ -759,7 +764,7 @@
         if (!a || !tr.done || tr.fail === "canceled") continue; // the agent's doing, not its
         a.tried++;
         const end = at(tr.start) + (tr.ms || 0);
-        if (tr.status < 400) { a.ok++; a.last = Math.max(a.last, end); const m = r.order.find((x) => x.id === tr.id)?.model; if (m) a.models.add(m); }
+        if (tr.status < 400) { a.ok++; a.last = Math.max(a.last, end); const m = tr.model || r.order.find((x) => x.id === tr.id)?.model; if (m) a.models.add(m); }
         else a.fails[tr.fail || "other"] = (a.fails[tr.fail || "other"] || 0) + 1;
         if (tr.rest && end >= a.restAt) { a.rest = tr.rest; a.restAt = end; }
       }
@@ -894,9 +899,9 @@
           await until(() => g !== gen || rt().tries.length > i || rt().done);
           continue;
         }
-        const row = rows.get(r.tries[i].id);
+        const row = rows.get(seat(r.tries[i]));
         if (!row) { i++; continue; }
-        flying.set(dot, { id: r.tries[i].id, agent: r.agent });
+        flying.set(dot, { id: seat(r.tries[i]), agent: r.agent });
         if (!carrier) carrier = bird("req");
         if (from) tick(hub);
         const out = [via(from || tip(A.wire, true), tip(row.wire, false)), { p: row.wire }];
@@ -1077,6 +1082,8 @@
         loaded = true;
         if (first) {
           offline("");
+          // the agents' names come with the app's state, which may not be here yet
+          for (let i = 0; i < 30 && !state.agents.length; i++) await new Promise((res) => setTimeout(res, 100));
           const r = newest();
           if (r) { cur = r; sync(true); say(affWhy(r, true) || ruleWhy(r, true) || firstWhy(r)); renderAll(); } else empty();
         } else {
