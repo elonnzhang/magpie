@@ -3682,7 +3682,8 @@ const DISCORD_SVG = '<svg viewBox="0 0 24 24" width="13" height="13" fill="curre
 
 function renderSettings() {
   const s = prefs;
-  const keep = { theme: s.theme, lang: s.lang, tray: s.tray, dock: !!s.dock, proxy: s.proxy || "" };
+  const keep = { theme: s.theme, lang: s.lang, tray: s.tray, dock: !!s.dock, proxy: s.proxy || "",
+    redact: !!s.redact, redactPersonal: !!s.redactPersonal, redactWords: s.redactWords || [] };
   $("#themeSegs").replaceChildren(segs(THEMES.map(([id, name]) => [id, t(name)]), s.theme, (theme) => savePrefs({ ...keep, theme })));
   $("#langSegs").replaceChildren(segs(LOCALES.map(([id, name]) => [id, t(name)]), s.lang, (lang) => savePrefs({ ...keep, lang })));
   $("#traySegs").replaceChildren(segs(TRAYS.map(([id, name]) => [id, t(name)]), s.tray || "panel", (tray) => savePrefs({ ...keep, tray })));
@@ -3690,6 +3691,7 @@ function renderSettings() {
   $("#dockRow").hidden = !document.body.classList.contains("mac");
   $("#dockSegs").replaceChildren(segs([["off", t("Hide")], ["on", t("Show")]], s.dock ? "on" : "off", (v) => savePrefs({ ...keep, dock: v === "on" })));
   renderProxy(s, keep);
+  renderRedact(s, keep);
   renderSync();
 
   const about = $("#about");
@@ -3958,6 +3960,39 @@ function renderProxy(s, keep) {
     if (proxyCustom) queueMicrotask(() => i.focus());
   }
   box.append(segs([["auto", t("Auto")], ["off", t("Off")], ["custom", t("Custom")]], mode, pick));
+}
+
+// renderRedact: what the gateway masks before a request goes to a vendor —
+// secrets, personal data, the user's own words — and puts back in what the
+// vendor answers.
+function renderRedact(s, keep) {
+  const box = $("#redactList");
+  box.replaceChildren();
+  const row = (name, sub, ...tools) => {
+    const r = el("div", "row pref");
+    const who = el("div", "who");
+    who.append(el("div", "name", name), el("div", "sub", sub));
+    const val = el("div", "val");
+    val.append(...tools);
+    r.append(who, val);
+    box.append(r);
+  };
+  const onOff = (on, fn) => segs([["off", t("Off")], ["on", t("On")]], on ? "on" : "off", (v) => fn(v === "on"));
+  row(t("Mask secrets"), t("API keys, private keys, tokens and passwords go to vendors as placeholders, and come back as they were"),
+    onOff(s.redact, (redact) => savePrefs({ ...keep, redact })));
+  row(t("Mask personal data"), t("Emails, phone numbers, ID and bank card numbers too"),
+    onOff(s.redactPersonal, (redactPersonal) => savePrefs({ ...keep, redactPersonal })));
+  const words = (s.redactWords || []).join(", ");
+  const i = input(words, t("names, codenames, hosts"));
+  i.className = "words";
+  const save = () => {
+    const v = i.value.split(/[,，\n]/).map((w) => w.trim()).filter(Boolean);
+    if (v.join(", ") === words) return;
+    savePrefs({ ...keep, redactWords: v });
+  };
+  i.onkeydown = (e) => { e.stopPropagation(); if (e.key === "Enter") save(); else if (e.key === "Escape") { i.value = words; i.blur(); } };
+  i.onblur = save;
+  row(t("Masked words"), t("Your own words to keep from vendors, separated by commas"), i);
 }
 
 // renderUpdate fills in the version row: whether a newer magpie is out.

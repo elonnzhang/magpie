@@ -29,6 +29,14 @@ type Settings struct {
 	// environment and then the system, "direct" uses none, anything else
 	// is the proxy (http://, https:// or socks5://; host:port means http).
 	Proxy string `json:"proxy,omitempty"`
+	// Redact keeps secrets in what agents send (API keys, private keys,
+	// tokens, passwords) from the vendors behind magpie: they go as
+	// placeholders, and come back as they were. RedactPersonal does the same
+	// for emails, phone numbers and ID and bank card numbers, and
+	// RedactWords for the user's own words.
+	Redact         bool     `json:"redact,omitempty"`
+	RedactPersonal bool     `json:"redactPersonal,omitempty"`
+	RedactWords    []string `json:"redactWords,omitempty"`
 	// How the agents are listed, by agent id. AgentOrder comes first, as
 	// ordered; an agent it doesn't name (one installed since) follows in
 	// magpie's own order. A hidden agent is folded away at the bottom of the

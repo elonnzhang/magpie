@@ -361,6 +361,10 @@ func estimate(req *Request) int {
 // serve routes one parsed-enough request to its provider.
 func (s *Server) serve(w http.ResponseWriter, r *http.Request, from provider.Protocol, body []byte) {
 	start := time.Now()
+	// secrets go as placeholders and come back as they were; the log has
+	// what the vendor saw and said
+	w, body, unmask := redacted(w, body)
+	defer unmask()
 	requestBody, requestTruncated := captureRequestBody(body)
 	capture := &captureResponseWriter{ResponseWriter: w}
 	w = capture

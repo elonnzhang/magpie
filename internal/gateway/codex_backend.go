@@ -125,6 +125,11 @@ func isCatalogID(model string) bool {
 func (s *Server) codexUpstream(w http.ResponseWriter, r *http.Request, rest string, body []byte) {
 	start := time.Now()
 	usage.Saw(usage.AgentOf(r.Header.Get("User-Agent")))
+	if r.Method == http.MethodPost {
+		var unmask func()
+		w, body, unmask = redacted(w, body)
+		defer unmask()
+	}
 	base := provider.CodexBase
 	if apiKey(r.Header) && rest != "/models" {
 		base = codexAPIBase
