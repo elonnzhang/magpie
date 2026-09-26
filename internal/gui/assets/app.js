@@ -3105,7 +3105,7 @@ function accountQuota(data, user) {
     return line;
   }
   // the two rolling windows fit a line; the per-model ones go in its tooltip
-  line.title = q.windows.slice(2).map((w) => t(w.name) + " " + (w.display || Math.round(w.used) + "%")).join(" · ");
+  line.title = q.windows.slice(2).map((w) => t(w.name) + " " + (w.display || t("{n} used", { n: Math.round(w.used) + "%" }))).join(" · ");
   for (const w of q.windows.slice(0, 2)) {
     const used = Math.max(0, Math.min(100, w.used));
     const m = el("span", "aq-w" + (used >= 90 ? " full" : ""));
@@ -3113,7 +3113,7 @@ function accountQuota(data, user) {
     const fill = el("i");
     fill.style.width = used + "%";
     track.append(fill);
-    m.append(el("span", "aq-n", t(w.name)), track, el("b", "", w.display || Math.round(w.used) + "%"));
+    m.append(el("span", "aq-n", t(w.name)), track, el("b", "", w.display || t("{n} used", { n: Math.round(w.used) + "%" })));
     if (w.resetsAt) {
       const at = new Date(w.resetsAt);
       m.title = t("Resets {when}", { when: at.toLocaleString() });
@@ -3514,7 +3514,7 @@ function quotaWindows(sub) {
   for (const w of sub.windows) {
     const quota = el("div", "quota");
     const labels = el("div", "quota-labels");
-    labels.append(el("span", "", t(w.name)), el("b", "", w.display || `${Math.round(w.used)}%`));
+    labels.append(el("span", "", t(w.name)), el("b", "", w.display || t("{n} used", { n: `${Math.round(w.used)}%` })));
     const track = el("div", "quota-track");
     const fill = el("i");
     fill.style.width = `${Math.max(0, Math.min(100, w.used))}%`;
