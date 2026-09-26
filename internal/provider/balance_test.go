@@ -50,6 +50,21 @@ func TestReadBalancePath(t *testing.T) {
 			t.Errorf("%q: %q %v, want %q", path, got, err, want)
 		}
 	}
+	cc := []byte(`{"credits":{"monthlyCredits":70.0},"windowLimits":{"fiveHour":{"used":0,"cap":14},"weekly":{"used":1.19,"cap":35}}}`)
+	for path, want := range map[string]string{
+		"5h: windowLimits.fiveHour.used / windowLimits.fiveHour.cap %; week: windowLimits.weekly.used/windowLimits.weekly.cap %; $credits.monthlyCredits": "5h 0% · week 3.4% · $70.00",
+		"credits.monthlyCredits;":         "70.00",
+		" left : $credits.monthlyCredits": "left $70.00",
+	} {
+		if got, err := readBalancePath(cc, path); err != nil || got != want {
+			t.Errorf("%q: %q %v, want %q", path, got, err, want)
+		}
+	}
+	for _, path := range []string{";", "5h: windowLimits.hour.used; $credits.monthlyCredits", "week:"} {
+		if got, err := readBalancePath(cc, path); err == nil {
+			t.Errorf("%q: read %q, want an error", path, got)
+		}
+	}
 	for _, path := range []string{"", "data.missing", "data.list.3.left", "data.total_available / zero", "data.list", "data.name + 1", "(data.total_available", "data.total_available / 0", "data.total_available 2", "%"} {
 		if got, err := readBalancePath(body, path); err == nil {
 			t.Errorf("%q: read %q, want an error", path, got)

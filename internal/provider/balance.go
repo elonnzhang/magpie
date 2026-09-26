@@ -239,8 +239,44 @@ func readAiHubMixAccount(b []byte) (string, error) {
 // telling what was used of a plan ("(1 - credits.monthlyCredits / 70) %").
 // A "$" or "¥" before it is put in front of the amount; a "%" after it
 // shows it as a percent of 1 (0.25 is 25%). A path alone that is not a
-// number is shown as it is.
+// number is shown as it is. Several amounts, each with a label if wanted,
+// go apart by ";" and are shown together: "5h: windowLimits.fiveHour.used /
+// windowLimits.fiveHour.cap %; week: …; $credits.monthlyCredits" is
+// "5h 0% · week 3.4% · $70.00".
 func readBalancePath(b []byte, path string) (string, error) {
+	if !strings.Contains(path, ";") && !strings.Contains(path, ":") {
+		return readBalanceOne(b, path)
+	}
+	var out []string
+	for part := range strings.SplitSeq(path, ";") {
+		if strings.TrimSpace(part) == "" {
+			continue
+		}
+		label, expr, ok := strings.Cut(part, ":")
+		if !ok {
+			label, expr = "", part
+		}
+		label = strings.TrimSpace(label)
+		v, err := readBalanceOne(b, expr)
+		if err != nil {
+			if label != "" {
+				err = fmt.Errorf("%s: %w", label, err)
+			}
+			return "", err
+		}
+		if label != "" {
+			v = label + " " + v
+		}
+		out = append(out, v)
+	}
+	if len(out) == 0 {
+		return "", errors.New("no balance path: where in the reply the amount is, e.g. data.balance")
+	}
+	return strings.Join(out, " · "), nil
+}
+
+// readBalanceOne is one amount of a balance path.
+func readBalanceOne(b []byte, path string) (string, error) {
 	path = strings.TrimSpace(path)
 	sign := ""
 	for _, s := range []string{"$", "¥", "€", "£"} {
