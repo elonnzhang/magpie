@@ -33,19 +33,24 @@ func TestBalanceReaders(t *testing.T) {
 }
 
 func TestReadBalancePath(t *testing.T) {
-	body := []byte(`{"code":true,"data":{"total_available":2500000,"name":"x","list":[{"left":"7.5"}]}}`)
+	body := []byte(`{"code":true,"credits":{"monthlyCredits":42},"data":{"total_available":2500000,"name":"x","list":[{"left":"7.5"}]}}`)
 	for path, want := range map[string]string{
 		"data.total_available":            "2500000.00",
 		"$ data.total_available / 500000": "$5.00",
 		"¥data.list.0.left":               "¥7.50",
 		"data.name":                       "x",
 		" data.total_available/1000000 ":  "2.50",
+		"(1-credits.monthlyCredits/70)%":  "40%",
+		"$ (data.total_available - data.list.0.left * 100000) / 500000": "$3.50",
+		"credits.monthlyCredits * 2 + 1":                                "85.00",
+		"-credits.monthlyCredits":                                       "-42.00",
+		"credits.monthlyCredits / 70 %":                                 "60%",
 	} {
 		if got, err := readBalancePath(body, path); err != nil || got != want {
 			t.Errorf("%q: %q %v, want %q", path, got, err, want)
 		}
 	}
-	for _, path := range []string{"", "data.missing", "data.list.3.left", "data.total_available / zero", "data.list"} {
+	for _, path := range []string{"", "data.missing", "data.list.3.left", "data.total_available / zero", "data.list", "data.name + 1", "(data.total_available", "data.total_available / 0", "data.total_available 2", "%"} {
 		if got, err := readBalancePath(body, path); err == nil {
 			t.Errorf("%q: read %q, want an error", path, got)
 		}

@@ -40,7 +40,10 @@ const providerUsage = `usage:
        magpie provider add "My Relay" url=https://relay.example.com/v1 key=sk-… header.X-Org-Id=acme
        magpie provider add anthropic sk-… id=anthropic-ws2 name="Anthropic WS2" header.anthropic-workspace-id=wrkspc_…
        magpie provider set my-relay models.url=https://relay.example.com/api/models catalog=
-       magpie provider add "My Relay" url=https://relay.example.com/v1 key=sk-… balance=https://relay.example.com/api/usage/token balance.path='$data.total_available / 500000'`
+       magpie provider add "My Relay" url=https://relay.example.com/v1 key=sk-… balance=https://relay.example.com/api/usage/token balance.path='$data.total_available / 500000'
+       magpie provider set my-relay balance.path='(1 - credits.monthlyCredits / 70) %'
+                                   (balance.path: where the amount is in the reply, or a sum of those with + - * / and
+                                    brackets; $ or ¥ in front adds the sign, % after it shows a percent of 1)`
 
 // providers: `magpie providers`
 func providers() error {

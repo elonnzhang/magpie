@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -233,9 +234,12 @@ func readAiHubMixAccount(b []byte) (string, error) {
 
 // readBalancePath picks the amount out of a reply by a dotted path, array
 // items by their index: "data.total_available", "balance_infos.0.total_balance".
-// A "/ n" after the path divides by n, for a relay counting in its own
-// units ("data.total_available / 500000"); a "$" or "¥" before it is put
-// in front of the amount. A value that is not a number is shown as it is.
+// It can be sums of paths and numbers, with + - * / and brackets, for a
+// relay counting in its own units ("data.total_available / 500000") or
+// telling what was used of a plan ("(1 - credits.monthlyCredits / 70) %").
+// A "$" or "¥" before it is put in front of the amount; a "%" after it
+// shows it as a percent of 1 (0.25 is 25%). A path alone that is not a
+// number is shown as it is.
 func readBalancePath(b []byte, path string) (string, error) {
 	path = strings.TrimSpace(path)
 	sign := ""
@@ -245,21 +249,171 @@ func readBalancePath(b []byte, path string) (string, error) {
 			break
 		}
 	}
-	div := 1.0
-	if p, d, ok := strings.Cut(path, "/"); ok {
-		n, err := strconv.ParseFloat(strings.TrimSpace(d), 64)
-		if err != nil || n == 0 {
-			return "", fmt.Errorf("the balance path divides by %q, not a number", strings.TrimSpace(d))
-		}
-		path, div = strings.TrimSpace(p), n
+	percent := false
+	if rest, ok := strings.CutSuffix(path, "%"); ok {
+		percent, path = true, strings.TrimSpace(rest)
 	}
 	if path == "" {
 		return "", errors.New("no balance path: where in the reply the amount is, e.g. data.balance")
 	}
-	var v any
-	if err := json.Unmarshal(b, &v); err != nil {
+	var reply any
+	if err := json.Unmarshal(b, &reply); err != nil {
 		return "", errors.New("the reply is not JSON")
 	}
+	e := &balanceExpr{src: path, reply: reply}
+	if e.lone() {
+		// a path alone: its value, a number or not
+		v, err := e.at(path)
+		if err != nil {
+			return "", err
+		}
+		if n, ok := number(v); ok {
+			return balanceAmount(sign, n, percent), nil
+		}
+		if s, ok := v.(string); ok && s != "" && !percent {
+			return sign + s, nil
+		}
+		return "", fmt.Errorf("%q in the reply is not an amount", path)
+	}
+	n, err := e.sum()
+	if err == nil && e.i < len(e.src) {
+		err = fmt.Errorf("the balance path has %q it can't read", e.src[e.i:])
+	}
+	if err != nil {
+		return "", err
+	}
+	if math.IsInf(n, 0) || math.IsNaN(n) {
+		return "", fmt.Errorf("the balance path divides by nothing")
+	}
+	return balanceAmount(sign, n, percent), nil
+}
+
+func balanceAmount(sign string, n float64, percent bool) string {
+	if percent {
+		return sign + strings.TrimSuffix(strconv.FormatFloat(n*100, 'f', 1, 64), ".0") + "%"
+	}
+	return money(sign, n)
+}
+
+// balanceExpr reads a balance path's sum: paths into the reply, numbers,
+// + - * / and brackets.
+type balanceExpr struct {
+	src   string
+	i     int
+	reply any
+}
+
+func (e *balanceExpr) space() {
+	for e.i < len(e.src) && e.src[e.i] == ' ' {
+		e.i++
+	}
+}
+
+// lone is whether the whole is one path.
+func (e *balanceExpr) lone() bool {
+	return !strings.ContainsAny(e.src, "+-*/() ") && e.src != "" && !isDigit(e.src[0])
+}
+
+func (e *balanceExpr) sum() (float64, error) {
+	v, err := e.product()
+	for err == nil {
+		e.space()
+		if e.i >= len(e.src) || (e.src[e.i] != '+' && e.src[e.i] != '-') {
+			break
+		}
+		op := e.src[e.i]
+		e.i++
+		var w float64
+		if w, err = e.product(); op == '+' {
+			v += w
+		} else {
+			v -= w
+		}
+	}
+	return v, err
+}
+
+func (e *balanceExpr) product() (float64, error) {
+	v, err := e.unary()
+	for err == nil {
+		e.space()
+		if e.i >= len(e.src) || (e.src[e.i] != '*' && e.src[e.i] != '/') {
+			break
+		}
+		op := e.src[e.i]
+		e.i++
+		var w float64
+		if w, err = e.unary(); err != nil {
+			break
+		}
+		if op == '*' {
+			v *= w
+		} else if w == 0 {
+			return 0, errors.New("the balance path divides by 0")
+		} else {
+			v /= w
+		}
+	}
+	return v, err
+}
+
+func (e *balanceExpr) unary() (float64, error) {
+	e.space()
+	if e.i >= len(e.src) {
+		return 0, errors.New("the balance path ends where a number or a path should be")
+	}
+	switch c := e.src[e.i]; {
+	case c == '-':
+		e.i++
+		v, err := e.unary()
+		return -v, err
+	case c == '(':
+		e.i++
+		v, err := e.sum()
+		if err != nil {
+			return 0, err
+		}
+		e.space()
+		if e.i >= len(e.src) || e.src[e.i] != ')' {
+			return 0, errors.New("the balance path has a ( without its )")
+		}
+		e.i++
+		return v, nil
+	case isDigit(c) || c == '.':
+		j := e.i
+		for j < len(e.src) && (isDigit(e.src[j]) || e.src[j] == '.') {
+			j++
+		}
+		n, err := strconv.ParseFloat(e.src[e.i:j], 64)
+		if err != nil {
+			return 0, fmt.Errorf("the balance path has %q, not a number", e.src[e.i:j])
+		}
+		e.i = j
+		return n, nil
+	}
+	j := e.i
+	for j < len(e.src) && !strings.ContainsRune("+-*/() ", rune(e.src[j])) {
+		j++
+	}
+	if j == e.i {
+		return 0, fmt.Errorf("the balance path has %q where a number or a path should be", e.src[e.i:])
+	}
+	path := e.src[e.i:j]
+	e.i = j
+	v, err := e.at(path)
+	if err != nil {
+		return 0, err
+	}
+	n, ok := number(v)
+	if !ok {
+		return 0, fmt.Errorf("%q in the reply is not a number", path)
+	}
+	return n, nil
+}
+
+// at is what is at a dotted path in the reply.
+func (e *balanceExpr) at(path string) (any, error) {
+	v := e.reply
 	for _, k := range strings.Split(path, ".") {
 		switch x := v.(type) {
 		case map[string]any:
@@ -267,23 +421,17 @@ func readBalancePath(b []byte, path string) (string, error) {
 		case []any:
 			i, err := strconv.Atoi(k)
 			if err != nil || i < 0 || i >= len(x) {
-				return "", fmt.Errorf("nothing at %q in the reply", path)
+				return nil, fmt.Errorf("nothing at %q in the reply", path)
 			}
 			v = x[i]
 		default:
 			v = nil
 		}
 		if v == nil {
-			return "", fmt.Errorf("nothing at %q in the reply", path)
+			return nil, fmt.Errorf("nothing at %q in the reply", path)
 		}
 	}
-	if n, ok := number(v); ok {
-		return money(sign, n/div), nil
-	}
-	if s, ok := v.(string); ok && s != "" {
-		return sign + s, nil
-	}
-	return "", fmt.Errorf("%q in the reply is not an amount", path)
+	return v, nil
 }
 
 // Balance asks the vendor what is left on the provider's key in use. ok is

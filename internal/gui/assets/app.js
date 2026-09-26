@@ -2343,7 +2343,7 @@ function renderEditor(p, presetID) {
     inner.append(...field(t("Balance URL"), bal, t("Where the vendor tells what is left on the key, asked with it like a chat request; shown on the Usage page")));
     const balPath = input(draft.balancePath, "data.balance");
     balPath.oninput = () => { draft.balancePath = balPath.value; };
-    inner.append(...field(t("Balance field"), balPath, t("Where the amount is in the reply, e.g. data.balance; \"$\" in front adds the sign, \"/ 500000\" after it divides")));
+    inner.append(...field(t("Balance field"), balPath, t("Where the amount is in the reply, e.g. data.balance; it can be a sum with + - * / and brackets, e.g. data.total / 500000 or (1 - credits.used / 70) %; \"$\" in front adds the sign, \"%\" after it shows a percent")));
     more.append(inner);
     ed.append(more);
   }

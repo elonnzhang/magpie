@@ -333,7 +333,7 @@ const I18N = {
     "Where the vendor lists its models, when that isn't under the base URL; asked with the key": "供应商的模型列表接口，不在基础地址下时填写；请求时会带上 Key",
     "Where the vendor tells what is left on the key, asked with it like a chat request; shown on the Usage page": "供应商查询该 Key 余额的接口，按对话请求的方式带上 Key 请求；结果显示在用量页",
     "Balance field": "余额字段",
-    "Where the amount is in the reply, e.g. data.balance; \"$\" in front adds the sign, \"/ 500000\" after it divides": "金额在返回 JSON 中的位置，例如 data.balance；前面加 \"$\" 显示币种符号，后面加 \"/ 500000\" 表示除以该数",
+    "Where the amount is in the reply, e.g. data.balance; it can be a sum with + - * / and brackets, e.g. data.total / 500000 or (1 - credits.used / 70) %; \"$\" in front adds the sign, \"%\" after it shows a percent": "金额在返回 JSON 中的位置，例如 data.balance；可以用 + - * / 和括号算，例如 data.total / 500000 或 (1 - credits.used / 70) %；前面加 \"$\" 显示币种符号，后面加 \"%\" 显示为百分比",
     "Balance": "余额",
     "Headers": "请求头",
     "Extra HTTP headers sent to the vendor, applied after auth. For gateways that need a private scheme.": "发送给供应商的额外 HTTP 请求头，在鉴权之后应用。适用于需要私有鉴权方案的网关。",
