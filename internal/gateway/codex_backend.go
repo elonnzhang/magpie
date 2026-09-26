@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 
@@ -132,18 +133,35 @@ func (s *Server) codexUpstream(w http.ResponseWriter, r *http.Request, rest stri
 	if r.URL.RawQuery != "" {
 		u += "?" + r.URL.RawQuery
 	}
-	req, err := http.NewRequestWithContext(r.Context(), r.Method, u, bytes.NewReader(body))
-	if err != nil {
-		writeError(w, provider.Responses, 502, err.Error())
-		return
-	}
-	copyHeaders(req.Header, r.Header)
-	// left to the transport, the reply comes back plain for the usage in it
-	req.Header.Del("Accept-Encoding")
-	res, err := s.client.Do(req)
-	if err != nil {
-		writeError(w, provider.Responses, 502, "OpenAI: "+err.Error())
-		return
+	var res *http.Response
+	for tries := 0; ; tries++ {
+		req, err := http.NewRequestWithContext(r.Context(), r.Method, u, bytes.NewReader(body))
+		if err != nil {
+			writeError(w, provider.Responses, 502, err.Error())
+			return
+		}
+		copyHeaders(req.Header, r.Header)
+		// left to the transport, the reply comes back plain for the usage in it
+		req.Header.Del("Accept-Encoding")
+		if res, err = s.client.Do(req); err != nil {
+			writeError(w, provider.Responses, 502, "OpenAI: "+err.Error())
+			return
+		}
+		if rest != "/responses" || tries >= 3 || (res.StatusCode != 400 && res.StatusCode != 404) {
+			break
+		}
+		// an item OpenAI can't take — sealed by another account, or
+		// another vendor's that it looks up and doesn't have — is taken
+		// out and the rest asked again, rather than the conversation
+		// stuck on it for good
+		msg, _ := io.ReadAll(io.LimitReader(res.Body, 1<<20))
+		res.Body.Close()
+		res.Body = io.NopCloser(bytes.NewReader(msg))
+		b, ok := withoutUnreadable(body, msg)
+		if !ok {
+			break
+		}
+		body = b
 	}
 	defer res.Body.Close()
 	for k, vs := range res.Header {
@@ -196,6 +214,55 @@ func (s *Server) codexUpstream(w http.ResponseWriter, r *http.Request, rest stri
 	usage.Append(usage.Record{Time: start, Agent: call.Agent, Provider: call.Provider, Model: call.Model,
 		Input: uu.Input, Output: uu.Output, CacheRead: uu.CacheRead, CacheWrite: uu.CacheWrite,
 		Reasoning: uu.Reasoning, Millis: call.Millis, Status: call.Status})
+}
+
+// unreadableItem is the item OpenAI's refusal names: sealed content it
+// can't verify, or an id it doesn't have ("Item with id 'rs_…' not found").
+var unreadableItem = regexp.MustCompile(`(?i)(?:encrypted content for item|item with id) '?([A-Za-z]+_[A-Za-z0-9_-]+)'?`)
+
+// withoutUnreadable is body without what OpenAI's refusal msg says it
+// can't read: the item it names, or the reasoning another account sealed.
+func withoutUnreadable(body, msg []byte) ([]byte, bool) {
+	if !foreignReasoning.Match(msg) && !bytes.Contains(bytes.ToLower(msg), []byte("not found")) {
+		return nil, false
+	}
+	if m := unreadableItem.FindSubmatch(msg); m != nil {
+		if b, ok := withoutItem(body, string(m[1])); ok {
+			return b, true
+		}
+	}
+	if foreignReasoning.Match(msg) {
+		return withoutReasoning(body)
+	}
+	return nil, false
+}
+
+// withoutItem is a Responses request without the input item of this id.
+func withoutItem(body []byte, id string) ([]byte, bool) {
+	var q map[string]json.RawMessage
+	if json.Unmarshal(body, &q) != nil {
+		return nil, false
+	}
+	var items []json.RawMessage
+	if json.Unmarshal(q["input"], &items) != nil {
+		return nil, false
+	}
+	kept := items[:0:0]
+	for _, it := range items {
+		var t struct {
+			ID string `json:"id"`
+		}
+		if json.Unmarshal(it, &t) == nil && t.ID == id {
+			continue
+		}
+		kept = append(kept, it)
+	}
+	if len(kept) == len(items) {
+		return nil, false
+	}
+	q["input"], _ = json.Marshal(kept)
+	b, err := json.Marshal(q)
+	return b, err == nil
 }
 
 // apiKey reports whether Codex signed in with an API key rather than a
@@ -314,6 +381,13 @@ func codexInput(body []byte, magpieModel bool) (_ []byte, compact bool) {
 						changed = true
 						continue
 					}
+				}
+				// Nor reasoning with nothing sealed in it — another vendor's,
+				// only an id (rs_…): OpenAI, which keeps nothing (store is
+				// false), looks the id up and answers 404 "Item … not found".
+				if enc, _ := it["encrypted_content"].(string); enc == "" {
+					changed = true
+					continue
 				}
 			}
 			out = append(out, it)

@@ -108,6 +108,62 @@ func TestCodexOwnModelOmitsNonemptyReasoning(t *testing.T) {
 	}
 }
 
+// Back on one of Codex's own models after another vendor's: its reasoning,
+// an id with nothing sealed in it, would be looked up by OpenAI and not
+// found, so it doesn't go. An item OpenAI still refuses is taken out and
+// the rest asked again.
+func TestCodexOwnModelAfterAnotherVendor(t *testing.T) {
+	setup(t, provider.Chat, &fake{t: t})
+	var got [][]byte
+	chatgpt(t, func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		got = append(got, b)
+		if bytes.Contains(b, []byte(`cmp_0217`)) {
+			w.WriteHeader(400)
+			io.WriteString(w, `{"error":{"message":"The encrypted content for item cmp_0217abc could not be verified. Reason: Encrypted content could not be decrypted or parsed.","code":"invalid_encrypted_content"}}`)
+			return
+		}
+		if bytes.Contains(b, []byte(`rs_other`)) {
+			w.WriteHeader(404)
+			io.WriteString(w, `{"error":{"message":"Item with id 'rs_other' not found. Items are not persisted when `+"`store`"+` is set to false."}}`)
+			return
+		}
+		io.WriteString(w, sse(`data: {"type":"response.completed","response":{"id":"r1"}}`))
+	})
+	code, body := codexPost(t, `{"model":"gpt-6-luna","stream":true,"store":false,"input":[
+	  {"type":"reasoning","id":"rs_0217903544582750000","summary":[{"type":"summary_text","text":"volc thought"}],"encrypted_content":null},
+	  {"type":"reasoning","id":"rs_other","summary":[],"encrypted_content":"sealed-elsewhere"},
+	  {"type":"compaction","id":"cmp_0217abc","encrypted_content":"not-openai"},
+	  {"type":"reasoning","id":"rs_own","summary":[],"encrypted_content":"openai-own"},
+	  {"type":"message","role":"user","content":[{"type":"input_text","text":"go on"}]}]}`)
+	if code != 200 || !strings.Contains(body, `response.completed`) {
+		t.Fatalf("%d %s", code, body)
+	}
+	if len(got) != 3 || bytes.Contains(got[0], []byte("volc thought")) {
+		t.Fatalf("%d asks, first: %s", len(got), got[0])
+	}
+	last := string(got[2])
+	if strings.Contains(last, "cmp_0217abc") || strings.Contains(last, "rs_other") ||
+		!strings.Contains(last, "openai-own") || !strings.Contains(last, "go on") {
+		t.Errorf("last ask: %s", last)
+	}
+}
+
+// A refusal that names nothing magpie can take out goes to Codex as it came.
+func TestCodexOwnModelRefusalPassesThrough(t *testing.T) {
+	setup(t, provider.Chat, &fake{t: t})
+	asks := 0
+	chatgpt(t, func(w http.ResponseWriter, r *http.Request) {
+		asks++
+		w.WriteHeader(404)
+		io.WriteString(w, `{"error":{"message":"The model 'gpt-x' does not exist"}}`)
+	})
+	code, body := codexPost(t, `{"model":"gpt-x","input":[{"type":"message","role":"user","content":[{"type":"input_text","text":"hi"}]}]}`)
+	if code != 404 || asks != 1 || !strings.Contains(body, "does not exist") {
+		t.Errorf("%d asks=%d %s", code, asks, body)
+	}
+}
+
 func TestCodexMagpieModelKeepsReasoningInput(t *testing.T) {
 	body := `{"model":"fake/m1","input":[{"type":"reasoning","content":[{"type":"reasoning_text","text":"thought"}],"encrypted_content":"foreign-token"}]}`
 	got, compact := codexInput([]byte(body), true)
