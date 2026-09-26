@@ -252,6 +252,43 @@ func TestIntentClassifierFails(t *testing.T) {
 	}
 }
 
+// A classifier that answers something else is up: the turn goes on without
+// an intent, and the next one asks it again rather than resting.
+func TestIntentOddAnswerDoesNotRest(t *testing.T) {
+	s, _, _, c := intented(t, provider.Rule{Use: "b/big", Intent: "refactoring"})
+	c.set("", 0)
+	out, r := postOK(t, s, "o1", chat("rename this package", nil, 0, ""))
+	if !strings.Contains(out, "from ka") || r.Rule.N != 0 || !strings.Contains(r.Rule.Classified.Error, "not a number") {
+		t.Fatalf("empty: %s %+v", out, r.Rule)
+	}
+	c.set("1", 0)
+	out, r = postOK(t, s, "o2", chat("rename that package", nil, 0, ""))
+	if !strings.Contains(out, "from kb") || r.Rule.N != 1 || r.Rule.Classified.Error != "" || c.n() != 2 {
+		t.Fatalf("after: %s %+v %d", out, r.Rule, c.n())
+	}
+}
+
+// A classifier that reasons is asked to reason least, with room for its
+// reasoning and the number; one whose levels aren't known is asked plainly.
+func TestIntentClassifierEffort(t *testing.T) {
+	s, _, _, c := intented(t, provider.Rule{Use: "b/big", Intent: "refactoring"})
+	c.set("1", 0)
+	postOK(t, s, "e1", chat("rename this package", nil, 0, ""))
+	if asked := c.last(); strings.Contains(asked, "reasoning_effort") || !strings.Contains(asked, `"max_tokens":2048`) {
+		t.Fatalf("plain: %s", asked)
+	}
+	p, _ := provider.Find("c")
+	for levels, want := range map[string]string{"low,high,max": "low", "none,low,high": "none", "minimal,medium": "minimal"} {
+		if err := catalog.SaveLive("c", p.Chat, []catalog.Model{{ID: "cls", Context: 32000, Efforts: strings.Split(levels, ",")}}); err != nil {
+			t.Fatal(err)
+		}
+		postOK(t, s, "e-"+levels, chat("rename "+levels, nil, 0, ""))
+		if asked := c.last(); !strings.Contains(asked, `"reasoning_effort":"`+want+`"`) {
+			t.Fatalf("%s: %s", levels, asked)
+		}
+	}
+}
+
 // The same message is classified once: another conversation starting with
 // it (an agent retrying, a subagent) reads the answer kept.
 func TestIntentAnswerKept(t *testing.T) {

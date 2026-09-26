@@ -14,6 +14,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -55,6 +56,10 @@ type classifyFailure struct {
 	at  time.Time
 }
 
+// answerError is a classifier that answered, but not with one of the
+// numbers: it is up, so it isn't left to rest for it.
+type answerError struct{ error }
+
 // classify is ask's answer for the message, from what was asked before
 // when it can be: the same message and intents within classifyKeep. A
 // classifier that failed is left to rest for classifyRest rather than
@@ -78,7 +83,9 @@ func classify(ask classifier, model string, intents []string, text string) (inte
 	classified.Lock()
 	defer classified.Unlock()
 	if err != nil {
-		classified.failed[model] = classifyFailure{err: err.Error(), at: time.Now()}
+		if !errors.As(err, new(answerError)) {
+			classified.failed[model] = classifyFailure{err: err.Error(), at: time.Now()}
+		}
 		return "", false, err
 	}
 	delete(classified.failed, model)
@@ -124,8 +131,10 @@ const classifyPrompt = "You route a user's message to a coding assistant by what
 	"Given numbered kinds of request and the user's message, answer with the number of the kind the message is, " +
 	"or 0 if it is none of them. Answer with the number only."
 
-// classifyBody is the Chat request asking model which of intents text is.
-func classifyBody(model string, intents []string, text string) []byte {
+// classifyBody is the Chat request asking model which of intents text is,
+// at effort when it isn't "". A model that reasons does so before it
+// answers, and how long varies: 2048 leaves room for that and the number.
+func classifyBody(model, effort string, intents []string, text string) []byte {
 	var b strings.Builder
 	b.WriteString("Kinds:\n")
 	for i, in := range intents {
@@ -134,7 +143,7 @@ func classifyBody(model string, intents []string, text string) []byte {
 	b.WriteString("\nThe user's message:\n<message>\n")
 	b.WriteString(text)
 	b.WriteString("\n</message>\n\nThe number of its kind (0 for none):")
-	body, _ := json.Marshal(map[string]any{
+	req := map[string]any{
 		"model": model,
 		"messages": []map[string]string{
 			{"role": "system", "content": classifyPrompt},
@@ -142,8 +151,12 @@ func classifyBody(model string, intents []string, text string) []byte {
 		},
 		"stream":      false,
 		"temperature": 0,
-		"max_tokens":  512,
-	})
+		"max_tokens":  2048,
+	}
+	if effort != "" {
+		req["reasoning_effort"] = effort
+	}
+	body, _ := json.Marshal(req)
 	return body
 }
 
@@ -158,12 +171,27 @@ func readIntent(answer string, intents []string) (string, error) {
 		if len(a) > 80 {
 			a = append(a[:80], '…')
 		}
-		return "", fmt.Errorf("it answered %q, not a number from 0 to %d", string(a), len(intents))
+		return "", answerError{fmt.Errorf("it answered %q, not a number from 0 to %d", string(a), len(intents))}
 	}
 	if n == 0 {
 		return "", nil
 	}
 	return intents[n-1], nil
+}
+
+// classifyEffort is the least reasoning model takes: none when it can go
+// without, else its lowest level; "" when its levels aren't known, which
+// leaves it to the vendor.
+func classifyEffort(model string) string {
+	p, m, ok := provider.Resolve(model)
+	if !ok {
+		return ""
+	}
+	levels := p.Efforts(m)
+	if len(levels) == 0 {
+		return ""
+	}
+	return fitEffort("none", levels)
 }
 
 // askClassifier asks model through the gateway itself, as a client would.
@@ -177,7 +205,7 @@ func (s *Server) askClassifier(model string, intents []string, text string) (str
 	r.Header.Set("Content-Type", "application/json")
 	r.Header.Set("User-Agent", RouterAgent)
 	w := httptest.NewRecorder()
-	s.serve(w, r, provider.Chat, classifyBody(model, intents, text))
+	s.serve(w, r, provider.Chat, classifyBody(model, classifyEffort(model), intents, text))
 	if ctx.Err() != nil {
 		return "", fmt.Errorf("%s gave no answer in %s", model, classifyTimeout)
 	}
@@ -202,7 +230,7 @@ func (s *Server) askClassifier(model string, intents []string, text string) (str
 		return "", fmt.Errorf("%s: %s", model, msg)
 	}
 	if len(out.Choices) == 0 {
-		return "", fmt.Errorf("%s gave no answer", model)
+		return "", answerError{fmt.Errorf("%s gave no answer", model)}
 	}
 	return readIntent(out.Choices[0].Message.Content, intents)
 }
