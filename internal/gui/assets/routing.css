@@ -50,6 +50,13 @@
 @keyframes rttick { 40% { transform: scale(1.04); } }
 .rt-accts { position: relative; z-index: 1; list-style: none; margin: 0; padding: 0; display: grid; gap: 7px; min-width: 0; container-type: inline-size; }
 .rt-accts li { position: relative; display: grid; grid-template-columns: 10px minmax(0, 1fr) auto; align-items: center; column-gap: 10px; row-gap: 6px; padding: 9px 12px; background: var(--card); border: 1px solid var(--line); border-radius: 10px; font-size: 13px; transition: opacity .3s, border-color .3s, transform .5s cubic-bezier(.2, .8, .2, 1); }
+.rt-accts li { margin-left: calc(var(--depth, 0) * 18px); }
+/* a group in the group: a heading its models hang from, set in under it */
+.rt-accts li.rt-sub { display: flex; align-items: center; gap: 7px; padding: 5px 10px; font-size: 12px; color: var(--muted); background: var(--card-2); border-style: dashed; }
+.rt-accts li.rt-sub.on { border-style: solid; border-color: var(--fg-2); color: var(--fg); }
+.rt-accts li.rt-sub svg { flex: none; color: var(--fg-2); }
+.rt-accts li.rt-sub code.mdl { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rt-accts li.rt-sub i { margin-left: auto; font-style: normal; font-size: 10.5px; font-weight: 560; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--fg-2); white-space: nowrap; }
 .rt-accts li.idle { display: block; color: var(--muted); border-style: dashed; text-align: center; }
 .rt-accts b { font-weight: 560; color: var(--fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rt-accts b > span:not(.ic) { font-weight: 450; color: var(--muted); }

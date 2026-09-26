@@ -176,6 +176,18 @@
       <li>An intent is a few words for what the user asks for — “writing or fixing tests”, “a quick question”. As a turn begins, the group’s classifier — any model magpie has; a small, fast one without reasoning is best — is asked once which of the intents that could match the user’s message is. Only the message is sent, not the conversation. If it fails, is slow (8 s) or can’t say, no intent matches and the turn goes by the other rules. It isn’t asked when a rule without an intent would decide anyway, and the same message isn’t asked about twice. Its calls show in Usage as magpie’s own. Exactly what it is asked, how its answer is used and what happens when it fails: <a href="/docs/intent">Intent routing</a>.</li>
       <li>The Routing tab says which rule sent each turn where, and what the classifier said.</li>
     </ul>
+    <h3 id="nested">Groups in groups</h3>
+    <p>A group’s models can include another group: pick it under <em>Routing groups</em> in <span class="ui">Add a model</span>, or <code>models+=group/&lt;id&gt;</code> from a terminal. The group in it takes its place in the order and routes among its own models by its own routing and rules. So Coder can be <code>deepseek-v4-pro</code> then <em>Fast</em>, and Fast its own order of cheap models. A Coder rule can send a turn to <code>group/fast</code>, and Fast’s own rules then pick which of its models goes first.</p>
+    <ul>
+      <li><b>No loops.</b> A group can’t be in itself, directly or through the groups in it. Saving Fast with Coder in it, while Coder has Fast, is refused, and the picker doesn’t offer such a group. Groups go at most 8 deep. A group can’t be removed while another has it: take it out there first.</li>
+      <li><b>Failover goes through.</b> If every model in the inner group fails, the outer group’s next member answers, as with any member.</li>
+      <li>A model that appears twice (on its own and in a group in it) is asked once, at its first place.</li>
+    </ul>
+    <figure class="figure">
+      <img class="for-light" src="/img/nested-routing-light.png" width="2080" height="1330" loading="lazy" alt="The Routing tab with a group in a group: Coder has deepseek-v4-pro and the group Fast, whose deepseek-v4-flash and kimi-k2.5 sit under it; Kimi answered">
+      <img class="for-dark" src="/img/nested-routing-dark.png" width="2080" height="1330" loading="lazy" alt="The Routing tab with a group in a group: Coder has deepseek-v4-pro and the group Fast, whose deepseek-v4-flash and kimi-k2.5 sit under it; Kimi answered">
+      <figcaption>Coder’s rule sent a quick question to the group Fast; Fast’s own rule put Kimi first there. The trace says what each group’s rules and classifier decided.</figcaption>
+    </figure>
     <p>The <span class="ui">Routing</span> tab shows the gateway’s decisions live: who answered each request, and why. The same groups from a terminal:</p>
     <div class="code">
       <span class="lang">Terminal</span>
@@ -185,6 +197,7 @@ magpie group add <span class="s">"Opus anywhere"</span> models=claude/claude-opu
 magpie group set opus-anywhere models+=openrouter/anthropic/claude-opus-5.5
 magpie group rule add opus-anywhere use=openrouter/anthropic/claude-opus-5.5 tokens=150k  <span class="c"># long turns to it first</span>
 magpie group rule add opus-anywhere use=copilot/claude-opus-5.5 intent=<span class="s">"a quick question"</span> classifier=groq/llama-3.1-8b-instant
+magpie group set coder models+=group/opus-anywhere  <span class="c"># a group in a group</span>
 magpie group rule opus-anywhere      <span class="c"># its rules; rule rm|mv &lt;n&gt;, rule classifier &lt;group&gt; &lt;model&gt;</span>
 magpie group rm opus-anywhere        <span class="c"># one magpie found is hidden; magpie group restore &lt;id&gt;</span>
 magpie claude group/opus-anywhere    <span class="c"># use it</span></pre>

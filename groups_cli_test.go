@@ -136,8 +136,21 @@ func TestGroupAddSetRemove(t *testing.T) {
 		// a/m and b/vendor/m are different ids; "m" is only a's model
 		t.Fatalf("bare: %v", err)
 	}
-	if _, err := addGroup("nested", []string{"models=group/opus-anywhere"}); err == nil {
-		t.Fatal("a group in a group")
+	// a group in a group, but never one it is in itself
+	if _, err := addGroup("nested", []string{"models=group/opus-anywhere,a/only-a"}); err != nil {
+		t.Fatalf("a group in a group: %v", err)
+	}
+	if _, err := setGroup("opus-anywhere", []string{"models+=group/nested"}); err == nil || !strings.Contains(err.Error(), "in itself") {
+		t.Fatalf("a loop: %v", err)
+	}
+	if _, err := removeGroup("opus-anywhere"); err == nil || !strings.Contains(err.Error(), "take it out first") {
+		t.Fatalf("rm while in a group: %v", err)
+	}
+	if _, err := removeGroup("nested"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := addGroup("nowhere", []string{"models=group/nothing"}); err == nil || !strings.Contains(err.Error(), "no group") {
+		t.Fatalf("no such group: %v", err)
 	}
 
 	// set: by name or id, a field at a time

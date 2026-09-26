@@ -230,14 +230,17 @@ func outgrown(g provider.Group, ctx map[string]int, held *RuleHit, q provider.Ru
 	return &out, true
 }
 
-// memberContexts is the tokens each member takes, where known.
+// memberContexts is the tokens each member takes, where known: a group in
+// the group, the least any of its models takes.
 func memberContexts(ms []provider.Member) map[string]int {
 	out := map[string]int{}
 	cat := provider.Catalog()
 	for _, m := range ms {
 		for _, e := range cat {
 			if e.Group == "" && e.Provider.ID == m.Provider.ID && e.Model == m.Model {
-				out[m.ID] = e.Context
+				if c, ok := out[m.ID]; !ok || e.Context > 0 && (c == 0 || e.Context < c) {
+					out[m.ID] = e.Context
+				}
 				break
 			}
 		}
@@ -260,27 +263,73 @@ func ruleAnswered(key string, u Usage) {
 	}
 }
 
-// ruleMember is the member a rule names, among those ready now.
-func ruleMember(hit *RuleHit, ms []provider.Member) (provider.Member, bool) {
-	if hit == nil || hit.Use == "" {
-		return provider.Member{}, false
-	}
-	for _, m := range ms {
-		if m.ID == hit.Use {
-			return m, true
+// nestedRules looks at the rules of each group in the group that the one
+// going first is of, outermost first: a group's rules pick among its own
+// members as the group's do, keeping what they decided for the turn by
+// their own key (at, the group's, and the group's way down). It gives
+// what each decided and their keys.
+func (s *Server) nestedRules(at string, req *Request, agent string, ms []provider.Member, cands []candidate, pl planned, aff *Affinity) ([]NestedRule, []string, []candidate, planned) {
+	var out []NestedRule
+	var keys []string
+	for depth := 0; ; depth++ { // as deep as the one going first is
+		i := slices.IndexFunc(ms, func(m provider.Member) bool { return ofMember(cands[0], m) })
+		if i < 0 || len(ms[i].Via) <= depth {
+			break
+		}
+		lead := ms[i]
+		sub := lead.Via[depth]
+		at += ">" + sub.ID
+		if len(sub.Rules) == 0 {
+			continue
+		}
+		var subMs []provider.Member
+		for _, m := range ms {
+			if len(m.Path) > depth+1 && m.Path[depth] == lead.Path[depth] {
+				subMs = append(subMs, m.Below(depth+1))
+			}
+		}
+		h := ruleFor(at, sub, subMs, req, agent, s.askClassifier)
+		keys = append(keys, at)
+		out = append(out, NestedRule{Group: sub.ID, Name: sub.Name, Rule: h})
+		if h == nil || h.Use == "" || h.Held && aff != nil && aff.Kept {
+			continue
+		}
+		was := cands[0]
+		ok := false
+		if ruled := ruleMembers(h, subMs); len(ruled) > 0 {
+			cands, pl, ok = ruleFirst(ruled, cands, pl)
+		}
+		h.Unready = !ok
+		if ok && aff != nil && aff.Kept && cands[0].rest != was.rest {
+			aff.Kept, aff.Why = false, "rule"
 		}
 	}
-	return provider.Member{}, false
+	return out, keys, cands, pl
+}
+
+// ruleMembers are the models of the member a rule names, among those
+// ready now: the model, or a group in the group's.
+func ruleMembers(hit *RuleHit, ms []provider.Member) []provider.Member {
+	if hit == nil || hit.Use == "" {
+		return nil
+	}
+	var out []provider.Member
+	for _, m := range ms {
+		if m.ID == hit.Use {
+			out = append(out, m)
+		}
+	}
+	return out
 }
 
 // ruleFirst puts first the member's keys or accounts that aren't resting,
 // in the order they had; everyone else follows as they were, to fail over
 // to. It reports false when the member has none ready.
-func ruleFirst(m provider.Member, cs []candidate, pl planned) ([]candidate, planned, bool) {
+func ruleFirst(ms []provider.Member, cs []candidate, pl planned) ([]candidate, planned, bool) {
 	var first, rest []candidate
 	var wFirst, wRest []Weighed
 	for i, c := range cs {
-		if ofMember(c, m) && pl.order[i].Rest == nil {
+		if slices.ContainsFunc(ms, func(m provider.Member) bool { return ofMember(c, m) }) && pl.order[i].Rest == nil {
 			first, wFirst = append(first, c), append(wFirst, pl.order[i])
 		} else {
 			rest, wRest = append(rest, c), append(wRest, pl.order[i])
@@ -304,9 +353,9 @@ func ofMember(c candidate, m provider.Member) bool {
 // membersImageInput is whether a group request may carry images: the
 // member a rule put first decides, or else every member must take them
 // (as the group's catalog entry says without rules).
-func membersImageInput(ms []provider.Member, ruled provider.Member, ruleOK bool) *bool {
-	if ruleOK {
-		ms = []provider.Member{ruled}
+func membersImageInput(ms []provider.Member, ruled []provider.Member) *bool {
+	if len(ruled) > 0 {
+		ms = ruled
 	}
 	var out *bool
 	cat := provider.Catalog()

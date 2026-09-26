@@ -434,7 +434,7 @@ func TestRuleFirstAndOfMember(t *testing.T) {
 		pl.order = append(pl.order, Weighed{ID: c.rest, Model: c.model})
 	}
 	pl.order[3].Rest = &Rest{}
-	got, gp, ok := ruleFirst(provider.Member{Provider: b, Model: "m"}, cs, pl)
+	got, gp, ok := ruleFirst([]provider.Member{{Provider: b, Model: "m"}}, cs, pl)
 	var ids []string
 	for i, c := range got {
 		ids = append(ids, c.rest+"/"+c.model)
@@ -445,7 +445,7 @@ func TestRuleFirstAndOfMember(t *testing.T) {
 	if !ok || strings.Join(ids, " ") != "ab/m ab@me/m a/m ab#k2/x ab#k2/m" {
 		t.Fatalf("%v %v", ok, ids)
 	}
-	if _, _, ok := ruleFirst(provider.Member{Provider: provider.Provider{ID: "c"}, Model: "m"}, cs, pl); ok {
+	if _, _, ok := ruleFirst([]provider.Member{{Provider: provider.Provider{ID: "c"}, Model: "m"}}, cs, pl); ok {
 		t.Fatal("no candidates of c")
 	}
 	// "a" is not "ab"'s

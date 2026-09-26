@@ -11,6 +11,12 @@ package provider
 // group of those, derived each time and never stored until the user
 // changes one. Models of different names are only ever grouped by the
 // user: nothing here guesses which models are alike.
+//
+// A group's member may be another group ("group/<id>"): to the group it is
+// one member, which a rule can put first like a model; its models are its
+// own group's, ordered by its own routing and rules. A group can't be in
+// itself, however deep: SaveGroup refuses the loop, and one written into
+// providers.json by hand is cut where it closes.
 
 import (
 	"errors"
@@ -38,7 +44,7 @@ const (
 type Group struct {
 	ID       string   `json:"id"`
 	Name     string   `json:"name"`
-	Members  []string `json:"members"`            // "provider/model", in order
+	Members  []string `json:"members"`            // "provider/model" or "group/<id>", in order
 	Routing  string   `json:"routing,omitempty"`  // as Provider.Routing, over all the members' keys and accounts
 	Affinity string   `json:"affinity,omitempty"` // as Provider.Affinity
 	// Rules send the requests they match to one member first, in order:
@@ -55,12 +61,38 @@ type Group struct {
 	Hidden bool `json:"hidden,omitempty"`
 }
 
-// Member is a group's member as it resolves now.
+// Member is one of a group's models as it resolves now.
 type Member struct {
-	ID       string // as the group names it
+	ID string // the group's member it is: the model, or the group in the group it is of
+	// Path is the members from the group's own down to the model: [ID] for
+	// a model the group names itself, ["group/fast", "a/m"] for one of
+	// its group fast, and so on down.
+	Path []string
+	// Via are the groups in the group it is of, the outermost first: the
+	// group each of Path's members but the last names.
+	Via      []Group
 	Provider Provider
 	Model    string // what the vendor is asked for
 }
+
+// Groups are the ids of the groups in the group the model is of, the
+// outermost first.
+func (m Member) Groups() []string {
+	out := make([]string, len(m.Via))
+	for i, g := range m.Via {
+		out[i] = g.ID
+	}
+	return out
+}
+
+// Below is the member as the group at depth (0 the group itself, 1 the
+// group in it Path[0] names, …) has it.
+func (m Member) Below(depth int) Member {
+	return Member{ID: m.Path[depth], Path: m.Path[depth:], Via: m.Via[depth:], Provider: m.Provider, Model: m.Model}
+}
+
+// maxNest is how deep groups in groups may go.
+const maxNest = 8
 
 // Groups lists the user's groups, then those magpie found, hidden ones
 // too (marked so).
@@ -155,28 +187,50 @@ func FindGroup(id string) (Group, []Member, bool) {
 		return Group{}, nil, false
 	}
 	entries := providerEntries()
-	for _, g := range groupsIn(entries) {
-		if g.ID == gid && !g.Hidden {
-			return g, membersIn(entries, g), true
-		}
+	all := groupsIn(entries)
+	if g, ok := groupOf(all, gid); ok {
+		return g, membersIn(entries, all, g), true
 	}
 	return Group{}, nil, false
 }
 
-func membersIn(entries []Entry, g Group) []Member {
+// groupOf is the group of an id among all, unless it was removed.
+func groupOf(all []Group, id string) (Group, bool) {
+	for _, g := range all {
+		if g.ID == id && !g.Hidden {
+			return g, true
+		}
+	}
+	return Group{}, false
+}
+
+// membersIn are a group's models, ready now, in its order: a group in it
+// gives its own there, as deep as they go. A model met again is left
+// where it was first, and a group that would be in itself is cut there.
+func membersIn(entries []Entry, all []Group, g Group) []Member {
 	var out []Member
 	seen := map[string]bool{}
-	for _, id := range g.Members {
-		if strings.HasPrefix(id, GroupPrefix) {
-			continue // a group in a group is not one
+	var walk func(g Group, path []string, via []Group, in []string)
+	walk = func(g Group, path []string, via []Group, in []string) {
+		for _, id := range g.Members {
+			at := append(slices.Clone(path), id)
+			if gid, ok := strings.CutPrefix(id, GroupPrefix); ok {
+				sub, ok := groupOf(all, gid)
+				if !ok || slices.Contains(in, gid) || len(via) >= maxNest {
+					continue // gone, a loop, or deeper than anyone nests
+				}
+				walk(sub, at, append(slices.Clone(via), sub), append(slices.Clone(in), gid))
+				continue
+			}
+			p, m, ok := resolveIn(entries, id)
+			if !ok || seen[p.ID+"/"+m] {
+				continue
+			}
+			seen[p.ID+"/"+m] = true
+			out = append(out, Member{ID: at[0], Path: at, Via: via, Provider: p, Model: m})
 		}
-		p, m, ok := resolveIn(entries, id)
-		if !ok || seen[p.ID+"/"+m] {
-			continue
-		}
-		seen[p.ID+"/"+m] = true
-		out = append(out, Member{ID: id, Provider: p, Model: m})
 	}
+	walk(g, nil, nil, []string{g.ID})
 	return out
 }
 
@@ -186,11 +240,12 @@ func membersIn(entries []Entry, g Group) []Member {
 // member has.
 func groupEntries(entries []Entry) []Entry {
 	var out []Entry
-	for _, g := range groupsIn(entries) {
+	all := groupsIn(entries)
+	for _, g := range all {
 		if g.Hidden {
 			continue
 		}
-		ms := membersIn(entries, g)
+		ms := membersIn(entries, all, g)
 		if len(ms) == 0 {
 			continue
 		}
@@ -246,9 +301,11 @@ func SaveGroup(g Group) error {
 		g.Name = g.ID
 	}
 	g.Members = cleanList(g.Members)
-	g.Members = slices.DeleteFunc(g.Members, func(id string) bool { return strings.HasPrefix(id, GroupPrefix) })
 	if len(g.Members) == 0 {
 		return errors.New("a group needs a model in it")
+	}
+	if err := groupsInGroup(g, groupsIn(providerEntries())); err != nil {
+		return err
 	}
 	if g.Routing != Ordered && g.Routing != Rotate && g.Routing != LeastUsed {
 		g.Routing = ""
@@ -288,9 +345,91 @@ func SaveGroup(g Group) error {
 	return store(f)
 }
 
+// groupsInGroup checks the groups a group has in it: each one magpie has,
+// and none that has the group in it, however deep — the group would be
+// in itself, and a request to it would go round for ever.
+func groupsInGroup(g Group, all []Group) error {
+	for _, id := range g.Members {
+		gid, ok := strings.CutPrefix(id, GroupPrefix)
+		if !ok {
+			continue
+		}
+		if gid == g.ID {
+			return fmt.Errorf("%s can't be in itself", g.Name)
+		}
+		sub, ok := groupOf(all, gid)
+		if !ok {
+			return fmt.Errorf("magpie has no group %q to put in %s", gid, g.Name)
+		}
+		if way := wayTo(all, sub, g.ID, nil); way != nil {
+			return fmt.Errorf("%s can't be in %s: %s is in it already (%s), so %s would be in itself",
+				sub.Name, g.Name, g.Name, strings.Join(append(append([]string{sub.ID}, way...), g.ID), " ⊃ "), g.Name)
+		}
+		if d := depthOf(all, sub, nil); d+1 > maxNest {
+			return fmt.Errorf("%s has groups in it %d deep; a group in a group goes at most %d deep", sub.Name, d, maxNest)
+		}
+	}
+	return nil
+}
+
+// wayTo is the groups from g down to the group id, when g has it in it
+// however deep (its first step first, the id itself left out); nil when
+// it hasn't.
+func wayTo(all []Group, g Group, id string, in []string) []string {
+	for _, m := range g.Members {
+		gid, ok := strings.CutPrefix(m, GroupPrefix)
+		if !ok || slices.Contains(in, gid) {
+			continue
+		}
+		if gid == id {
+			return []string{}
+		}
+		if sub, ok := groupOf(all, gid); ok {
+			if way := wayTo(all, sub, id, append(slices.Clone(in), g.ID)); way != nil {
+				return append([]string{gid}, way...)
+			}
+		}
+	}
+	return nil
+}
+
+// depthOf is how deep the groups in g go: 0 when it has none.
+func depthOf(all []Group, g Group, in []string) int {
+	d := 0
+	for _, m := range g.Members {
+		gid, ok := strings.CutPrefix(m, GroupPrefix)
+		if !ok || slices.Contains(in, gid) {
+			continue
+		}
+		if sub, ok := groupOf(all, gid); ok {
+			d = max(d, 1+depthOf(all, sub, append(slices.Clone(in), g.ID)))
+		}
+	}
+	return d
+}
+
+// GroupsWith are the groups that have the group id in them as a member.
+func GroupsWith(id string) []Group {
+	var out []Group
+	for _, g := range groupsIn(providerEntries()) {
+		if !g.Hidden && slices.Contains(g.Members, GroupPrefix+id) {
+			out = append(out, g)
+		}
+	}
+	return out
+}
+
 // DeleteGroup removes a group of the user's; one magpie found is hidden,
-// to come back with ShowGroup.
+// to come back with ShowGroup. A group another has in it stays until it is
+// taken out of that one.
 func DeleteGroup(id string) error {
+	if in := GroupsWith(id); len(in) > 0 {
+		var names []string
+		for _, g := range in {
+			names = append(names, g.Name)
+		}
+		return fmt.Errorf("%s is in %s: take it out first", id, strings.Join(names, ", "))
+	}
 	f := load()
 	found := false
 	f.Groups = slices.DeleteFunc(f.Groups, func(g Group) bool {

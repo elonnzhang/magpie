@@ -16,7 +16,8 @@ const ruleUsage = `usage:
   magpie group rule <group>               the group's rules
   magpie group rule add <group> use=<model> [tokens=<n>] [images] [effort=on|low|medium|high|xhigh|max] [agents=a,b…]
                         [intent="<what the message asks for>"] [classifier=<model>] [at=<n>]
-                                          a rule: a turn that matches it goes to <model>, one of the group's, first
+                                          a rule: a turn that matches it goes to <model>, one of the group's
+                                          (or group/<id>, a group in it), first
   magpie group rule rm <group> <n>        remove rule n
   magpie group rule mv <group> <n> <to>   move rule n to place <to>
   magpie group rule classifier <group> <model>

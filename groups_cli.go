@@ -31,7 +31,9 @@ const groupUsage = `usage:
   removing one stores {"id":…,"hidden":true} in providers.json, which is what keeps it removed:
   take that record out of the file and the group is back
 
-  models   provider/model ids as magpie models lists them; a bare model id works when one provider serves it
+  models   provider/model ids as magpie models lists them; a bare model id works when one provider serves it;
+           group/<id> puts another group in it, routed by its own routing and rules in its place —
+           never one the group is in already (that would put it in itself), at most 8 groups deep
   routing  smart   (default) of the subscriptions with quota to spare, the one renewing soonest first
            order   the first model until it can't answer, then the next
            rotate  each conversation's next turn goes to the next member's account or key
@@ -43,6 +45,7 @@ const groupUsage = `usage:
 
   e.g. magpie group add "Opus anywhere" models=claude/claude-opus-5-5,copilot/claude-opus-5.5 routing=order
        magpie group set opus-anywhere stays=session models+=openrouter/anthropic/claude-opus-5.5
+       magpie group add Everything models=group/opus-anywhere,deepseek/deepseek-v4-flash routing=order
        magpie claude group/opus-anywhere`
 
 // routingNames: each routing's value in the file, what the CLI calls it,
@@ -129,8 +132,14 @@ func memberResolver(keep []string) func(string) (string, error) {
 	}
 	return func(in string) (string, error) {
 		id := strings.TrimPrefix(strings.TrimSpace(in), "magpie/")
-		if strings.HasPrefix(id, provider.GroupPrefix) {
-			return "", fmt.Errorf("%s is a group: a group can't be in a group", id)
+		if gid, ok := strings.CutPrefix(id, provider.GroupPrefix); ok {
+			// a group in the group: SaveGroup refuses one it would be in itself through
+			for _, g := range provider.Groups() {
+				if strings.EqualFold(g.ID, gid) && !g.Hidden {
+					return provider.GroupPrefix + g.ID, nil
+				}
+			}
+			return "", fmt.Errorf("magpie has no group %q (magpie groups lists them)", gid)
 		}
 		if slices.Contains(ids, id) || slices.Contains(keep, id) {
 			return id, nil
@@ -523,6 +532,14 @@ func groupUses() map[string][]string {
 // memberLabel: a member as the Routing view shows it, its provider and
 // the model's name; ok is false for one no provider serves now.
 func memberLabel(id string, names map[string]provider.Entry) (string, bool) {
+	if gid, ok := strings.CutPrefix(id, provider.GroupPrefix); ok {
+		for _, g := range provider.Groups() {
+			if g.ID == gid && !g.Hidden {
+				return "routing group " + g.Name + " · " + routingName(g.Routing) + " · " + strings.Join(g.Members, ", "), true
+			}
+		}
+		return "", false
+	}
 	if e, ok := names[id]; ok {
 		n := e.Name
 		if n == "" {

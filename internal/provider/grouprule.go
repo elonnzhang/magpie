@@ -185,18 +185,32 @@ func Intents(rules []Rule, q RuleRequest) []string {
 // request past a length the other members can all take to one with more
 // room. Without rules the group can do what all its members can.
 func ruledEntry(e *Entry, g Group, ms []Member, entries []Entry) {
+	// of is what a member takes: a group in the group takes what every
+	// one of its models does
 	of := func(id string) (Entry, bool) {
+		var out Entry
+		found := false
 		for _, m := range ms {
 			if m.ID != id {
 				continue
 			}
 			for _, x := range entries {
-				if x.Provider.ID == m.Provider.ID && x.Model == m.Model {
-					return x, true
+				if x.Provider.ID != m.Provider.ID || x.Model != m.Model {
+					continue
 				}
+				if !found {
+					out, found = x, true
+					break
+				}
+				if x.Context > 0 && (out.Context == 0 || x.Context < out.Context) {
+					out.Context = x.Context
+				}
+				out.Images = out.Images && x.Images
+				out.ImageInput = sharedImageInput(out.ImageInput, x.ImageInput)
+				break
 			}
 		}
-		return Entry{}, false
+		return out, found
 	}
 	sees := func(x Entry) bool { return x.Images && (x.ImageInput == nil || *x.ImageInput) }
 	for i, r := range g.Rules {

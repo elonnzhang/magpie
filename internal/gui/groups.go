@@ -3,6 +3,8 @@ package gui
 import (
 	"encoding/json"
 	"net/http"
+	"slices"
+	"strings"
 
 	"github.com/yetone/magpie/internal/provider"
 )
@@ -20,6 +22,9 @@ type groupJSON struct {
 	provider.Group
 	Ready bool         `json:"ready"` // a member is: agents can pick it
 	Info  []memberJSON `json:"memberInfo"`
+	// Holds: the groups in it, at any depth — none of which can have it in
+	// turn
+	Holds []string `json:"holds"`
 }
 
 type memberJSON struct {
@@ -30,6 +35,7 @@ type memberJSON struct {
 	Icon     string `json:"icon,omitempty"`
 	Model    string `json:"model,omitempty"` // what the vendor is asked for
 	On       int    `json:"on"`              // its keys or accounts on
+	Group    bool   `json:"group,omitempty"` // a routing group in the group; Name is its
 	// what a rule may send it: the tokens it takes, when known, and images
 	Context int  `json:"context,omitempty"`
 	Images  bool `json:"images,omitempty"`
@@ -109,9 +115,36 @@ func groupsState() groupsJSON {
 		}
 	}
 	for _, g := range provider.Groups() {
-		gj := groupJSON{Group: g, Info: []memberJSON{}}
+		gj := groupJSON{Group: g, Info: []memberJSON{}, Holds: []string{}}
+		if _, ms, ok := provider.FindGroup(provider.GroupPrefix + g.ID); ok {
+			for _, m := range ms {
+				for _, v := range m.Groups() {
+					if !slices.Contains(gj.Holds, v) {
+						gj.Holds = append(gj.Holds, v)
+					}
+				}
+			}
+		}
 		for _, id := range g.Members {
 			m := memberJSON{ID: id}
+			if gid, ok := strings.CutPrefix(id, provider.GroupPrefix); ok {
+				// a group in the group: what agents see of it
+				m.Group = true
+				for _, e := range served {
+					if e.ID == id {
+						_, ms, _ := provider.FindGroup(id)
+						m.Ready, m.Name, m.Icon, m.On = true, e.Name, e.Provider.Icon, len(ms)
+						m.Context, m.Images = e.Context, e.Images && (e.ImageInput == nil || *e.ImageInput)
+						gj.Ready = true
+						break
+					}
+				}
+				if m.Name == "" {
+					m.Name = gid
+				}
+				gj.Info = append(gj.Info, m)
+				continue
+			}
 			if p, model, ok := provider.Resolve(id); ok {
 				_, who := onOf(p)
 				m.Ready, m.Provider, m.Name, m.Icon, m.Model, m.On = true, p.ID, p.Name, p.Icon, model, max(len(who), 1)
