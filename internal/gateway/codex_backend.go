@@ -169,6 +169,17 @@ func (s *Server) codexUpstream(w http.ResponseWriter, r *http.Request, rest stri
 		body = b
 	}
 	defer res.Body.Close()
+	if base == codexAPIBase && res.StatusCode == http.StatusUnauthorized {
+		// Codex signed in with an API key OpenAI refuses — often one a
+		// relay issued, left in ~/.codex/auth.json — and one of Codex's own
+		// models was picked, which goes out with Codex's own sign-in
+		msg, _ := io.ReadAll(io.LimitReader(res.Body, 1<<20))
+		writeError(w, provider.Responses, res.StatusCode, codexKeyRefused(msg))
+		s.record(Call{Time: start, From: provider.Responses, To: provider.Responses, Model: modelOf(body),
+			Provider: "openai", Agent: usage.AgentOf(r.Header.Get("User-Agent")), Status: res.StatusCode,
+			Millis: time.Since(start).Milliseconds(), Error: res.Status})
+		return
+	}
 	for k, vs := range res.Header {
 		if !hopHeader(k) {
 			w.Header()[k] = vs
@@ -272,6 +283,24 @@ func withoutItem(body []byte, id string) ([]byte, bool) {
 
 // apiKey reports whether Codex signed in with an API key rather than a
 // ChatGPT account.
+// codexKeyRefused says why a model of Codex's own failed with 401: what
+// OpenAI said, and what to do about it.
+func codexKeyRefused(msg []byte) string {
+	var e struct {
+		Error struct {
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	said := strings.TrimSpace(string(msg))
+	if json.Unmarshal(msg, &e) == nil && e.Error.Message != "" {
+		said = e.Error.Message
+	}
+	return "OpenAI refused the API key Codex is signed in with (" + said + "). " +
+		"This is one of Codex's own models, which goes to OpenAI with Codex's own sign-in: " +
+		"pick one of magpie's models in Codex (provider/model, or set it in magpie's Agents view), " +
+		"or sign Codex in with ChatGPT, or with an OpenAI API key"
+}
+
 func apiKey(h http.Header) bool {
 	return strings.HasPrefix(strings.TrimPrefix(h.Get("Authorization"), "Bearer "), "sk-")
 }

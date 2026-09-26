@@ -392,3 +392,25 @@ func TestCodexOwnModelKeepsReasoningWithNullContent(t *testing.T) {
 		t.Errorf("input: %s", got)
 	}
 }
+
+// Codex signed in with an API key OpenAI refuses, asked for one of its own
+// models: the refusal says what happened and what to do.
+func TestCodexOwnModelKeyRefused(t *testing.T) {
+	setup(t, provider.Chat, &fake{t: t})
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(401)
+		io.WriteString(w, `{"error":{"message":"Incorrect API key provided: sk-A2sz0****owqK.","code":"invalid_api_key"}}`)
+	}))
+	t.Cleanup(up.Close)
+	was := codexAPIBase
+	codexAPIBase = up.URL
+	t.Cleanup(func() { codexAPIBase = was })
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest("POST", CodexPath+"/responses", strings.NewReader(`{"model":"gpt-6-astra","input":"hi","stream":true}`))
+	req.Header.Set("Authorization", "Bearer sk-relay-key")
+	New().Handler().ServeHTTP(rec, req)
+	body := rec.Body.String()
+	if rec.Code != 401 || !strings.Contains(body, "Incorrect API key provided") || !strings.Contains(body, "pick one of magpie's models") {
+		t.Fatalf("%d %s", rec.Code, body)
+	}
+}
