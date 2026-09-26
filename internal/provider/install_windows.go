@@ -23,8 +23,13 @@ func refreshPath() {
 			continue
 		}
 		if v, _, err := key.GetStringValue("Path"); err == nil {
+			// %SystemRoot%\system32 as Windows expands it: os.ExpandEnv of
+			// $SystemRoot$\system32 made C:\Windows$\system32
+			if x, err := registry.ExpandString(v); err == nil {
+				v = x
+			}
 			for _, d := range strings.Split(v, ";") {
-				if d = strings.TrimSpace(os.ExpandEnv(strings.ReplaceAll(d, "%", "$"))); d != "" {
+				if d = strings.TrimSpace(d); d != "" {
 					dirs = append(dirs, d)
 				}
 			}
