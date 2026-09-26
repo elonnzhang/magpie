@@ -214,8 +214,17 @@ func modelObject(e provider.Entry) map[string]any {
 	for _, effort := range e.Efforts {
 		levels = append(levels, reasoningLevel{Effort: effort})
 	}
-	return map[string]any{"id": e.ID, "object": "model", "type": "model", "created": 0, "created_at": "2025-01-01T00:00:00Z",
+	m := map[string]any{"id": e.ID, "object": "model", "type": "model", "created": 0, "created_at": "2025-01-01T00:00:00Z",
 		"owned_by": e.Provider.ID, "display_name": e.Name, "reasoning": len(levels) > 0, "supported_reasoning_levels": levels}
+	// the window, as the names clients read it by: a group's context
+	// (magpie group set … context=) included
+	if e.Context > 0 {
+		m["context_window"], m["context_length"], m["max_input_tokens"] = e.Context, e.Context, e.Context
+	}
+	if e.Output > 0 {
+		m["max_output_tokens"] = e.Output
+	}
+	return m
 }
 
 // catalogFor is the catalog as the agent asking is shown it.

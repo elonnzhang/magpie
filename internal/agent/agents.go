@@ -193,6 +193,12 @@ func magpieProviderJSON(shape string) any {
 				e["attachment"] = true
 				e["modalities"] = map[string]any{"input": []string{"text", "image"}, "output": []string{"text"}}
 			}
+			// without it OpenCode doesn't know when to compact, and a
+			// group's context (magpie group set … context=) never reaches
+			// it; an output of 0 is OpenCode's own default
+			if m.Context > 0 {
+				e["limit"] = map[string]any{"context": m.Context, "output": m.Output}
+			}
 			ms[m.ID] = e
 		}
 		return map[string]any{"npm": "@ai-sdk/openai-compatible", "name": "magpie",
@@ -297,6 +303,11 @@ func opencode(home, cfg string) *Agent {
 				"baseURL", gatewayV1(), "apiKey", gateway.Token)
 		},
 		Sync: func() error {
+			// a model of magpie's chosen, but its provider gone from the
+			// file: put it back, or OpenCode has nothing to send it to
+			if _, ok := edit.GetJSON(path, "provider."+magpieID); !ok && usesMagpie(get("model"), get("small_model")) {
+				return edit.SetJSON(path, edit.KV{Path: "provider." + magpieID, Value: magpieProviderJSON("opencode")})
+			}
 			return syncJSON(path, "provider."+magpieID, func() any { return magpieProviderJSON("opencode") })
 		},
 		Fields: []Field{

@@ -555,6 +555,30 @@ func TestModelsList(t *testing.T) {
 	}
 }
 
+// a group's context reaches /v1/models, for clients that read the window
+// there
+func TestModelsListContext(t *testing.T) {
+	setup(t, provider.Chat, &fake{t: t})
+	if err := provider.SaveGroup(provider.Group{ID: "big", Name: "Big", Members: []string{"fake/m1"}, Context: 1000000}); err != nil {
+		t.Fatal(err)
+	}
+	rec := httptest.NewRecorder()
+	New().Handler().ServeHTTP(rec, httptest.NewRequest("GET", "/v1/models", nil))
+	var out struct {
+		Data []map[string]any `json:"data"`
+	}
+	json.Unmarshal(rec.Body.Bytes(), &out)
+	for _, m := range out.Data {
+		if m["id"] == "group/big" {
+			if m["context_window"] != float64(1000000) || m["context_length"] != float64(1000000) {
+				t.Fatalf("%v", m)
+			}
+			return
+		}
+	}
+	t.Fatalf("no group/big: %s", rec.Body.String())
+}
+
 func TestModelsListReasoning(t *testing.T) {
 	fresh(t)
 	if err := os.MkdirAll(filepath.Dir(catalog.CachePath()), 0o755); err != nil {
