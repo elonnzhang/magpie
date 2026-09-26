@@ -316,6 +316,9 @@ type Entry struct {
 	// Context is the tokens a prompt may hold, when known (a group's: the
 	// least of its members')
 	Context int `json:"context,omitempty"`
+	// Output is the most tokens a reply may hold, when known (a group's:
+	// the least of its members')
+	Output int `json:"output,omitempty"`
 }
 
 // Catalog lists the routing groups, then every exposed model of every ready
@@ -352,12 +355,16 @@ func providerEntries() []Entry {
 			if ctx == 0 {
 				ctx = catalog.ContextOf(m.ID)
 			}
+			output := m.Output
+			if output == 0 {
+				output = catalog.OutputOf(m.ID)
+			}
 			images := m.Images || catalog.SeesImages(m.ID)
 			if m.ImageInput != nil {
 				images = *m.ImageInput
 			}
 			out = append(out, Entry{ID: p.ID + "/" + m.ID, Model: m.ID, Name: m.Name, Efforts: effortsOf(m), Provider: p,
-				Images: images, ImageInput: m.ImageInput, Context: ctx})
+				Images: images, ImageInput: m.ImageInput, Context: ctx, Output: output})
 		}
 	}
 	return out

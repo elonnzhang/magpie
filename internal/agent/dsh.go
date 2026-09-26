@@ -377,6 +377,17 @@ func dshProviderLines(modern bool) []string {
 	}
 	for _, m := range ms {
 		lines = append(lines, "      - id: "+yamlQuote(m.ID), "        name: "+yamlQuote(m.Name))
+		// what dsh would otherwise take for every model: a million tokens
+		// of context, 256K out, and text only
+		if m.Context > 0 {
+			lines = append(lines, fmt.Sprintf("        contextWindow: %d", m.Context))
+		}
+		if m.Output > 0 {
+			lines = append(lines, fmt.Sprintf("        maxTokens: %d", m.Output))
+		}
+		if m.Images {
+			lines = append(lines, "        inputModalities: [text, image]")
+		}
 	}
 	return lines
 }

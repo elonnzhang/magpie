@@ -242,6 +242,9 @@ func Decorate(live []Model, known []Model) []Model {
 			if m.Context == 0 {
 				m.Context = k.Context
 			}
+			if m.Output == 0 {
+				m.Output = k.Output
+			}
 			if k.Temperature != nil {
 				m.Temperature = k.Temperature
 			}
