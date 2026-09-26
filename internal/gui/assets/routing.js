@@ -1363,18 +1363,33 @@
     const keys = (i) => { i.onkeydown = (e) => { e.stopPropagation(); if (e.key === "Escape") { gEdit = null; renderGroups(); } else if (e.key === "Enter" && i === name) save(); }; return i; };
     const name = keys(input(d.name, t("e.g. Opus anywhere")));
     const idHint = el("div", "hint");
+    // an existing group's id can change (an auto- one found by magpie too);
+    // a new one's is made from its name
+    if (g && d.id === undefined) d.id = g.id;
+    const idIn = g ? keys(input(d.id, g.id)) : null;
     const idOf = () => {
-      if (g) return g.id;
+      if (g) return slug(d.id) || g.id;
       let id = slug(d.name) || "group", n = 1;
       const base = id;
       while (groups.groups.some((x) => x.id === id)) id = `${base}-${++n}`;
       return id;
     };
-    const showId = () => { idHint.textContent = t("Agents pick it as {id}", { id: "group/" + idOf() }); };
+    const showId = () => {
+      idHint.textContent = t("Agents pick it as {id}", { id: "group/" + idOf() }) +
+        (g && idOf() !== g.id ? " · " + t("an agent set to {id} needs setting again", { id: "group/" + g.id }) : "");
+    };
     name.oninput = () => { d.name = name.value; showId(); };
     const nw = el("div");
-    nw.append(name, idHint);
+    nw.append(name);
+    if (!g) nw.append(idHint);
     ed.append(el("label", "", t("Name")), nw);
+    if (idIn) {
+      idIn.oninput = () => { d.id = idIn.value; showId(); };
+      idIn.onblur = () => { d.id = idIn.value = idOf(); showId(); };
+      const iw = el("div");
+      iw.append(idIn, idHint);
+      ed.append(el("label", "", t("ID")), iw);
+    }
     showId();
 
     // members, in order: the first is what an agent is told the model can do.
@@ -1550,7 +1565,7 @@
       if (bare >= 0) return status(t("Rule {n} needs a condition", { n: bare + 1 }), "warn");
       if (d.rules.some((r) => r.intent) && !d.classifier) return status(t("Choose the model that tells which intent a message is"), "warn");
       saveBtn.classList.add("busy");
-      groupAction("save", { id: idOf(), name: d.name.trim() || idOf(), members: d.members, routing: d.routing, affinity: d.affinity, rules: d.rules, classifier: d.rules.some((r) => r.intent) ? d.classifier : "" }, t(g ? "{name} saved" : "{name} added", { name: d.name.trim() || idOf() }));
+      groupAction("save", { id: idOf(), from: g?.id, name: d.name.trim() || idOf(), members: d.members, routing: d.routing, affinity: d.affinity, rules: d.rules, classifier: d.rules.some((r) => r.intent) ? d.classifier : "" }, t(g ? "{name} saved" : "{name} added", { name: d.name.trim() || idOf() }));
     };
     saveBtn.onclick = save;
     bar.append(cancel, saveBtn);

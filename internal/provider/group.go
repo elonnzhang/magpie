@@ -468,3 +468,49 @@ func ShowGroup(id string) error {
 	f.Groups = slices.DeleteFunc(f.Groups, func(g Group) bool { return g.ID == id && g.Hidden })
 	return store(f)
 }
+
+// RenameGroup gives a group another id, the one agents pick it by
+// (group/<id>). A group magpie found becomes the user's under the new id,
+// the found one kept removed so it doesn't come back beside it. The
+// groups that have it in them, and their rules, name it by the new id.
+func RenameGroup(from, to string) error {
+	from = strings.ToLower(strings.TrimSpace(from))
+	to = strings.ToLower(strings.TrimSpace(to))
+	if to == "" || to != Slug(to) {
+		return fmt.Errorf("a group's id must be lowercase letters, digits and dashes, not %q", to)
+	}
+	if to == from {
+		return nil
+	}
+	all := groupsIn(providerEntries())
+	g, ok := groupOf(all, from)
+	if !ok {
+		return fmt.Errorf("no group %q", from)
+	}
+	f := load()
+	if slices.ContainsFunc(all, func(o Group) bool { return o.ID == to }) ||
+		slices.ContainsFunc(f.Groups, func(o Group) bool { return o.ID == to }) {
+		return fmt.Errorf("there is a group %q already", to)
+	}
+	found := slices.ContainsFunc(autoGroups(providerEntries()), func(o Group) bool { return o.ID == from })
+	g.ID, g.Auto, g.Hidden = to, false, false
+	f.Groups = slices.DeleteFunc(f.Groups, func(o Group) bool { return o.ID == from })
+	if found {
+		f.Groups = append(f.Groups, Group{ID: from, Hidden: true})
+	}
+	f.Groups = append(f.Groups, g)
+	old, now := GroupPrefix+from, GroupPrefix+to
+	for i := range f.Groups {
+		for j, m := range f.Groups[i].Members {
+			if m == old {
+				f.Groups[i].Members[j] = now
+			}
+		}
+		for j, r := range f.Groups[i].Rules {
+			if r.Use == old {
+				f.Groups[i].Rules[j].Use = now
+			}
+		}
+	}
+	return store(f)
+}

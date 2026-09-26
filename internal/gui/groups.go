@@ -2,6 +2,7 @@ package gui
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"slices"
 	"strings"
@@ -187,15 +188,31 @@ func groupRoutes(mux *http.ServeMux) {
 		writeJSON(rw, groupsState())
 	})
 	mux.HandleFunc("POST /api/groups/{action}", func(rw http.ResponseWriter, r *http.Request) {
-		var in provider.Group
-		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		var body struct {
+			provider.Group
+			From string `json:"from"` // the id the group had: another is a rename
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			fail(rw, err)
 			return
 		}
+		in := body.Group
 		var err error
 		switch r.PathValue("action") {
 		case "save":
-			err = provider.SaveGroup(in)
+			to := strings.ToLower(strings.TrimSpace(in.ID))
+			if body.From == "" || body.From == to {
+				err = provider.SaveGroup(in)
+				break
+			}
+			if to == "" || to != provider.Slug(to) {
+				err = fmt.Errorf("a group's id must be lowercase letters, digits and dashes, not %q", in.ID)
+				break
+			}
+			in.ID = body.From
+			if err = provider.SaveGroup(in); err == nil {
+				err = provider.RenameGroup(body.From, to)
+			}
 		case "delete":
 			err = provider.DeleteGroup(in.ID)
 		case "show":

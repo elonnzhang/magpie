@@ -586,6 +586,7 @@ const I18N = {
     "found by magpie — saving a change makes it yours": "magpie 自动发现的——保存修改后就归你管理",
     "e.g. Opus anywhere": "例如：Opus 多家备份",
     "Agents pick it as {id}": "Agent 里选 {id}",
+    "an agent set to {id} needs setting again": "已经选了 {id} 的 agent 要重新选一次",
     "The first answers for what the model can do. In order, they are tried top first.": "排第一的模型决定这个组对外的能力；按顺序模式下从上往下依次尝试。",
     "Stays": "会话保持",
     "Session": "整个会话",

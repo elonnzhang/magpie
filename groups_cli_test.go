@@ -218,3 +218,31 @@ func TestCloseMatches(t *testing.T) {
 		t.Errorf("%v", got)
 	}
 }
+
+// magpie group set <id> id=<new>: a found group loses its auto- prefix and
+// stays removed under the old id.
+func TestGroupSetID(t *testing.T) {
+	groupsHome(t)
+	if _, err := setGroup("auto-m", []string{"id=Not Slug!"}); err == nil {
+		t.Fatal("a bad id taken")
+	}
+	g, err := setGroup("group/auto-m", []string{"id=m", "routing=order"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if g.ID != "m" || g.Auto || g.Routing != "order" || len(g.Members) != 2 {
+		t.Fatalf("%+v", g)
+	}
+	if _, _, ok := provider.Resolve("group/m"); !ok {
+		t.Fatal("group/m not in the catalog")
+	}
+	if _, _, ok := provider.FindGroup("group/auto-m"); ok {
+		t.Fatal("auto-m is back beside m")
+	}
+	if _, err := addGroup("Other", []string{"models=a/only-a"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := setGroup("m", []string{"id=other"}); err == nil {
+		t.Fatal("renamed onto another group")
+	}
+}

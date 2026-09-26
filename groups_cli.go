@@ -21,7 +21,9 @@ const groupUsage = `usage:
                                           make a group; agents pick it as group/<id>, the id made from the name;
                                           a name in use replaces that group
   magpie group set <id> k=v…              change one: name, models (the whole list, in order),
-                                          models+=<m> (append), models-=<m> (drop), routing, stays
+                                          models+=<m> (append), models-=<m> (drop), routing, stays,
+                                          id (what agents pick it as: id=gpt-6-astra drops auto-; the groups
+                                          it is in follow; an agent set to the old id needs setting again)
   magpie group rm <id>                    remove a group (one magpie found is hidden instead)
   magpie group restore <id>               bring back a group magpie found that you removed
   magpie group rule add|rm|mv <id> …      rules: which model a turn goes to first, by its length, an image,
@@ -45,6 +47,7 @@ const groupUsage = `usage:
 
   e.g. magpie group add "Opus anywhere" models=claude/claude-opus-5-5,copilot/claude-opus-5.5 routing=order
        magpie group set opus-anywhere stays=session models+=openrouter/anthropic/claude-opus-5.5
+       magpie group set auto-gpt-6-astra id=gpt-6-astra
        magpie group add Everything models=group/opus-anywhere,deepseek/deepseek-v4-flash routing=order
        magpie claude group/opus-anywhere`
 
@@ -457,17 +460,29 @@ func setGroup(ref string, pairs []string) (provider.Group, error) {
 	if g.Hidden {
 		return g, fmt.Errorf("%s was removed: magpie group restore %s brings it back first", g.ID, g.ID)
 	}
-	if err := applyGroupPairs(&g, pairs, memberResolver(g.Members), false); err != nil {
+	from := g.ID
+	if err := applyGroupPairs(&g, pairs, memberResolver(g.Members), true); err != nil {
 		return g, err
 	}
 	if len(g.Members) == 0 {
-		return g, fmt.Errorf("a group needs a model in it; magpie group rm %s removes it", g.ID)
+		return g, fmt.Errorf("a group needs a model in it; magpie group rm %s removes it", from)
 	}
 	pruneRules(&g)
+	to := strings.ToLower(strings.TrimSpace(g.ID))
+	if to != from && (to == "" || to != provider.Slug(to)) {
+		return g, fmt.Errorf("a group's id must be lowercase letters, digits and dashes, not %q", g.ID)
+	}
+	g.ID = from
 	if err := provider.SaveGroup(g); err != nil { // one magpie found is the user's now
 		return g, err
 	}
-	return findGroup(g.ID)
+	if to != from {
+		if err := provider.RenameGroup(from, to); err != nil {
+			return g, err
+		}
+		fmt.Println(amber.Render("!"), "agents set to "+provider.GroupPrefix+from+" need "+provider.GroupPrefix+to+" now")
+	}
+	return findGroup(to)
 }
 
 // removedOnly is a removed found group magpie doesn't find now (its model
@@ -575,6 +590,11 @@ func groups() error {
 		fmt.Println(muted.Render("no routing groups yet ·"), "magpie group add <name> models=<m1>,<m2>", muted.Render("· magpie group help"))
 	}
 	names, uses := catalogByID(), groupUses()
+	for _, e := range provider.Served() {
+		if e.Group != "" {
+			names[e.ID] = e // a group in a group is served when it is
+		}
+	}
 	type row struct{ name, id, how, members, uses string }
 	var rows []row
 	w := [3]int{}
