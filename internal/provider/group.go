@@ -57,6 +57,9 @@ type Group struct {
 	// Context is how long a request the user says the group takes, in
 	// tokens: agents are told it rather than its shortest member's.
 	Context int `json:"context,omitempty"`
+	// Family is a tag the group goes by in which agents are shown it
+	// (settings' Visible), with its id.
+	Family string `json:"family,omitempty"`
 	// Auto is set on a group magpie found: one model served by several
 	// providers. It is derived, never stored.
 	Auto bool `json:"auto,omitempty"`
@@ -287,6 +290,7 @@ func groupEntries(entries []Entry) []Entry {
 		if g.Context > 0 {
 			e.Context = g.Context
 		}
+		e.Family = g.Family
 		out = append(out, e)
 	}
 	return out

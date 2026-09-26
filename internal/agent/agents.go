@@ -183,7 +183,7 @@ func ownOptions(authFile string, cur string, extra ...string) []Option {
 
 // magpieProviderJSON is the provider block agents with JSON configs get.
 func magpieProviderJSON(shape string) any {
-	models := magpieModels()
+	models := magpieModels(shape) // the shape is the agent's
 	switch shape {
 	case "opencode":
 		ms := map[string]any{}
@@ -262,7 +262,7 @@ func opencode(home, cfg string) *Agent {
 	auth := filepath.Join(home, ".local", "share", "opencode", "auth.json")
 	opts := func(key string) func(map[string]string) []Option {
 		return func(cur map[string]string) []Option {
-			return append(ownOptions(auth, cur[key]), viaMagpie(magpieID+"/")...)
+			return append(ownOptions(auth, cur[key]), viaMagpie("opencode", magpieID+"/")...)
 		}
 	}
 	get := func(k string) string { v, _ := edit.GetJSON(path, k); return v }
@@ -349,7 +349,7 @@ func pi(home string) *Agent {
 					return pair(v)
 				},
 				Options: func(cur map[string]string) []Option {
-					return append(ownOptions(auth, cur["model"]), viaMagpie(magpieID+"/")...)
+					return append(ownOptions(auth, cur["model"]), viaMagpie("pi", magpieID+"/")...)
 				},
 			},
 			{
@@ -481,7 +481,7 @@ func crush(home, cfg string) *Agent {
 					}
 				}
 			}
-			return append(ownOptions("", cur[key], extra...), viaMagpie(magpieID+"/")...)
+			return append(ownOptions("", cur[key], extra...), viaMagpie("crush", magpieID+"/")...)
 		}
 	}
 	setter := func(pKey, mKey string) func(string) error {

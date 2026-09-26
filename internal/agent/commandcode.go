@@ -89,7 +89,7 @@ func commandCode(home string) *Agent {
 				if v := cur["model"]; v != "" && !usesMagpie(v) {
 					out = append(out, Option{Value: v, Icon: modelIcon("", v)})
 				}
-				return append(out, viaMagpie(magpieID+"/")...)
+				return append(out, viaMagpie("commandcode", magpieID+"/")...)
 			},
 		}},
 	}
@@ -99,7 +99,7 @@ func commandCode(home string) *Agent {
 // the gateway takes any, and Command Code refuses one written out.
 func ccProviderJSON() any {
 	ms := map[string]any{}
-	for _, m := range magpieModels() {
+	for _, m := range magpieModels("commandcode") {
 		e := map[string]any{"name": m.Name}
 		var efforts []string
 		for _, x := range m.Efforts {

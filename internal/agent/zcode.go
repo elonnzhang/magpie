@@ -95,7 +95,7 @@ func zcode(home string) *Agent {
 
 func zcodeProviderJSON() any {
 	ms := map[string]any{}
-	for _, m := range magpieModels() {
+	for _, m := range magpieModels("zcode") {
 		window := m.Context
 		if window == 0 {
 			window = 200000
@@ -187,7 +187,7 @@ func zcodeRules(path string, on bool) error {
 
 	if on {
 		var ids []string
-		for _, m := range magpieModels() {
+		for _, m := range magpieModels("zcode") {
 			ids = append(ids, m.ID)
 			if byHand[m.ID] {
 				continue

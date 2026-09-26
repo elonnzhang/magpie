@@ -72,7 +72,7 @@ func dsh(home string) *Agent {
 			Get: func() string { return dshGet(dir) },
 			Set: func(v string) error { return dshSet(dir, v) },
 			Options: func(map[string]string) []Option {
-				return append(append([]Option{}, dshModels...), viaMagpie(magpieID+"/")...)
+				return append(append([]Option{}, dshModels...), viaMagpie("dsh", magpieID+"/")...)
 			},
 		}},
 	}
@@ -371,7 +371,7 @@ func dshProviderLines(modern bool) []string {
 		"    reasoningEffort: high",
 		"    models:",
 	}
-	ms := magpieModels()
+	ms := magpieModels("dsh")
 	if len(ms) == 0 {
 		lines[len(lines)-1] = "    models: []"
 	}

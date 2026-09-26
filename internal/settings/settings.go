@@ -45,6 +45,10 @@ type Settings struct {
 	AgentOrder   []string `json:"agentOrder,omitempty"`
 	AgentsHidden []string `json:"agentsHidden,omitempty"`
 	AgentsShown  []string `json:"agentsShown,omitempty"`
+	// Visible narrows the models an agent is shown, by agent id: the
+	// families (the tag a provider or group is given), provider ids and
+	// group ids its lists hold. An agent it doesn't name is shown them all.
+	Visible map[string][]string `json:"visible,omitempty"`
 	// The main window's size when it was last resized, width and height,
 	// so it opens at it again after a restart.
 	Window []int `json:"window,omitempty"`

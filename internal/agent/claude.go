@@ -146,7 +146,7 @@ func claude(home string) *Agent {
 			// Only the catalog's models; Claude Code's own short aliases are
 			// not something any API lists, and a compiled-in copy would just
 			// go stale.
-			return append(group(name, own), viaMagpie("")...)
+			return append(group(name, own), viaMagpie("claude", "")...)
 		},
 	}}
 	for _, tier := range claudeTiers {
@@ -187,7 +187,7 @@ func claude(home string) *Agent {
 				if !routed() {
 					return nil
 				}
-				return viaMagpie("")
+				return viaMagpie("claude", "")
 			},
 		})
 	}

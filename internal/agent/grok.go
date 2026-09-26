@@ -34,7 +34,7 @@ var grokModelTable = `model."` + magpieID + "/"
 
 func grokModelTables() []edit.Table {
 	var out []edit.Table
-	for _, m := range magpieModels() {
+	for _, m := range magpieModels("grok") {
 		kvs := []edit.KV{
 			{Path: "model", Value: m.ID},
 			{Path: "name", Value: m.Name},
@@ -96,7 +96,7 @@ func grok(home string) *Agent {
 		if !ok {
 			return nil
 		}
-		return catalog.Efforts(magpieModels(), ref)
+		return catalog.Efforts(magpieModels("grok"), ref)
 	}
 	return &Agent{
 		ID: "grok", Name: "Grok Build", Icon: "xai", Aliases: []string{"grok-build", "grok-cli"},
@@ -188,7 +188,7 @@ func grok(home string) *Agent {
 					return edit.SetTOMLKey(path, "models", "default", v)
 				},
 				Options: func(cur map[string]string) []Option {
-					return append(grokOwnOptions(cur["model"]), viaMagpie(magpieID+"/")...)
+					return append(grokOwnOptions(cur["model"]), viaMagpie("grok", magpieID+"/")...)
 				},
 			},
 			{

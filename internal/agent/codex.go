@@ -40,9 +40,9 @@ func codex(home string) *Agent {
 	models := func() []catalog.Model {
 		switch {
 		case asProvider():
-			return magpieModels()
+			return magpieModels("codex")
 		case viaBase():
-			return append(catalog.Codex(), magpieModels()...)
+			return append(catalog.Codex(), magpieModels("codex")...)
 		}
 		return catalog.Codex()
 	}
@@ -158,7 +158,7 @@ func codex(home string) *Agent {
 			); err != nil {
 				return err
 			}
-			if err := edit.WriteAtomic(catalogPath, codexcat.Catalog(magpieModels())); err != nil {
+			if err := edit.WriteAtomic(catalogPath, codexcat.Catalog(magpieModels("codex"))); err != nil {
 				return err
 			}
 			if err := edit.SetTOMLTop(path,
@@ -209,7 +209,7 @@ func codex(home string) *Agent {
 		Sync: func() error {
 			switch {
 			case asProvider() && get("model_catalog_json") == catalogPath:
-				b := codexcat.Catalog(magpieModels())
+				b := codexcat.Catalog(magpieModels("codex"))
 				if cur, _ := edit.Read(catalogPath); string(cur) != string(b) {
 					if err := edit.WriteAtomic(catalogPath, b); err != nil {
 						return err

@@ -319,6 +319,8 @@ type Entry struct {
 	// Output is the most tokens a reply may hold, when known (a group's:
 	// the least of its members')
 	Output int `json:"output,omitempty"`
+	// Family is the provider's or group's tag (see Visible).
+	Family string `json:"family,omitempty"`
 }
 
 // Catalog lists the routing groups, then every exposed model of every ready
@@ -366,7 +368,7 @@ func providerEntries() []Entry {
 			if m.ImageInput != nil {
 				images = *m.ImageInput
 			}
-			out = append(out, Entry{ID: p.ID + "/" + m.ID, Model: m.ID, Name: m.Name, Efforts: effortsOf(m), Provider: p,
+			out = append(out, Entry{ID: p.ID + "/" + m.ID, Model: m.ID, Family: p.Family, Name: m.Name, Efforts: effortsOf(m), Provider: p,
 				Images: images, ImageInput: m.ImageInput, Context: ctx, Output: output})
 		}
 	}

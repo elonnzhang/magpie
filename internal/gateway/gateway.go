@@ -202,9 +202,15 @@ func modelObject(e provider.Entry) map[string]any {
 		"owned_by": e.Provider.ID, "display_name": e.Name, "reasoning": len(levels) > 0, "supported_reasoning_levels": levels}
 }
 
+// catalogFor is the catalog as the agent asking is shown it.
+func catalogFor(r *http.Request) []provider.Entry {
+	shown, _ := provider.CatalogFor(usage.AgentOf(r.Header.Get("User-Agent")))
+	return shown
+}
+
 func (s *Server) models(w http.ResponseWriter, r *http.Request) {
 	data := []map[string]any{}
-	for _, e := range provider.Catalog() {
+	for _, e := range catalogFor(r) {
 		data = append(data, modelObject(e))
 	}
 	out := map[string]any{"object": "list", "data": data, "has_more": false}
@@ -338,7 +344,7 @@ func (s *Server) geminiCount(w http.ResponseWriter, model string, body []byte) {
 
 func (s *Server) geminiModels(w http.ResponseWriter, r *http.Request) {
 	models := []map[string]any{}
-	for _, e := range provider.Catalog() {
+	for _, e := range catalogFor(r) {
 		models = append(models, geminiModel(e.ID, e.Name))
 	}
 	writeJSON(w, 200, map[string]any{"models": models})

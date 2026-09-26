@@ -46,7 +46,9 @@ const providerUsage = `usage:
                                     brackets; $ or ¥ in front adds the sign, % after it shows a percent of 1)
        magpie provider set my-relay context=272k context.gpt-6=1m
                                    (context: how long a request agents are told the models take, over what the
-                                    vendor or models.dev says; context.<model> for one of them; empty clears)`
+                                    vendor or models.dev says; context.<model> for one of them; empty clears)
+       magpie provider set opencode-go family=ocgo
+                                   (family: a tag for which agents are shown its models, see magpie visible)`
 
 // providers: `magpie providers`
 func providers() error {
@@ -160,10 +162,26 @@ func presets() error {
 	return nil
 }
 
-// models: `magpie models` — the catalog every agent sees
-func models() error {
+// models: `magpie models [<agent>]` — the catalog every agent sees, or the
+// one agent is shown and what is kept from it
+func models(args []string) error {
 	entries := provider.Catalog()
-	if len(entries) == 0 {
+	var hidden []provider.Entry
+	agentID := ""
+	if len(args) > 0 {
+		agentID = strings.ToLower(strings.TrimPrefix(args[0], "--agent="))
+		if agentID == "--agent" && len(args) > 1 {
+			agentID = strings.ToLower(args[1])
+		}
+		if agentID = agentOf(agentID); !knownAgent(agentID) {
+			return fmt.Errorf("no agent %q (%s)", agentID, strings.Join(agentIDs(), ", "))
+		}
+		entries, hidden = provider.CatalogFor(agentID)
+	}
+	if len(entries) == 0 && agentID != "" {
+		names, _ := provider.VisibleTo(agentID)
+		fmt.Println(amber.Render("!"), agentID, "is shown none of them: nothing is in", strings.Join(names, ", "), muted.Render("· magpie visible "+agentID+" all shows it every model"))
+	} else if len(entries) == 0 {
 		fmt.Println(muted.Render("no models yet · add a provider first:"), "magpie provider add deepseek sk-…")
 		return nil
 	}
@@ -189,6 +207,9 @@ func models() error {
 			line += faint.Render("  " + strings.Join(e.Efforts, "/"))
 		}
 		fmt.Println(line)
+	}
+	if agentID != "" {
+		explainHidden(agentID, hidden)
 	}
 	fmt.Println(faint.Render("  " + gateway.URL() + "/v1"))
 	return nil
@@ -569,6 +590,8 @@ func applyPairs(p *provider.Provider, pairs []string) error {
 			if err := setContext(p, "*", v); err != nil {
 				return err
 			}
+		case "family", "tag":
+			p.Family = strings.TrimSpace(v)
 		case "icon":
 			// a picture on disk is kept by magpie; anything else is one of
 			// the built-in icons' names

@@ -112,6 +112,9 @@ type Provider struct {
 	// tokens, over what the vendor or models.dev says: by model id, "*"
 	// for all the provider's models. Agents are told it.
 	Contexts map[string]int `json:"contexts,omitempty"`
+	// Family is a tag the provider's models go by in which agents are
+	// shown them (settings' Visible), with the provider's id.
+	Family string `json:"family,omitempty"`
 
 	Catalog string `json:"catalog,omitempty"` // models.dev id, for names and reasoning levels
 	Website string `json:"website,omitempty"`
@@ -194,7 +197,7 @@ func All() []Provider {
 			continue
 		}
 		pk := picks[a.ID]
-		a.Models, a.Unlisted, a.Fallback, a.Routing, a.Affinity, a.Contexts = pk.Models, pk.Unlisted, pk.Fallback, pk.Routing, pk.Affinity, pk.Contexts
+		a.Models, a.Unlisted, a.Fallback, a.Routing, a.Affinity, a.Contexts, a.Family = pk.Models, pk.Unlisted, pk.Fallback, pk.Routing, pk.Affinity, pk.Contexts, pk.Family
 		out = append(out, a)
 	}
 	return out
@@ -263,7 +266,7 @@ func Save(p Provider) error {
 		// an account keeps only the user's model picks; the rest is the
 		// agent's own sign-in. One the user removed stays removed: only
 		// ShowAccount brings it back.
-		p = Provider{ID: a.ID, Models: p.Models, Unlisted: p.Unlisted, Fallback: p.Fallback, Routing: p.Routing, Affinity: p.Affinity, Contexts: p.Contexts, Hidden: hiddenAccount(a.ID)}
+		p = Provider{ID: a.ID, Models: p.Models, Unlisted: p.Unlisted, Fallback: p.Fallback, Routing: p.Routing, Affinity: p.Affinity, Contexts: p.Contexts, Family: p.Family, Hidden: hiddenAccount(a.ID)}
 	} else {
 		if slices.Contains(accountIDs, p.ID) && !stored(p.ID) {
 			// taken, it would hide that subscription once signed in

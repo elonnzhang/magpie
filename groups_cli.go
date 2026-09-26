@@ -23,7 +23,8 @@ const groupUsage = `usage:
   magpie group set <id> k=v…              change one: name, models (the whole list, in order),
                                           models+=<m> (append), models-=<m> (drop), routing, stays,
                                           context (how long a request agents are told it takes: 272k; empty is
-                                          its shortest model's),
+                                          its shortest model's), family (a tag: magpie visible shows agents
+                                          families, not each group),
                                           id (what agents pick it as: id=gpt-6-astra drops auto-; the groups
                                           it is in follow; an agent set to the old id needs setting again)
   magpie group rm <id>                    remove a group (one magpie found is hidden instead)
@@ -290,8 +291,10 @@ func applyGroupPairs(g *provider.Group, pairs []string, resolve func(string) (st
 			if strings.TrimSpace(v) != "" {
 				g.Context, err = parseTokens(v)
 			}
+		case "family", "tag":
+			g.Family = strings.TrimSpace(v)
 		default:
-			return fmt.Errorf("unknown field %q (fields: name, models, models+, models-, routing, stays, context; magpie group help)", k)
+			return fmt.Errorf("unknown field %q (fields: name, models, models+, models-, routing, stays, context, family; magpie group help)", k)
 		}
 		if err != nil {
 			return err

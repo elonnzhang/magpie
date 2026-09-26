@@ -218,7 +218,7 @@ func gemini(home string) *Agent {
 						}
 					}
 					own := group("Gemini CLI", options(ms, ""))
-					return append(own, viaMagpie("")...)
+					return append(own, viaMagpie("gemini", "")...)
 				},
 			},
 		},

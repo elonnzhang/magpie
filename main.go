@@ -53,7 +53,9 @@ const usage = `magpie — one place to pick every agent's model
   magpie provider key|models|test|rm <id>
   magpie provider fallback <id> <provider/model>…   use these when it's out of quota or down
   magpie import [-y] <link>       add the provider a magpie://import?… link describes
-  magpie models                   every model agents can pick, as provider/model
+  magpie models [<agent>]         every model agents can pick, as provider/model; an agent's, and why others aren't
+  magpie visible [<agent> <family|provider|group>,… | all]
+                                  which models an agent is shown: families (magpie provider/group set <id> family=…)
   magpie groups                   routing groups: several models agents pick as one, group/<id>
   magpie group add <name> models=<m1>,<m2> [routing=smart|order|rotate|usage] [stays=auto|session|turn|off]
   magpie group <id> | set <id> k=v… | rm <id>   show, change or remove one (magpie group help for more)
@@ -155,7 +157,9 @@ func run(args []string) error {
 	case "provider":
 		return providerCmd(args)
 	case "models":
-		return models()
+		return models(args[1:])
+	case "visible":
+		return visibleCmd(args[1:])
 	case "groups":
 		return groups()
 	case "group":

@@ -106,7 +106,7 @@ func hermes(home string) *Agent {
 				return edit.SetYAML(path, edit.KV{Path: "model.default", Value: v})
 			},
 			Options: func(cur map[string]string) []Option {
-				return append(ownOptions("", cur["model"]), viaMagpie(magpieID+"/")...)
+				return append(ownOptions("", cur["model"]), viaMagpie("hermes", magpieID+"/")...)
 			},
 		}},
 	}
@@ -126,7 +126,7 @@ type hermesProviderEntry struct {
 // gateway's usage view.
 func hermesProvider() hermesProviderEntry {
 	ms := []string{}
-	for _, m := range magpieModels() {
+	for _, m := range magpieModels("hermes") {
 		ms = append(ms, m.ID)
 	}
 	return hermesProviderEntry{
