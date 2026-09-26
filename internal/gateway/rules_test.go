@@ -21,6 +21,7 @@ type ruleUp struct {
 	key   string
 	fail  int
 	calls []string // "stream" or "json"
+	seen  int      // requests that carried an image
 }
 
 func (u *ruleUp) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -28,6 +29,9 @@ func (u *ruleUp) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	stream := strings.Contains(string(b), `"stream":true`)
 	u.mu.Lock()
 	u.calls = append(u.calls, map[bool]string{true: "stream", false: "json"}[stream])
+	if strings.Contains(string(b), "image_url") {
+		u.seen++
+	}
 	fail := u.fail
 	u.mu.Unlock()
 	if fail != 0 {
@@ -516,6 +520,7 @@ func TestRuleImagesUnlistedMember(t *testing.T) {
 		t.Fatalf("%d %s, a %d b %d", code, out, a.n(), b.n())
 	}
 }
+
 // A vision rule cannot fall back to a text-only member with the image still
 // attached when the vision provider fails.
 func TestImageRuleDoesNotLeakImageToTextOnlyFallback(t *testing.T) {
@@ -530,5 +535,25 @@ func TestImageRuleDoesNotLeakImageToTextOnlyFallback(t *testing.T) {
 	}
 	if a.n() != 0 {
 		t.Fatalf("image was sent to text-only fallback %d times", a.n())
+	}
+}
+
+// When the vision member of a rule for images fails, a text-only member
+// answers a turn whose image is in an earlier message, without the image.
+func TestImageRuleFallbackOmitsOlderImages(t *testing.T) {
+	s, a, b := ruled(t, provider.Rule{Use: "b/big", Images: true})
+	b.mu.Lock()
+	b.fail = 503
+	b.mu.Unlock()
+	body := `{"model":"group/r","messages":[{"role":"user","content":[{"type":"text","text":"look"},{"type":"image_url","image_url":{"url":"data:image/png;base64,aGVsbG8="}}]},` +
+		`{"role":"assistant","content":"a cat"},{"role":"user","content":"and its name?"}]}`
+	code, out := postAs(t, s, "older-image", body)
+	if code != 200 || !strings.Contains(out, "from ka") || b.n() == 0 {
+		t.Fatalf("%d %s, b %d", code, out, b.n())
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.seen != 0 {
+		t.Fatalf("the text-only member was sent the image %d times", a.seen)
 	}
 }
