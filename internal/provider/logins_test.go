@@ -116,6 +116,20 @@ func TestCodexDuplicateLoginsCollapse(t *testing.T) {
 	}
 }
 
+func TestSideLoginsNotCollapsed(t *testing.T) {
+	signIn(t)
+	now := time.Now().UTC()
+	if err := writeLogins([]savedLogin{
+		{Agent: "grok", User: "me@example.com", Seen: now.Add(-time.Hour), Home: "/grok/me", First: true},
+		{Agent: "grok", User: "me@example.com", Seen: now},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if got := readLogins(); len(got) != 2 || got[0].Home != "/grok/me" {
+		t.Fatalf("a Grok account magpie signed in was folded into the CLI's own: %+v", got)
+	}
+}
+
 func TestClaudeLogins(t *testing.T) {
 	home := claudeHome(t)
 	cred := claudeSignIn(t, home, time.Now().Add(time.Hour))
