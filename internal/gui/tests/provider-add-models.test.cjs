@@ -140,11 +140,13 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
 
       // the Add carries the models picked
       await ed.locator('input[placeholder="e.g. My Relay"], input[placeholder="例如 My Relay"]').first().fill("Relay");
+      // a space inside a typed id is kept, not split into two
+      await field.fill("own-model, Claude Opus 5.5");
       await ed.getByRole("button", { name: L.add, exact: true }).click();
       for (let i = 0; i < 60 && !posts.some((p) => p.path === "/api/provider/save"); i++) await page.waitForTimeout(50);
       const save = posts.find((p) => p.path === "/api/provider/save");
       assert(save, "Add posts provider/save");
-      assert.deepEqual(save.body.models, ["own-model", ...listed.map((m) => m.id).filter((id) => id !== "m-29")]);
+      assert.deepEqual(save.body.models, ["own-model", "Claude Opus 5.5", ...listed.map((m) => m.id).filter((id) => id !== "m-29")]);
       assert.equal(posts.filter((p) => p.path === "/api/provider/list").length, 2, "nothing else asks the vendor");
       assert.deepEqual(errors, []);
     });
